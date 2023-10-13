@@ -1,0 +1,13 @@
+[flake8]
+max-line-length = 100
+extend-ignore =
+	# ignore tabs
+	W191,
+	# blank line at end of file
+	W391,
+	# white space inside {}
+	E201,
+	E202,
+	# multiple blank lines
+	; E303,
+

@@ -1,12 +1,15 @@
 from dotenv import load_dotenv
 import os
-from langchain.text_splitter import TextSplitter, RecursiveCharacterTextSplitter
+from langchain.text_splitter import (
+	TextSplitter,
+	RecursiveCharacterTextSplitter,
+	MarkdownTextSplitter,
+)
 from langchain.vectorstores import Weaviate
-from langchain.docstore.document import Document
 from langchain.embeddings import LlamaCppEmbeddings
 from weaviate import Client, AuthApiKey
 from threading import Timer
-from typing import Callable, Dict, List, Iterator
+from typing import Dict, List, Iterator
 from typing_extensions import Any
 from werkzeug.datastructures.file_storage import FileStorage
 
@@ -28,9 +31,11 @@ embedder = LlamaCppEmbeddings(
 	n_ctx=_EMBEDDER_CONTEXT_LENGTH
 )
 
+
 def _clear_user_clients():
 	global _user_clients
 	_user_clients = {}
+
 
 # clear user clients once a day
 timer = Timer(84000, _clear_user_clients)
@@ -72,6 +77,7 @@ def _get_client(user_id: str):
 
 # "users" | "files" | "vectors"
 
+
 def setup_schema(user_id: str):
 	if weaviate_client.schema.exists(CLASS_NAME(user_id)):
 		return
@@ -84,11 +90,11 @@ def setup_schema(user_id: str):
 				"description": "The actual text",
 				"name": "text",
 			},
-			# {
-			# 	"dataType": ["text"],
-			# 	"description": "The type of source",
-			# 	"name": "type",
-			# },
+			{
+				"dataType": ["text"],
+				"description": "The type of source/mimetype of file in the format `type: ` or `mimetype: `",
+				"name": "type",
+			},
 			{
 				"dataType": ["text"],
 				"description": "The source file",
@@ -101,7 +107,7 @@ def setup_schema(user_id: str):
 			},
 			{
 				# https://weaviate.io/developers/weaviate/config-refs/datatypes#datatype-date
-				"dataType": ["date"],
+				"dataType": ["int"],
 				"description": "Last modified time of the file",
 				"name": "modified",
 			},
@@ -117,41 +123,6 @@ class JSONTextSplitter(RecursiveCharacterTextSplitter):
 		# TODO: process JSON in a better way
 		separators = [ "{", "}", "[", "]", "," ]
 		super().__init__(separators=separators, **kwargs)
-
-
-# TODO: make custom splitters based on file extensions,
-# check done early on
-class PlopSplitter(TextSplitter):
-	def __init__(
-			self,
-			chunk_size: int = 4000,
-			chunk_overlap: int = 200,
-			length_function: Callable[[str], int] = ...,
-			keep_separator: bool = False,
-			add_start_index: bool = True,
-			strip_whitespace: bool = True,
-		) -> None:
-		super().__init__(chunk_size, chunk_overlap, length_function,
-						 keep_separator, add_start_index, strip_whitespace)
-
-	def split_text(self, text: str, source: str|None = None) -> List[str]:
-		if source.endswith('.log') or source.endswith('.json'):
-			text = text.replace("\n", "")
-
-			# FIXME: anti-pattern, do this file extension check earlier
-			jsonsplitter = JSONTextSplitter(
-				chunk_size=self._chunk_size,
-				chunk_overlap=0,
-				add_start_index=True,
-				strip_whitespace=True,
-				length_function=len,
-			)
-
-			output = jsonsplitter.split_text(text)
-			print(f'jsonsplitter: {output}')
-			return output
-
-		return filter(lambda x: x != "", map(lambda x: x.strip(), text.split(".")))
 
 
 def delete_files(user_id: str, filenames: List[str]):
@@ -171,7 +142,7 @@ def delete_files(user_id: str, filenames: List[str]):
 		"matches": 14,
 		"objects": null,
 		"successful": 14
-  }
+	}
 	"""
 	if result.get('results') is not None:
 		return result['results']
@@ -179,29 +150,72 @@ def delete_files(user_id: str, filenames: List[str]):
 	return { "failed": 1 }
 
 
-# TODO: make it async (return an inference key that can be queried later on)
+def get_splitter_for(mimetype: str = "text/plain") -> TextSplitter:
+	kwargs = {
+		# TODO: some storage vs performance cost tests for chunk size
+		"chunk_size": 2000,
+		"chunk_overlap": 200,
+		"add_start_index": True,
+		"strip_whitespace": True,
+		"is_separator_regex": True,
+	}
+
+	if mimetype == "text/plain" or mimetype == "":
+		return RecursiveCharacterTextSplitter(separators=["\n\n", "\n", "."], **kwargs)
+
+	if mimetype == "text/markdown":
+		return MarkdownTextSplitter(**kwargs)
+
+	if mimetype == "application/json":
+		return JSONTextSplitter(**kwargs)
+
+
+# TODO: make it async (return an inference URL that can be queried later on)
 def embed_files(user_id: str, filesIter: Iterator[FileStorage]) -> List[str]:
 	client = _get_client(user_id)
 
-	print('embedding files...')
+	print("embedding files...")
 
-	# more metadata (kwargs) in future
-	raw_documents = [Document(page_content=file.stream.read().decode(),
-		metadata={
-			# TODO: filepath
-			'source': file.filename,
-			'modifed': file.headers.get('modification_time', type=int, default=0)
-		}) for file in filesIter]
+	texts = []
+	metas = []
+	for file in filesIter:
+		texts.append(file.stream.read().decode())
+		metas.append({
+			"source": file.name,
+			"type": file.headers.get("type", type=str),
+			"modified": file.headers.get("modified", type=int, default=0),
+		})
 
-	text_splitter = PlopSplitter(
-		chunk_size=2000,
-		chunk_overlap=100,
-		keep_separator=True,
-		add_start_index=True,
-		strip_whitespace=True,
-		length_function=len,
+	if len(texts) == 0:
+		return []
+
+	text_splitter = get_splitter_for(
+		metas[0].get("type").split("mimetype: ").pop()
 	)
-	documents = text_splitter.split_documents(raw_documents)
+	documents = text_splitter.create_documents(texts, metas)
+
+	return client.add_documents(documents)
+
+
+def embed_texts(user_id: str, texts: List[dict]) -> List[str]:
+	client = _get_client(user_id)
+
+	print("embedding texts...")
+
+	texts = [text.get("contents") for text in texts if text.get("contents") is not None]
+	metas = [{
+		"source": text.get("name"),
+		"type": text.get("type"),
+		"modified": text.get("modified", type=int, default=0),
+	} for text in texts]
+
+	if len(texts) == 0:
+		return []
+
+	text_splitter = get_splitter_for(
+		metas[0].get("type").split("type: ").pop()
+	)
+	documents = text_splitter.create_documents(texts, metas)
 
 	return client.add_documents(documents)
 
@@ -210,7 +224,7 @@ def get_similar_documents(user_id: str, query: str, limit: int = 5) -> dict:
 	embedding = embedder.embed_query(query)
 	content: Dict[str, Any] = {"vector": embedding}
 	return weaviate_client.query \
-		.get(CLASS_NAME(user_id), ['text', 'source', 'start_index']) \
+		.get(CLASS_NAME(user_id), ["text", "type", "source", "start_index", "modified"]) \
 		.with_near_vector(content) \
 		.with_limit(limit) \
 		.do()
@@ -219,5 +233,8 @@ def get_similar_documents(user_id: str, query: str, limit: int = 5) -> dict:
 def list_vectors(user_id: str) -> Dict:
 	setup_schema(user_id)
 	# Optionally retrieve the vector embedding by adding `vector` to the _additional fields
-	return weaviate_client.query.get(CLASS_NAME(user_id), ['text', 'source', 'start_index']).with_limit(100).do()
+	return weaviate_client.query \
+		.get(CLASS_NAME(user_id), ["text", "type", "source", "start_index", "modified"]) \
+		.with_limit(100) \
+		.do()
 

@@ -1,7 +1,7 @@
 def value_of(value: str | None, default: str | None = None) -> str | None:
-  if value is None or value.strip() == '':
-    return default
-  return value
+	if value is None or value.strip() == '':
+		return default
+	return value
 
 
 # class name/index name is capitalized (user1 => User1) maybe because it is a class name,
