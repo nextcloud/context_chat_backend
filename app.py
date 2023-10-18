@@ -2,10 +2,11 @@
 # File: app.cpython-310.pyc (Python 3.10)
 
 from flask import Flask, request, make_response, jsonify
+from functools import reduce
 
 from service import (
 	process_files,
-	# process_texts,
+	process_texts,
 	get_similar_docs,
 	process_query,
 	process_search_query,
@@ -70,30 +71,35 @@ def load_files():
 # TODO: if bpth are true, then delete the vectors and re-embed the file
 @app.route('/loadTexts', methods=['POST'])
 def load_texts():
-	print('form:', request.form)
-	return jsonify({'result': 'success'})
+	body: dict = request.get_json(silent=True)
 
+	if body is None:
+		return make_response(jsonify({'error': 'Malformed JSON body found in the request'}), 400)
 
-	if value_of(request.form.get('userId')) is None:
+	if value_of(body.get('userId')) is None:
 		return make_response(jsonify({'error': 'No userId provided in the request'}), 400)
 
-	if len(request.form) < 2:
+	if value_of(body.get('texts')) is None or len(body.get('texts')) == 0:
 		return make_response(jsonify({'error': 'No text found in the request'}), 400)
 
-	if value_of(request.form.get('name')) is None \
-		or value_of(request.form.get('contents')) is None \
-		or value_of(request.form.get('modified')) is None \
-		or value_of(request.form.get('mimetype')) is None:
+	if reduce(
+		lambda result, text:
+			result or (
+				value_of(text.get('name')) is None
+				or value_of(text.get('contents')) is None
+				or value_of(text.get('modified')) is None
+				or value_of(text.get('type')) is None
+			),
+		body.get('texts'),
+		False,
+	):
 		return make_response(jsonify({'error': 'All fields of text not found in the request'}), 400)
 
-	# source: name, contents
-	return jsonify({'result': 'success'})
-	# return jsonify({'result': process_files(
-	# 	request.form.get('userId'), request.files.values()
-	# )})
+	return jsonify({'result': process_texts(
+		body.get('userId'), body.get('texts')
+	)})
 
 
-# TODO: use utils fn here
 @app.route('/getSimilar', methods=['GET'])
 def get_similar():
 	if value_of(request.args.get('query')) is None:
@@ -122,8 +128,8 @@ def get_vectors():
 	return jsonify({'result': list_vectors(request.args.get('userId'))})
 
 
-@app.route('/ask', methods=['GET'])
-def ask():
+@app.route('/query', methods=['GET'])
+def query():
 	if value_of(request.args.get('query')) is None:
 		return make_response(jsonify(
 			{'error': 'Request lacks either query or userId or both'}

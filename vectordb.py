@@ -13,7 +13,7 @@ from typing import Dict, List, Iterator
 from typing_extensions import Any
 from werkzeug.datastructures.file_storage import FileStorage
 
-from utils import CLASS_NAME
+from utils import CLASS_NAME, to_int
 
 load_dotenv()
 
@@ -92,12 +92,12 @@ def setup_schema(user_id: str):
 			},
 			{
 				"dataType": ["text"],
-				"description": "The type of source/mimetype of file in the format `type: ` or `mimetype: `",
+				"description": "The type of source/mimetype of file",
 				"name": "type",
 			},
 			{
 				"dataType": ["text"],
-				"description": "The source file",
+				"description": "The source of the text (for files: `file: fileId`)",
 				"name": "source",
 			},
 			{
@@ -112,17 +112,17 @@ def setup_schema(user_id: str):
 				"name": "modified",
 			},
 		],
+		# TODO: optimisation for large number of objects
+		"vectorIndexType": "hnsw",
+		"vectorIndexConfig": {
+			"skip": False,
+			# "ef": 100,
+			# "efConstruction": 128,  # minimise this for faster indexing
+			# "maxConnections": 64,
+		}
 	}
 
 	weaviate_client.schema.create_class(class_obj)
-
-
-class JSONTextSplitter(RecursiveCharacterTextSplitter):
-	def __init__(self, **kwargs: Any) -> None:
-		"""Initialize a JSONTextSplitter."""
-		# TODO: process JSON in a better way
-		separators = [ "{", "}", "[", "]", "," ]
-		super().__init__(separators=separators, **kwargs)
 
 
 def delete_files(user_id: str, filenames: List[str]):
@@ -161,38 +161,43 @@ def get_splitter_for(mimetype: str = "text/plain") -> TextSplitter:
 	}
 
 	if mimetype == "text/plain" or mimetype == "":
-		return RecursiveCharacterTextSplitter(separators=["\n\n", "\n", "."], **kwargs)
+		return RecursiveCharacterTextSplitter(separators=["\n\n", "\n", ".", " ", ""], **kwargs)
 
 	if mimetype == "text/markdown":
 		return MarkdownTextSplitter(**kwargs)
 
 	if mimetype == "application/json":
-		return JSONTextSplitter(**kwargs)
+		return RecursiveCharacterTextSplitter(separators=["{", "}", "[", "]", ",", ""], **kwargs)
 
 
 # TODO: make it async (return an inference URL that can be queried later on)
+# TODO: use langchain's indexing to keep track of the files
 def embed_files(user_id: str, filesIter: Iterator[FileStorage]) -> List[str]:
 	client = _get_client(user_id)
 
 	print("embedding files...")
 
-	texts = []
+	contents = []
 	metas = []
 	for file in filesIter:
-		texts.append(file.stream.read().decode())
+		contents.append(file.stream.read().decode())
 		metas.append({
 			"source": file.name,
 			"type": file.headers.get("type", type=str),
-			"modified": file.headers.get("modified", type=int, default=0),
+			"modified": to_int(file.headers.get("modified", 0)),
 		})
 
-	if len(texts) == 0:
+	if len(contents) == 0:
 		return []
 
-	text_splitter = get_splitter_for(
-		metas[0].get("type").split("mimetype: ").pop()
-	)
-	documents = text_splitter.create_documents(texts, metas)
+	documents = []
+
+	for text, meta in zip(contents, metas):
+		text_splitter = get_splitter_for(meta.get("type"))
+		docs = text_splitter.create_documents([text], [meta])
+		if len(docs) == 0:
+			continue
+		documents.append(docs[0])
 
 	return client.add_documents(documents)
 
@@ -202,20 +207,24 @@ def embed_texts(user_id: str, texts: List[dict]) -> List[str]:
 
 	print("embedding texts...")
 
-	texts = [text.get("contents") for text in texts if text.get("contents") is not None]
+	contents = [text.get("contents") for text in texts]
 	metas = [{
 		"source": text.get("name"),
 		"type": text.get("type"),
-		"modified": text.get("modified", type=int, default=0),
+		"modified": to_int(text.get("modified", 0)),
 	} for text in texts]
 
-	if len(texts) == 0:
+	if len(contents) == 0:
 		return []
 
-	text_splitter = get_splitter_for(
-		metas[0].get("type").split("type: ").pop()
-	)
-	documents = text_splitter.create_documents(texts, metas)
+	documents = []
+
+	for text, meta in zip(contents, metas):
+		text_splitter = get_splitter_for(meta.get("type"))
+		docs = text_splitter.create_documents([text], [meta])
+		if len(docs) == 0:
+			continue
+		documents.append(docs[0])
 
 	return client.add_documents(documents)
 

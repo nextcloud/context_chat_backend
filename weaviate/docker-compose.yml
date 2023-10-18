@@ -12,6 +12,7 @@ services:
     image: semitechnologies/weaviate:1.21.2
     ports:
     - 8080:8080
+    - 2112:2112
     volumes:
     - weaviate_data:/var/lib/weaviate
     restart: on-failure:0
@@ -22,6 +23,9 @@ services:
       DEFAULT_VECTORIZER_MODULE: 'none'
       # ENABLE_MODULES: 'text2vec-cohere,text2vec-huggingface,text2vec-palm,text2vec-openai,generative-openai,generative-cohere,generative-palm,ref2vec-centroid,reranker-cohere,qna-openai'
       CLUSTER_HOSTNAME: 'node1'
+      PROMETHEUS_MONITORING_ENABLED: 'true'
+      AUTOSCHEMA_ENABLED: 'false'
+      DISK_USE_READONLY_PERCENTAGE: 98 # just for testing
 volumes:
   weaviate_data:
 ...
