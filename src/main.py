@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from argparse import ArgumentParser
 from dotenv import load_dotenv
 
@@ -13,27 +15,30 @@ def _create_server(services: dict, args: ArgumentParser):
 	"""
 	Creates a flask server with the given services and arguments.
 
-	Args:
-		services (dict): A dictionary containing the services to be deployed.
-		args (ArgumentParser): An ArgumentParser object containing the command line arguments.
+	Args
+	----
+	services: dict
+		A dictionary containing the services to be deployed.
+	args: ArgumentParser
+		An ArgumentParser object containing the command line arguments.
 	"""
 	if services["vector_db"]:
-		from vectordb import init_db
+		from vectordb import get_vector_db
 
-		client = init_db(args.vector_db)
+		client = get_vector_db(args.vector_db)
 		app.config["VECTOR_DB"] = client
 
 	if services["embedding_model"]:
 		from models import init_model
 
 		model = init_model("embedding", args.embedding_model)
-		app.config["EMBEDDING_MODEL"] = model
+		app.config["EMBEDDING_MODEL"] = model()
 
 	if services["llm_model"]:
 		from models import init_model
 
 		model = init_model("llm", args.llm_model)
-		app.config["LLM_MODEL"] = model
+		app.config["LLM_MODEL"] = model()
 
 	app.run()
 

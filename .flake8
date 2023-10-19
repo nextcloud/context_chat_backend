@@ -10,4 +10,6 @@ extend-ignore =
 	E202,
 	# multiple blank lines
 	; E303,
+	# lambda functions assigned to a variable
+	E731,
 

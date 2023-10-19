@@ -1,47 +1,33 @@
-from importlib import import_module
-from typing import Callable
-
-from ..config import config
+# import importlib.util as importutil
+# import sys
+from langchain.schema.embeddings import Embeddings
+from langchain.llms.base import LLM
 
 __all__ = ['load_model']
 
 
-def _load_embedding_model(model_fn: Callable):
-	from langchain.schema.embeddings import Embeddings
+def load_model(model_type: str, model_name: str) -> Embeddings | LLM | None:
+	# TODO
+	# module_name = model_name + "_local"
+	# file_path = f"src/models/{model_name}.py"
+	# spec = importutil.spec_from_file_location(module_name, file_path)
+	# module = importutil.module_from_spec(spec)
+	# sys.modules[module_name] = module
 
-	if model_fn is None or not isinstance(model_fn, Embeddings):
-		return None
+	# if module is None or not hasattr(module, "types"):
+	# 	raise AssertionError(f"Error: could not load {model_name} model")
 
-	model = model_fn(
-		**config.get("embedding", {}),
-	)
+	if model_name == "llama":
+		from .llama import types
+	elif model_name == "huggings_face_small":
+		from .hugging_face_small import types
 
-	return model
-
-
-def _load_llm_model(model_fn: Callable):
-	from langchain.llms.base import LLM
-
-	if model_fn is None or not isinstance(model_fn, LLM):
-		return None
-
-	model = model_fn(
-		**config.get("llm", {}),
-	)
-
-	return model
-
-
-def load_model(model_type: str, model_name: str):
-	model = import_module(model_name)
-	types = model.types
-
-	if model_type not in types.keys():
+	if not isinstance(types, dict) or model_type not in types.keys():
 		return None
 
 	if model_type == "embedding":
-		return _load_embedding_model(types.get("embedding", None))
+		return types.get("embedding", None)
 
 	if model_type == "llm":
-		return _load_llm_model(types.get("llm", None))
+		return types.get("llm", None)
 
