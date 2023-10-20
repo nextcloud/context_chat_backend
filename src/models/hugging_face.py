@@ -7,7 +7,7 @@ with open('config.yaml') as f:
 	yaml = YAML(typ='safe')
 	config = yaml.load(f)
 
-_embedder = lambda: HuggingFaceEmbeddings(**config.get('hugging_face_small_embedder', {}))
+_embedder = lambda: HuggingFaceEmbeddings(**config.get('hugging_face_embedder', {}))
 
 types = {
 	"embedding": _embedder,

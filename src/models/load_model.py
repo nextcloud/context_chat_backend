@@ -19,8 +19,8 @@ def load_model(model_type: str, model_name: str) -> Embeddings | LLM | None:
 
 	if model_name == "llama":
 		from .llama import types
-	elif model_name == "hugging_face_small":
-		from .hugging_face_small import types
+	elif model_name == "hugging_face":
+		from .hugging_face import types
 
 	if not isinstance(types, dict) or model_type not in types.keys():
 		return None

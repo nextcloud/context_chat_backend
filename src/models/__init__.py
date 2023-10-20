@@ -1,8 +1,7 @@
 from .load_model import load_model
 
-_embedding_models = ["llama", "hugging_face_small"]
-# TODO: does huging_face_small work?
-_llm_models = ["llama", "hugging_face_small"]
+_embedding_models = ["llama", "hugging_face"]
+_llm_models = ["llama", "hugging_face"]
 
 models = {
 	"embedding": _embedding_models,

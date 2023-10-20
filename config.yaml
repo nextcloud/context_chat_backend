@@ -8,7 +8,7 @@ llama_llm:
   n_batch: '10'
   n_ctx: '2048'
 
-hugging_face_small_embedder:
+hugging_face_embedder:
   model_name: distilbert-base-uncased
   model_kwargs:
     device: cpu
