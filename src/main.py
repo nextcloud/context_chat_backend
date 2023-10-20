@@ -2,8 +2,10 @@
 
 from argparse import ArgumentParser
 from dotenv import load_dotenv
+from os import getenv
+import uvicorn
 
-from utils import value_of
+from utils import value_of, to_int
 from vectordb import vector_dbs
 from models import models
 from controller import app
@@ -26,21 +28,33 @@ def _create_server(services: dict, args: ArgumentParser):
 		from vectordb import get_vector_db
 
 		client = get_vector_db(args.vector_db)
-		app.config["VECTOR_DB"] = client
+		app.extra["VECTOR_DB"] = client
 
 	if services["embedding_model"]:
 		from models import init_model
 
 		model = init_model("embedding", args.embedding_model)
-		app.config["EMBEDDING_MODEL"] = model()
+		app.extra["EMBEDDING_MODEL"] = model()
 
 	if services["llm_model"]:
 		from models import init_model
 
 		model = init_model("llm", args.llm_model)
-		app.config["LLM_MODEL"] = model()
+		app.extra["LLM_MODEL"] = model()
 
-	app.run()
+	uvicorn.run(
+		app=app,
+		port=to_int(getenv("UVICORN_PORT")) if value_of(getenv("UVICORN_PORT")) else 9000,
+		http="h11",
+		interface="asgi3",
+		env_file=".env",
+		log_level="info",
+		use_colors=True,
+		limit_concurrency=100,
+		backlog=100,
+		timeout_keep_alive=10,
+		h11_max_incomplete_event_size=5 * 1024 * 1024,  # 5MB
+	)
 
 
 if __name__ == "__main__":

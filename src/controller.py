@@ -1,31 +1,14 @@
-from flask import Flask  # , request, make_response
+from fastapi import FastAPI
 
-# TODO: split this in "chain" functions
-# from chain.service import (
-# 	process_files,
-# 	get_similar_docs,
-# 	process_query,
-# 	process_search_query,
-# 	delete_files_from_db
-# )
 # from utils import value_of
-
-#
-# TODO: remove this eventually
-# TODO: use retrievers (langchain) or maybe not
-# from vectordb.weaviate import list_vectors
-#
 
 __all__ = ['app']
 
-# TODO: only use `chain` functions here passing the `vectordb` client, the `em` and `llm` models
-# from the config file
-
-app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 256000000
+app = FastAPI()
+app.extra['MAX_CONTENT_LENGTH'] = 256000000
 
 
-@app.route('/')
+@app.get('/')
 def _hello():
 	"""
 	Server check
@@ -33,7 +16,7 @@ def _hello():
 	return 'Hello, World!'
 
 
-# @app.route('/deleteFiles', methods=['DELETE'])
+# @app.post('/deleteFiles')
 # def delete_files():
 # 	if value_of(request.args.get('userId')) is None:
 # 		return make_response('No userId provided in the request', 400)
