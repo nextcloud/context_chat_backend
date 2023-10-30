@@ -1,6 +1,6 @@
-from utils import local_dynamic_import
-from .base import BaseVectorDB
+from importlib import import_module
 
+from .base import BaseVectorDB
 
 vector_dbs = ["weaviate"]
 
@@ -24,12 +24,16 @@ def get_vector_db(vector_db: str) -> BaseVectorDB:
 	if vector_db not in vector_dbs:
 		raise AssertionError(f"Error: vector_db should be one of {vector_dbs}")
 
-	module_name = vector_db + "_local"
-	file_path = f"src/vectordb/{vector_db}.py"
-	module = local_dynamic_import(module_name, file_path)
+	module = import_module(f".{vector_db}", "schackles.vectordb")
 
-	if module is None or hasattr(module, "VectorDB") is False:
+	if module is None or not hasattr(module, "VectorDB"):
 		raise AssertionError(f"Error: could not load {vector_db}")
 
 	klass = module.VectorDB
+
+	if klass is None or not hasattr(klass, "client"):
+		raise AssertionError(
+			f"Error: invalid vectordb class for {vector_db}! Check if the file is correct."
+		)
+
 	return klass

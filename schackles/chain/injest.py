@@ -7,7 +7,7 @@ from langchain.text_splitter import (
 )
 
 from ..utils import to_int
-from vectordb import BaseVectorDB
+from ..vectordb import BaseVectorDB
 
 
 _ALLOWED_MIME_TYPES = [

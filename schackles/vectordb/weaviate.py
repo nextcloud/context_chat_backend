@@ -6,8 +6,8 @@ from langchain.vectorstores import VectorStore, Weaviate
 from weaviate import Client, AuthApiKey
 from logging import error as log_error
 
-from utils import value_of, CLASS_NAME
-from vectordb.base import BaseVectorDB
+from ..utils import value_of, CLASS_NAME
+from .base import BaseVectorDB
 
 load_dotenv()
 

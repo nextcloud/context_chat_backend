@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-# from utils import value_of
+# from .utils import value_of
 
 __all__ = ['app']
 
@@ -16,6 +16,28 @@ def _hello():
 	return 'Hello, World!'
 
 
+@app.get('/world')
+def _world(query: str | None = None):
+	em = app.extra.get('EMBEDDING_MODEL')
+	return em.embed_query(query if query is not None else 'what is an apple?')
+
+
+# TODO
+@app.get('/schema')
+def _schema(user_id: str = 'admin'):
+	"""
+	Get the schema of the vector store
+	"""
+	db_klass = app.extra.get('VECTOR_DB')
+	if db_klass is None:
+		return 'Error: VectorDB not initialised'
+
+	db = db_klass()
+	db()
+	return ''
+
+
+# TODO: get, check, delete (by id)
 # @app.post('/deleteFiles')
 # def delete_files():
 # 	if value_of(request.args.get('userId')) is None:

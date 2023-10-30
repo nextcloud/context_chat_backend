@@ -27,15 +27,3 @@ def to_int(value: Any | None, default: int = 0) -> int:
 		return int(value)
 	except ValueError:
 		return default
-
-
-def local_dynamic_import(module_name: str, file_path: str) -> Any:
-	import importlib.util as importutil
-	import sys
-
-	spec = importutil.spec_from_file_location(module_name, file_path)
-	module = importutil.module_from_spec(spec)
-	sys.modules[module_name] = module
-	spec.loader.exec_module(module)
-
-	return module
