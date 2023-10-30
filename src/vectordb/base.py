@@ -5,6 +5,9 @@ from langchain.schema.embeddings import Embeddings
 
 
 class BaseVectorDB(ABC):
+	client = None
+	embedder = None
+
 	@abstractmethod
 	def __init__(self, user_id: str, embedder: Optional[Embeddings] = None):
 		"""
@@ -48,20 +51,29 @@ class BaseVectorDB(ABC):
 		"""
 
 	@abstractmethod
-	def delete_sources(self, user_id: str, source_names: List[str]) -> bool:
+	def get_objects_from_sources(self, user_id: str, source_names: List[str]) -> dict:
 		"""
-		Deletes all sources with the given names.
+		Get all objects with the given source names.
+		(Only gets the following fields: [id, source, modified])
 
 		Args
 		----
 		user_id: str
-			User ID for which to delete the sources.
+			User ID for whose database to get the sources.
 		source_names: List[str]
-			List of source names to delete.
+			List of source names to get.
 
 		Returns
 		-------
-		bool
-			True if deletion is successful,
-			False otherwise
+		List[dict]
+			if error occurs: {}
+
+			otherwise:
+
+			{
+				['source': str]: {
+					'id': str,
+					'modified': str,
+				}
+			}
 		"""

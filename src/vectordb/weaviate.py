@@ -4,9 +4,10 @@ from os import getenv
 from langchain.schema.embeddings import Embeddings
 from langchain.vectorstores import VectorStore, Weaviate
 from weaviate import Client, AuthApiKey
+from logging import error as log_error
 
-from src.utils import to_int, value_of, CLASS_NAME
-from src.vectordb.base import BaseVectorDB
+from utils import value_of, CLASS_NAME
+from vectordb.base import BaseVectorDB
 
 load_dotenv()
 
@@ -108,7 +109,7 @@ class VectorDB(BaseVectorDB):
 			by_text=False,
 		)
 
-	def delete_sources(self, user_id: str, source_names: List[str]) -> bool:
+	def get_objects_from_sources(self, user_id: str, source_names: List[str]) -> dict:
 		if not self.client:
 			raise Exception('Error: Weaviate client not initialised')
 
@@ -118,6 +119,25 @@ class VectorDB(BaseVectorDB):
 			"valueTextList": source_names,
 		}
 
-		results = self.client.batch.delete_objects(CLASS_NAME(user_id), file_filter).get('results')
+		results = self.client.query \
+			.get(CLASS_NAME(user_id), ['source', 'modified']) \
+			.with_additional('id') \
+			.with_where(file_filter) \
+			.do()
 
-		return results.get('failed') is None or to_int(results.get('failed')) == 0
+		if results.get('errors') is not None:
+			log_error(f'Error: Weaviate query error: {results.get("errors")}')
+			return {}
+
+		try:
+			results = results['data']['Get'][CLASS_NAME(user_id)]
+			output = {}
+			for result in results:
+				output[result['source']] = {
+					'id': result['_additional']['id'],
+					'modified': result['modified'],
+				}
+			return output
+		except Exception as e:
+			log_error(f'Error: Weaviate query error: {e}')
+			return {}

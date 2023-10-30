@@ -27,8 +27,8 @@ def _create_server(services: dict, args: ArgumentParser):
 	if services["vector_db"]:
 		from vectordb import get_vector_db
 
-		client = get_vector_db(args.vector_db)
-		app.extra["VECTOR_DB"] = client
+		client_klass = get_vector_db(args.vector_db)
+		app.extra["VECTOR_DB"] = client_klass()
 
 	if services["embedding_model"]:
 		from models import init_model
@@ -47,7 +47,6 @@ def _create_server(services: dict, args: ArgumentParser):
 		port=to_int(getenv("UVICORN_PORT")) if value_of(getenv("UVICORN_PORT")) else 9000,
 		http="h11",
 		interface="asgi3",
-		env_file=".env",
 		log_level="info",
 		use_colors=True,
 		limit_concurrency=100,
