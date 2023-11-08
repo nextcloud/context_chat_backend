@@ -1,14 +1,19 @@
-llama_embedder:
-  model_path: model_files/codellama-7b.Q5_K_M.gguf
-  n_batch: '8'
-  n_ctx: '2048'
+llama:
+  embedding:
+    model_path: model_files/codellama-7b.Q5_K_M.gguf
+    n_batch: '8'
+    n_ctx: '2048'
+  llm:
+    model_path: model_files/codellama-7b.Q5_K_M.gguf
+    n_batch: '10'
+    n_ctx: '2048'
 
-llama_llm:
-  model_path: model_files/codellama-7b.Q5_K_M.gguf
-  n_batch: '10'
-  n_ctx: '2048'
-
-hugging_face_embedder:
-  model_name: distilbert-base-uncased
-  model_kwargs:
-    device: cpu
+hugging_face:
+  embedding:
+    model_name: all-MiniLM-L6-v2
+    model_kwargs:
+      device: cpu
+  llm:
+    model_id: all-MiniLM-L6-v2
+    model_kwargs:
+      device: cpu

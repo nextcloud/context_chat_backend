@@ -12,4 +12,6 @@ extend-ignore =
 	; E303,
 	# lambda functions assigned to a variable
 	E731,
+	# multiple statements on one line (colon)
+	E701,
 

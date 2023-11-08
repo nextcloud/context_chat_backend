@@ -1,16 +1,12 @@
 from langchain.embeddings import LlamaCppEmbeddings
 from langchain.llms import LlamaCpp
-from ruamel.yaml import YAML
 
-# this will raise an exception and is intended
-with open('config.yaml') as f:
-	yaml = YAML(typ='safe')
-	config = yaml.load(f)
 
-_embedder = lambda: LlamaCppEmbeddings(**config.get('llama_embedder', {}))
-_llm = lambda: LlamaCpp(**config.get('llama_llm', {}))
+def get_model_for(config: dict[str, dict], model_type: str):
+	if (em_conf := config.get('embedding')) is not None and model_type == 'embedding':
+		return LlamaCppEmbeddings(**em_conf)
 
-types = {
-	"embedding": _embedder,
-	"llm": _llm,
-}
+	if (llm_conf := config.get('llm')) is not None and model_type == 'llm':
+		return LlamaCpp(**llm_conf)
+
+	return None

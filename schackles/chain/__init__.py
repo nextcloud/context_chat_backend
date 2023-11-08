@@ -1,8 +1,7 @@
-from .injest import embed_files, embed_texts
+from .injest import embed_sources
 from .one_shot import process_query
 
 __all__ = [
-	"embed_files",
-	"embed_texts",
+	"embed_sources",
 	"process_query",
 ]

@@ -1,23 +1,23 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
-from langchain.vectorstores import VectorStore
+
 from langchain.schema.embeddings import Embeddings
+from langchain.vectorstores import VectorStore
 
 
 class BaseVectorDB(ABC):
 	client = None
-	embedder = None
+	embedding = None
 
 	@abstractmethod
-	def __init__(self, user_id: str, embedder: Optional[Embeddings] = None):
-		"""
-		"""
+	def __init__(self, embedding: Optional[Embeddings] = None):
+		self.embedding = embedding
 
 	@abstractmethod
 	def get_user_client(
 			self,
 			user_id: str,
-			embedder: Optional[Embeddings] = None  # use this embedder if not None or use global embedder
+			embedding: Optional[Embeddings] = None  # Use this embedding if not None or use global embedding
 		) -> Optional[VectorStore]:
 		"""
 		Creates and returns the langchain vectordb client object for the given user_id.
@@ -26,7 +26,7 @@ class BaseVectorDB(ABC):
 		----
 		user_id: str
 			User ID for which to create the client object.
-		embedder: Optional[Embeddings]
+		embedding: Optional[Embeddings]
 			Embeddings object to use for embedding documents.
 
 		Returns
@@ -77,3 +77,29 @@ class BaseVectorDB(ABC):
 				}
 			}
 		"""
+
+	def delete_by_ids(self, user_id: str, ids: list[str]) -> Optional[bool]:
+		"""
+		Deletes all documents with the given ids for the given user.
+
+		Args
+		----
+		user_id: str
+			User ID from whose database to delete the documents.
+		ids: list[str]
+			List of document ids to delete.
+
+		Returns
+		-------
+		Optional[bool]
+			Optional[bool]: True if deletion is successful,
+			False otherwise, None if not implemented.
+		"""
+		if len(ids) == 0:
+			return True
+
+		user_client = self.get_user_client(user_id)
+		if user_client is None:
+			return False
+
+		return user_client.delete(ids)

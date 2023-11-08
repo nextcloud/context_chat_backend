@@ -1,11 +1,14 @@
-from typing import List, Iterator, Optional
-from werkzeug.datastructures.file_storage import FileStorage
+from logging import error as log_error
+
+from fastapi.datastructures import UploadFile
+from langchain.schema import Document
 from langchain.text_splitter import (
-	TextSplitter,
-	RecursiveCharacterTextSplitter,
 	MarkdownTextSplitter,
+	RecursiveCharacterTextSplitter,
+	TextSplitter
 )
 
+from ..http_types import SourcesType
 from ..utils import to_int
 from ..vectordb import BaseVectorDB
 
@@ -17,11 +20,8 @@ _ALLOWED_MIME_TYPES = [
 ]
 
 
-def _allowed_file(file: FileStorage) -> bool:
-	return file.headers \
-		.get('type', type=str, default='') \
-		.split('mimetype: ') \
-		.pop() in _ALLOWED_MIME_TYPES
+def _allowed_file(file: UploadFile) -> bool:
+	return file.headers.get('type', default='') in _ALLOWED_MIME_TYPES
 
 
 def _get_splitter_for(mimetype: str = "text/plain") -> TextSplitter:
@@ -33,7 +33,7 @@ def _get_splitter_for(mimetype: str = "text/plain") -> TextSplitter:
 		"is_separator_regex": True,
 	}
 
-	if mimetype == "text/plain" or mimetype == "":
+	if mimetype == "text/plain" or not mimetype:
 		return RecursiveCharacterTextSplitter(separators=["\n\n", "\n", ".", " ", ""], **kwargs)
 
 	if mimetype == "text/markdown":
@@ -43,15 +43,11 @@ def _get_splitter_for(mimetype: str = "text/plain") -> TextSplitter:
 		return RecursiveCharacterTextSplitter(separators=["{", "}", "[", "]", ",", ""], **kwargs)
 
 
-def _delete_old_sources(user_id: str, vectordb: BaseVectorDB, ids: List[str]) -> Optional[bool]:
-	"""
-	Deletes all documents with the given sources.
-	"""
-	client = vectordb.get_user_client(user_id)
-	return client.delete(ids)
-
-
-def _filter_sources(user_id: str, vectordb: BaseVectorDB, metas: List[dict]) -> List[str]:
+def _filter_documents(
+	user_id: str,
+	vectordb: BaseVectorDB,
+	documents: list[Document]
+) -> list[Document]:
 	"""
 	Returns a filtered list of documents that are not already in the vectordb
 	or have been modified since they were last added.
@@ -59,95 +55,118 @@ def _filter_sources(user_id: str, vectordb: BaseVectorDB, metas: List[dict]) -> 
 	"""
 	to_delete = {}
 
-	dmetas = {}
-	for meta in metas:
-		dmetas[meta.get("source")] = meta
+	input_sources = {}
+	for meta in documents:
+		if meta.metadata.get("source") is None:
+			continue
+		input_sources[meta.metadata.get("source")] = meta.metadata.get("modified")
 
-	existing_objects = vectordb.get_objects_from_sources(user_id, dmetas.keys())
-	# case-sensitive check since some vector databases are have case-insensitive filters
+	existing_objects = vectordb.get_objects_from_sources(user_id, list(input_sources.keys()))
 	for source, existing_meta in existing_objects.items():
 		# recently modified files are re-embedded
-		if dmetas.get(source) is not None and \
-			dmetas.get(source).get("modified") > existing_meta.get("modified"):
-			to_delete[source] = existing_meta
+		if to_int(input_sources.get(source)) > to_int(existing_meta.get("modified")):
+			to_delete[source] = existing_meta.get("id")
 
 	# delete old sources
-	_delete_old_sources(user_id, vectordb, [meta.get("id") for meta in to_delete.values()])
+	vectordb.delete_by_ids(user_id, to_delete.values())
 
 	# sources not already in the vectordb + the ones that were deleted
-	new_sources = set(dmetas.keys()) \
-		.difference(set(existing_objects)) \
-		.add(to_delete.keys())
+	new_sources = set(input_sources.keys()) \
+		.difference(set(existing_objects))
+	new_sources.update(set(to_delete.keys()))
 
-	return list(new_sources)
+	filtered_documents = [
+		doc for doc in documents
+		if doc.metadata.get("source") in new_sources
+	]
+
+	return filtered_documents
 
 
-def embed_files(
-		user_id: str,
-		vectordb: BaseVectorDB,
-		filesIter: Iterator[FileStorage]
-	) -> List[str]:
-	print("embedding files...")
+def _sources_to_documents(sources: SourcesType) -> list[Document]:
+	documents = {}
 
-	files = list(filter(_allowed_file, filesIter))
+	for source in sources:
+		user_id = source.headers.get("userId")
+		if user_id is None:
+			log_error("userId not found in headers for source: " + source.filename)
+			continue
 
-	contents = []
-	metas = []
-	for file in files:
-		contents.append(file.stream.read().decode())
-		metas.append({
-			"source": file.name,
-			"type": file.headers.get("type", type=str),
-			"modified": to_int(file.headers.get("modified", 0)),
-		})
+		content = source.file.read().decode("utf-8")
+		metadata = {
+			"source": source.filename,
+			"type": source.headers.get("type"),
+			"modified": source.headers.get("modified"),
+		}
 
-	if len(contents) == 0:
+		document = Document(page_content=content, metadata=metadata)
+
+		if documents.get(user_id) is not None:
+			documents[user_id].append(document)
+		else:
+			documents[user_id] = [document]
+
+	return documents
+
+
+def _bucket_by_type(documents: list[Document]) -> dict[str, list[Document]]:
+	bucketed_documents = {}
+
+	for doc in documents:
+		doc_type = doc.metadata.get("type")
+
+		if bucketed_documents.get(doc_type) is not None:
+			bucketed_documents[doc_type].append(doc)
+		else:
+			bucketed_documents[doc_type] = [doc]
+
+	return bucketed_documents
+
+
+def _process_sources(vectordb: BaseVectorDB, sources: SourcesType) -> bool:
+	ddocuments: dict[str, list[Document]] = _sources_to_documents(sources)
+
+	if len(ddocuments.keys()) == 0:
 		return []
 
-	documents = []
-	sources_to_embed = _filter_sources(user_id, vectordb, metas)
+	success = True
 
-	for text, meta in zip(contents, metas):
-		if meta.get("source") not in sources_to_embed:
+	for user_id, documents in ddocuments.items():
+		split_documents: list[Document] = []
+		filtered_docs = _filter_documents(user_id, vectordb, documents)
+
+		if len(filtered_docs) == 0:
 			continue
 
-		text_splitter = _get_splitter_for(meta.get("type"))
-		docs = text_splitter.create_documents([text], [meta])
-		if len(docs) == 0:
-			continue
-		documents.append(docs[0])
+		type_bucketed_docs = _bucket_by_type(filtered_docs)
 
-	return vectordb.add_documents(documents)
+		for _type, _docs in type_bucketed_docs.items():
+			text_splitter = _get_splitter_for(_type)
+			split_docs = text_splitter.split_documents(_docs)
+			split_documents.extend(split_docs)
+
+		user_client = vectordb.get_user_client(user_id)
+		if user_client is None:
+			log_error('Error: Weaviate client not initialised')
+			return {}
+
+		doc_ids = user_client.add_documents(split_documents)
+
+		# does not do per document error checking
+		success &= len(split_documents) == len(doc_ids)
+
+	return success
 
 
-def embed_texts(
-		user_id: str,
-		vectordb: BaseVectorDB,
-		texts: List[dict]
-	) -> List[str]:
-	print("embedding texts...")
+def embed_sources(
+	vectordb: BaseVectorDB,
+	sources: list[UploadFile],
+) -> bool:
+	# either not a file or a file that is allowed
+	sources_filtered = [
+		source for source in sources
+		if not source.filename.startswith("file: ")
+		or _allowed_file(source)
+	]
 
-	contents = [text.get("contents") for text in texts]
-	metas = [{
-		"source": text.get("name"),
-		"type": text.get("type"),
-		"modified": to_int(text.get("modified", 0)),
-	} for text in texts]
-
-	if len(contents) == 0:
-		return []
-
-	documents = []
-	sources_to_embed = _filter_sources(user_id, vectordb, metas)
-
-	for text, meta in zip(contents, metas):
-		if meta.get("source") not in sources_to_embed:
-			continue
-
-		text_splitter = _get_splitter_for(meta.get("type"))
-		docs = text_splitter.create_documents([text], [meta])
-		if len(docs) == 0:
-			continue
-		documents.append(docs[0])
-
-	return vectordb.add_documents(documents)
+	return _process_sources(vectordb, sources_filtered)

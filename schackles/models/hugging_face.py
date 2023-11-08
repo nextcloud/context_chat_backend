@@ -1,14 +1,13 @@
 from langchain.embeddings import HuggingFaceEmbeddings
-# from langchain.llms import HuggingFacePipeline
-from ruamel.yaml import YAML
+from langchain.llms import HuggingFacePipeline
 
-# this will raise an exception and is intended
-with open('config.yaml') as f:
-	yaml = YAML(typ='safe')
-	config = yaml.load(f)
 
-_embedder = lambda: HuggingFaceEmbeddings(**config.get('hugging_face_embedder', {}))
+def get_model_for(config: dict[str, dict], model_type: str):
+	if (em_conf := config.get('embedding')) is not None and model_type == 'embedding':
+		return HuggingFaceEmbeddings(**em_conf)
 
-types = {
-	"embedding": _embedder,
-}
+	if (llm_conf := config.get('llm')) is not None and model_type == 'llm':
+		# return HuggingFacePipeline(**{**llm_conf, 'task': 'text2text-generation'})
+		return HuggingFacePipeline(**llm_conf)
+
+	return None

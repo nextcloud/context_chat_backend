@@ -2,8 +2,7 @@
 
 from argparse import ArgumentParser
 
-from schackles import value_of, vector_dbs, models, create_server
-
+from schackles import create_server, models, value_of, vector_dbs
 
 if __name__ == "__main__":
 	parser = ArgumentParser(description="Starts a server with the requested services.")

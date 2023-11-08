@@ -27,4 +27,3 @@ def init_model(model_type: str, model_name: str):
 		raise AssertionError(f"Error: {model_name} does not implement \"{model_type}\" type")
 
 	return model
-

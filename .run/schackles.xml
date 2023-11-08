@@ -1,20 +1,20 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="CwydBackend" type="PythonConfigurationType" factoryName="Python">
-    <module name="cwyd_backend" />
+  <configuration default="false" name="Schackles" type="PythonConfigurationType" factoryName="Python">
+    <module name="schackles" />
     <option name="INTERPRETER_OPTIONS" value="" />
     <option name="PARENT_ENVS" value="true" />
     <envs>
       <env name="AE_VERSION" value="1.0.0" />
-      <env name="APP_ID" value="cwyd_backend" />
-      <env name="APP_PERSISTENT_STORAGE" value="$USER_HOME$/cwyd_backend_files" />
+      <env name="APP_ID" value="schackles" />
+      <env name="APP_PERSISTENT_STORAGE" value="$USER_HOME$/schackles_files" />
       <env name="APP_PORT" value="9001" />
-      <!-- <env name="APP_SECRET" value="12345" /> -->
+      <env name="APP_SECRET" value="12345" />
       <env name="APP_VERSION" value="1.0.0" />
       <env name="NEXTCLOUD_URL" value="http://nextcloud.local" />
       <env name="PYTHONUNBUFFERED" value="1" />
     </envs>
     <option name="SDK_HOME" value="" />
-    <option name="SDK_NAME" value="Python 3.11 (cwyd_backend)" />
+    <option name="SDK_NAME" value="Python 3.11 (schackles)" />
     <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
     <option name="IS_MODULE_SDK" value="false" />
     <option name="ADD_CONTENT_ROOTS" value="true" />

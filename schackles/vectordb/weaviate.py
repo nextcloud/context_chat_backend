@@ -1,18 +1,18 @@
-from typing import List, Optional
-from dotenv import load_dotenv
+from logging import error as log_error
 from os import getenv
+from typing import List, Optional
+
+from dotenv import load_dotenv
 from langchain.schema.embeddings import Embeddings
 from langchain.vectorstores import VectorStore, Weaviate
-from weaviate import Client, AuthApiKey
-from logging import error as log_error
+from weaviate import AuthApiKey, Client
 
-from ..utils import value_of, CLASS_NAME
 from .base import BaseVectorDB
+from ..utils import CLASS_NAME, value_of
 
 load_dotenv()
 
-# this is automatically picked up by the weaviate client
-# WEAVIATE_API_KEY is also used if set
+# WEAVIATE_API_KEY is automatically used if set
 if value_of(getenv('WEAVIATE_URL')) is None:
 	raise Exception('Error: environment variable WEAVIATE_URL is not set')
 
@@ -41,7 +41,7 @@ class_schema = {
 		},
 		{
 			# https://weaviate.io/developers/weaviate/config-refs/datatypes#datatype-date
-			"dataType": ["int"],
+			"dataType": ["text"],
 			"description": "Last modified time of the file",
 			"name": "modified",
 		},
@@ -58,7 +58,7 @@ class_schema = {
 
 
 class VectorDB(BaseVectorDB):
-	def __init__(self, embedder: Optional[Embeddings] = None):
+	def __init__(self, embedding: Optional[Embeddings] = None):
 		try:
 			client = Client(
 				url=getenv('WEAVIATE_URL'),
@@ -74,7 +74,7 @@ class VectorDB(BaseVectorDB):
 			raise Exception('Error: Weaviate connection error')
 
 		self.client = client
-		self.embedder = embedder
+		self.embedding = embedding
 
 	def setup_schema(self, user_id: str) -> None:
 		if not self.client:
@@ -91,27 +91,32 @@ class VectorDB(BaseVectorDB):
 	def get_user_client(
 			self,
 			user_id: str,
-			embedder: Optional[Embeddings] = None  # use this embedder if not None or use global embedder
+			embedding: Optional[Embeddings] = None  # Use this embedding if not None or use global embedding
 		) -> Optional[VectorStore]:
 		self.setup_schema(user_id)
 
-		embeddings = None
-		if self.embedder is not None:
-			embeddings = self.embedder
-		elif embedder is not None:
-			embeddings = embedder
+		em = None
+		if self.embedding is not None:
+			em = self.embedding
+		elif embedding is not None:
+			em = embedding
 
 		return Weaviate(
 			client=self.client,
 			index_name=CLASS_NAME(user_id),
 			text_key='text',
-			embedding=embeddings,
+			embedding=em,
 			by_text=False,
 		)
 
 	def get_objects_from_sources(self, user_id: str, source_names: List[str]) -> dict:
+		# NOTE: the limit of objects returned is not known, maybe it would be better to set one manually
+
 		if not self.client:
 			raise Exception('Error: Weaviate client not initialised')
+
+		if not self.client.schema.exists(CLASS_NAME(user_id)):
+			self.setup_schema(user_id)
 
 		file_filter = {
 			"path": ["source"],
@@ -129,14 +134,23 @@ class VectorDB(BaseVectorDB):
 			log_error(f'Error: Weaviate query error: {results.get("errors")}')
 			return {}
 
+		dsources = {}
+		for source in source_names:
+			dsources[source] = True
+
 		try:
 			results = results['data']['Get'][CLASS_NAME(user_id)]
 			output = {}
 			for result in results:
+				# case sensitive matching
+				if dsources.get(result['source']) is None:
+					continue
+
 				output[result['source']] = {
 					'id': result['_additional']['id'],
 					'modified': result['modified'],
 				}
+
 			return output
 		except Exception as e:
 			log_error(f'Error: Weaviate query error: {e}')
