@@ -4,7 +4,6 @@ from typing import Annotated, Any
 from dotenv import load_dotenv
 from fastapi import Body, FastAPI, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.params import Param
 from fastapi.responses import JSONResponse as FastAPIJSONResponse
 from langchain.llms.base import LLM
 
@@ -72,7 +71,7 @@ def _world(query: str | None = None):
 
 # TODO: for testing, remove later
 @app.get('/reset')
-def _(userId: Annotated[str, Param()]):
+def _(userId: str):
 	from weaviate.client import Client
 
 	from .utils import CLASS_NAME
@@ -87,7 +86,7 @@ def _(userId: Annotated[str, Param()]):
 
 # TODO: for testing, remove later
 @app.get('/vectors')
-def _(userId: Annotated[str, Param()]):
+def _(userId: str):
 	from weaviate.client import Client
 
 	from .utils import CLASS_NAME
@@ -104,7 +103,7 @@ def _(userId: Annotated[str, Param()]):
 
 
 @app.put('/enabled')
-def _(enabled: Annotated[bool, Body()]):
+def _(enabled: bool):
 	print(f"{enabled:}")
 	return JSONResponse(content={"error": ""}, status_code=200)
 
@@ -127,10 +126,10 @@ def _():
 
 
 @app.post('/deleteSources')
-def _(userId: Annotated[str, Body()], source_names: Annotated[list[str], Body()]):
-	source_names = [source.strip() for source in source_names if source.strip() != '']
+def _(userId: Annotated[str, Body()], sourceNames: Annotated[list[str], Body()]):
+	sourceNames = [source.strip() for source in sourceNames if source.strip() != '']
 
-	if len(source_names) == 0:
+	if len(sourceNames) == 0:
 		return JSONResponse("No sources provided", 400)
 
 	db: BaseVectorDB = app.extra.get('VECTOR_DB')
@@ -138,7 +137,7 @@ def _(userId: Annotated[str, Body()], source_names: Annotated[list[str], Body()]
 	if db is None:
 		return JSONResponse("Error: VectorDB not initialised", 500)
 
-	source_objs = db.get_objects_from_sources(userId, source_names)
+	source_objs = db.get_objects_from_sources(userId, sourceNames)
 	res = db.delete_by_ids(userId, [
 		source.get("id")
 		for source in source_objs.values()
@@ -183,12 +182,7 @@ def _(sources: list[UploadFile]):
 
 
 @app.get('/query')
-def _(
-	userId: Annotated[str, Param()],
-	query: Annotated[str, Param()],
-	use_context: Annotated[bool, Param()] = True,
-	ctx_limit: Annotated[int, Param()] = 5
-):
+def _(userId: str, query: str, use_context: bool = True, ctx_limit: int = 5):
 	llm: LLM = app.extra.get('LLM_MODEL')
 	if llm is None:
 		return JSONResponse("Error: LLM not initialised", 500)

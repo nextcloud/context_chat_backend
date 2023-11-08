@@ -21,6 +21,11 @@ def _sign_request(headers: dict, username: str = "") -> None:
 
 
 def _verify_signature(request: Request) -> str:
+	# TODO: remove /init
+	# no auth of /heartbeat
+	if request.url.path == "/init" or request.url.path == "/heartbeat":
+		return "anon"
+
 	# Header "AA-VERSION" contains AppAPI version, for now it can be only one version,
 	# so no handling of it.
 
@@ -51,7 +56,7 @@ class AppAPIAuthMiddleware(BaseHTTPMiddleware):
 	"""
 	async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
 		if (username := _verify_signature(request)) is not None:
-			new_headers = MutableHeaders(request._headers)
+			new_headers = MutableHeaders(request.headers)
 			new_headers['username'] = username
 
 			request._headers = new_headers
