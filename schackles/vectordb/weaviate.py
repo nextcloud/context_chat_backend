@@ -104,13 +104,16 @@ class VectorDB(BaseVectorDB):
 		elif embedding is not None:
 			em = embedding
 
-		return Weaviate(
+		weaviate_obj = Weaviate(
 			client=self.client,
 			index_name=CLASS_NAME(user_id),
 			text_key='text',
 			embedding=em,
 			by_text=False,
 		)
+		weaviate_obj._query_attrs = ['text', 'start_index', 'source', 'type', 'modified']
+
+		return weaviate_obj
 
 	def get_objects_from_sources(self, user_id: str, source_names: List[str]) -> dict:
 		# NOTE: the limit of objects returned is not known, maybe it would be better to set one manually
