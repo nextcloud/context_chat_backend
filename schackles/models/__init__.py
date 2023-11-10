@@ -1,6 +1,6 @@
 from .load_model import load_model
 
-_embedding_models = ["llama", "hugging_face"]
+_embedding_models = ["llama", "hugging_face", "instructor"]
 _llm_models = ["llama", "hugging_face"]
 
 models = {
