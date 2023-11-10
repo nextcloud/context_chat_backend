@@ -1,19 +1,35 @@
-llama:
-  embedding:
-    model_path: model_files/codellama-7b.Q5_K_M.gguf
-    n_batch: '8'
-    n_ctx: '2048'
-  llm:
-    model_path: model_files/codellama-7b.Q5_K_M.gguf
-    n_batch: '10'
+vectordb:
+  weaviate:
+
+embedding:
+  instructor:
+    model_name: ./model_files/hkunlp_instructor-base
+    model_kwargs:
+      device: cpu
+
+  llama:
+    model_path: model_files/dolphin-2.2.1-mistral-7b.Q5_K_M.gguf
+    n_batch: '16'
     n_ctx: '2048'
 
-hugging_face:
-  embedding:
-    model_name: all-MiniLM-L6-v2
+  hugging_face:
+    # model_name: all-MiniLM-L6-v2
+    model_name: sentence-transformers/all-mpnet-base-v2
     model_kwargs:
       device: cpu
-  llm:
-    model_id: all-MiniLM-L6-v2
-    model_kwargs:
-      device: cpu
+
+# TODO: pop template from here
+llm:
+  llama:
+    model_path: model_files/dolphin-2.2.1-mistral-7b.Q5_K_M.gguf
+    template: ''
+    n_batch: '10'
+    n_ctx: '4096'
+
+  hugging_face:
+    model_id: TheBloke/Mistral-7B-Instruct-v0.1-GPTQ
+    template: ''
+    task: text-generation
+    pipeline_kwargs:
+      config:
+        max_length: 200

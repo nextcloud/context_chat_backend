@@ -10,7 +10,7 @@ class BaseVectorDB(ABC):
 	embedding = None
 
 	@abstractmethod
-	def __init__(self, embedding: Optional[Embeddings] = None):
+	def __init__(self, embedding: Optional[Embeddings] = None, **kwargs):
 		self.embedding = embedding
 
 	@abstractmethod

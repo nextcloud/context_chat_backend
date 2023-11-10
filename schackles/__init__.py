@@ -5,45 +5,43 @@ import uvicorn
 
 from .controller import app
 from .models import models
-from .utils import to_int, value_of
+from .utils import to_int
 from .vectordb import vector_dbs
 
 load_dotenv()
 
-__all__ = ["create_server", "value_of", "vector_dbs", "models"]
+__all__ = ["create_server", "vector_dbs", "models"]
 
 
-def create_server(services: dict, args: dict):
+def create_server(config: dict[str, tuple[str, dict]]):
 	"""
-	Creates a flask server with the given services and arguments.
+	Creates a FastAPI server with the given config.
 
 	Args
 	----
-	services: dict
+	config: dict
 		A dictionary containing the services to be deployed.
-	args: ArgumentParser
-		An ArgumentParser object containing the command line arguments.
 	"""
-	if services.get("embedding_model"):
+	if config.get("embedding"):
 		from .models import init_model
 
-		model = init_model("embedding", args.embedding_model)
+		model = init_model("embedding", config.get("embedding"))
 		app.extra["EMBEDDING_MODEL"] = model
 
-	if services.get("vector_db"):
+	if config.get("vectordb"):
 		from .vectordb import get_vector_db
 
-		client_klass = get_vector_db(args.vector_db)
+		client_klass = get_vector_db(config.get("vectordb")[0])
 
 		if app.extra.get("EMBEDDING_MODEL") is not None:
-			app.extra["VECTOR_DB"] = client_klass(app.extra["EMBEDDING_MODEL"])
+			app.extra["VECTOR_DB"] = client_klass(app.extra["EMBEDDING_MODEL"], **config.get("vectordb")[1])
 		else:
-			app.extra["VECTOR_DB"] = client_klass()
+			app.extra["VECTOR_DB"] = client_klass(**config.get("vectordb")[1])
 
-	if services.get("llm_model"):
+	if config.get("llm"):
 		from .models import init_model
 
-		model = init_model("llm", args.llm_model)
+		model = init_model("llm", config.get("llm"))
 		app.extra["LLM_MODEL"] = model
 
 	uvicorn.run(

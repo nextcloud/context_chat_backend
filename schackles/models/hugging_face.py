@@ -2,12 +2,14 @@ from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.llms import HuggingFacePipeline
 
 
-def get_model_for(config: dict[str, dict], model_type: str):
-	if (em_conf := config.get('embedding')) is not None and model_type == 'embedding':
-		return HuggingFaceEmbeddings(**em_conf)
+def get_model_for(model_type: str, model_config: dict):
+	if model_config is None:
+		return None
 
-	if (llm_conf := config.get('llm')) is not None and model_type == 'llm':
-		# return HuggingFacePipeline(**{**llm_conf, 'task': 'text2text-generation'})
-		return HuggingFacePipeline(**llm_conf)
+	if model_type == "embedding":
+		return HuggingFaceEmbeddings(**model_config)
+
+	if model_type == "llm":
+		return HuggingFacePipeline.from_model_id(**model_config)
 
 	return None

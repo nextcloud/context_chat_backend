@@ -58,14 +58,17 @@ class_schema = {
 
 
 class VectorDB(BaseVectorDB):
-	def __init__(self, embedding: Optional[Embeddings] = None):
+	def __init__(self, embedding: Optional[Embeddings] = None, **kwargs):
 		try:
 			client = Client(
-				url=getenv('WEAVIATE_URL'),
-				timeout_config=(1, 20),
 				**({
 					'auth_client_secret': AuthApiKey(getenv('WEAVIATE_APIKEY')),
 				} if value_of(getenv('WEAVIATE_APIKEY')) is not None else {}),
+				**{**{
+					'url': getenv('WEAVIATE_URL'),
+					'timeout_config': (1, 20),
+					**kwargs,
+				}},
 			)
 		except Exception as e:
 			raise Exception(f'Error: Weaviate connection error: {e}')

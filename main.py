@@ -1,59 +1,52 @@
 #!/usr/bin/env python3
 
-from argparse import ArgumentParser
+from ruamel.yaml import YAML
 
-from schackles import create_server, models, value_of, vector_dbs
+from schackles import create_server, models, vector_dbs
+
+
+def _first_in_list(
+	input_dict: dict[str, dict],
+	supported_list: list[str]
+) -> tuple[str, dict] | None:
+	"""
+	Find the first matching item in the input list from the supported list.
+	This is done to find the first supported item in the config file.
+	"""
+	for input_item, value in input_dict.items():
+		if input_item in supported_list:
+			return (input_item, value or {})
+
+	return None
+
 
 if __name__ == "__main__":
-	parser = ArgumentParser(description="Starts a server with the requested services.")
+	with open("config.yaml") as f:
+		try:
+			yaml = YAML(typ="safe")
+			config: dict = yaml.load(f)
+		except Exception as e:
+			raise AssertionError("Error: could not load config.yaml") from e
 
-	parser.add_argument(
-		"-db",
-		"--vector_db",
-		type=str,
-		choices=vector_dbs,
-		help="The vector database to use.",
-	)
-	parser.add_argument(
-		"-em",
-		"--embedding_model",
-		type=str,
-		choices=models["embedding"],
-		help="The embedding model to use.",
-	)
-	parser.add_argument(
-		"-lm",
-		"--llm_model",
-		type=str,
-		choices=models["llm"],
-		help="The LLM model to use."
-	)
-
-	args = parser.parse_args()
-
-	services = {
-		"vector_db": False,
-		"embedding_model": False,
-		"llm_model": False,
+	selected_config = {
+		"vectordb": _first_in_list(config.get("vectordb", {}), vector_dbs),
+		"embedding": _first_in_list(config.get("embedding", {}), models["embedding"]),
+		"llm": _first_in_list(config.get("llm", {}), models["llm"]),
 	}
 
-	# vectordb and llm services can be deployed independently
-	if value_of(args.vector_db) is None and value_of(args.llm_model) is None:
+	if not selected_config["vectordb"]:
 		raise AssertionError(
-			'Error: At least one of "vector_db" or "llm_model" should be provided'
+			f"Error: vectordb should be at least one of {vector_dbs} in the config file"
 		)
 
-	if value_of(args.vector_db) is not None:
-		# embedding model is required for now
-		if value_of(args.embedding_model) is None:
-			raise AssertionError(
-				'Error: "embedding_model" is required if "vector_db" is provided'
-			)
+	if not selected_config["embedding"]:
+		raise AssertionError(
+			f"Error: embedding model should be at least one of {models['embedding']} in the config file"
+		)
 
-		services["vector_db"] = True
-		services["embedding_model"] = True
+	if not selected_config["llm"]:
+		raise AssertionError(
+			f"Error: llm model should be at least one of {models['llm']} in the config file"
+		)
 
-	if value_of(args.llm_model) is not None:
-		services["llm_model"] = True
-
-	create_server(services, args)
+	create_server(selected_config)
