@@ -145,6 +145,11 @@ def _process_sources(vectordb: BaseVectorDB, sources: SourcesType) -> bool:
 			split_docs = text_splitter.split_documents(_docs)
 			split_documents.extend(split_docs)
 
+		# filter out empty documents
+		split_documents = list(filter(lambda doc: doc.page_content != "", split_documents))
+		if len(split_documents) == 0:
+			continue
+
 		user_client = vectordb.get_user_client(user_id)
 		if user_client is None:
 			log_error('Error: Weaviate client not initialised')

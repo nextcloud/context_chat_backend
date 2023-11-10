@@ -97,6 +97,7 @@ def _(userId: str):
 
 	return JSONResponse(
 		client.query.get(CLASS_NAME(userId), ["text", "start_index", "source", "type", "modified"])
+		.with_limit(1000)
 		.with_additional(["id"])
 		.do()
 	)
@@ -191,11 +192,16 @@ def _(userId: str, query: str, use_context: bool = True, ctx_limit: int = 5):
 	if db is None:
 		return JSONResponse("Error: VectorDB not initialised", 500)
 
-	return JSONResponse(process_query(
+	output = process_query(
 		user_id=userId,
 		vectordb=db,
 		llm=llm,
 		query=query,
 		use_context=use_context,
 		ctx_limit=ctx_limit,
-	))
+	)
+
+	if output is None:
+		return JSONResponse("Error: check if the model specified supports the query type", 500)
+
+	return JSONResponse(output)
