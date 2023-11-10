@@ -21,9 +21,8 @@ def _sign_request(headers: dict, username: str = "") -> None:
 
 
 def _verify_signature(request: Request) -> str:
-	# TODO: remove /init
 	# no auth of /heartbeat
-	if request.url.path == "/init" or request.url.path == "/heartbeat":
+	if request.url.path == "/heartbeat":
 		return "anon"
 
 	# Header "AA-VERSION" contains AppAPI version, for now it can be only one version,
