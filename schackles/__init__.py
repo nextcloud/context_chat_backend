@@ -41,7 +41,10 @@ def create_server(config: dict[str, tuple[str, dict]]):
 	if config.get("llm"):
 		from .models import init_model
 
-		model = init_model("llm", config.get("llm"))
+		llm_name, llm_config = config.get("llm")
+		app.extra["LLM_TEMPLATE"] = llm_config.pop("template", "")
+
+		model = init_model("llm", (llm_name, llm_config))
 		app.extra["LLM_MODEL"] = model
 
 	uvicorn.run(

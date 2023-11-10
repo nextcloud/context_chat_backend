@@ -192,6 +192,8 @@ def _(userId: str, query: str, use_context: bool = True, ctx_limit: int = 5):
 	if db is None:
 		return JSONResponse("Error: VectorDB not initialised", 500)
 
+	template = app.extra.get("LLM_TEMPLATE")
+
 	output = process_query(
 		user_id=userId,
 		vectordb=db,
@@ -199,6 +201,7 @@ def _(userId: str, query: str, use_context: bool = True, ctx_limit: int = 5):
 		query=query,
 		use_context=use_context,
 		ctx_limit=ctx_limit,
+		**({"template": template} if template else {}),
 	)
 
 	if output is None:
