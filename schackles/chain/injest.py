@@ -8,7 +8,6 @@ from langchain.text_splitter import (
 	TextSplitter
 )
 
-from ..http_types import SourcesType
 from ..utils import to_int
 from ..vectordb import BaseVectorDB
 
@@ -83,7 +82,7 @@ def _filter_documents(
 	return filtered_documents
 
 
-def _sources_to_documents(sources: SourcesType) -> list[Document]:
+def _sources_to_documents(sources: list[UploadFile]) -> list[Document]:
 	documents = {}
 
 	for source in sources:
@@ -123,7 +122,7 @@ def _bucket_by_type(documents: list[Document]) -> dict[str, list[Document]]:
 	return bucketed_documents
 
 
-def _process_sources(vectordb: BaseVectorDB, sources: SourcesType) -> bool:
+def _process_sources(vectordb: BaseVectorDB, sources: list[UploadFile]) -> bool:
 	ddocuments: dict[str, list[Document]] = _sources_to_documents(sources)
 
 	if len(ddocuments.keys()) == 0:
