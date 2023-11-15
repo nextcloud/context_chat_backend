@@ -64,42 +64,23 @@ def _(request: Request):
 
 # TODO: for testing, remove later
 @app.get('/world')
-def _world(query: str | None = None):
+def _(query: str | None = None):
 	em = app.extra.get('EMBEDDING_MODEL')
 	return em.embed_query(query if query is not None else 'what is an apple?')
 
 
 # TODO: for testing, remove later
-@app.get('/reset')
-def _(userId: str):
-	from weaviate.client import Client
-
-	from .utils import CLASS_NAME
-
-	db: BaseVectorDB = app.extra.get('VECTOR_DB')
-	client: Client = db.client
-
-	return JSONResponse(
-		client.schema.delete_class(CLASS_NAME(userId))
-	)
-
-
-# TODO: for testing, remove later
 @app.get('/vectors')
 def _(userId: str):
-	from weaviate.client import Client
-
-	from .utils import CLASS_NAME
+	from chromadb import ClientAPI
+	from .utils import COLLECTION_NAME
 
 	db: BaseVectorDB = app.extra.get('VECTOR_DB')
-	client: Client = db.client
+	client: ClientAPI = db.client
 	db.setup_schema(userId)
 
 	return JSONResponse(
-		client.query.get(CLASS_NAME(userId), ["text", "start_index", "source", "type", "modified"])
-		.with_limit(1000)
-		.with_additional(["id"])
-		.do()
+		client.get_collection(COLLECTION_NAME(userId)).get()
 	)
 
 
@@ -148,8 +129,9 @@ def _(userId: Annotated[str, Body()], sourceNames: Annotated[list[str], Body()])
 	# NOTE: None returned in `delete_by_ids` should have meant an error but it didn't in the case of
 	# weaviate maybe because of the way weaviate wrapper is implemented (langchain's api does not take
 	# class name as input, which will be required in future versions of weaviate)
-	# if res is None:
-	# 	return JSONResponse("Error: Sources delete failed, check your vectordb implementation.", 500)
+	if res is None:
+		print("Deletion query returned 'None'. This can happen in Weaviate even if the deletion was \
+successful, therefore not considered an error for now.")
 
 	if res is False:
 		return JSONResponse("Error: VectorDB delete failed, check vectordb logs for more info.", 400)

@@ -2,7 +2,7 @@ from importlib import import_module
 
 from .base import BaseVectorDB
 
-vector_dbs = ["weaviate"]
+vector_dbs = ["weaviate", "chroma"]
 
 __all__ = ["get_vector_db", "vector_dbs", "BaseVectorDB"]
 

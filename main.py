@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
-from ruamel.yaml import YAML
+from pprint import pprint
 
+from ruamel.yaml import YAML
 from schackles import create_server, models, vector_dbs
 
 
@@ -48,5 +49,7 @@ if __name__ == "__main__":
 		raise AssertionError(
 			f"Error: llm model should be at least one of {models['llm']} in the config file"
 		)
+
+	pprint(f"Selected config: {selected_config}")
 
 	create_server(selected_config)

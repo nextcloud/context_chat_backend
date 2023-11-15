@@ -8,7 +8,7 @@ from langchain.vectorstores import VectorStore, Weaviate
 from weaviate import AuthApiKey, Client
 
 from .base import BaseVectorDB
-from ..utils import CLASS_NAME, value_of
+from ..utils import COLLECTION_NAME, value_of
 
 load_dotenv()
 
@@ -83,11 +83,11 @@ class VectorDB(BaseVectorDB):
 		if not self.client:
 			raise Exception('Error: Weaviate client not initialised')
 
-		if self.client.schema.exists(CLASS_NAME(user_id)):
+		if self.client.schema.exists(COLLECTION_NAME(user_id)):
 			return
 
 		self.client.schema.create_class({
-			"class": CLASS_NAME(user_id),
+			"class": COLLECTION_NAME(user_id),
 			**class_schema,
 		})
 
@@ -106,7 +106,7 @@ class VectorDB(BaseVectorDB):
 
 		weaviate_obj = Weaviate(
 			client=self.client,
-			index_name=CLASS_NAME(user_id),
+			index_name=COLLECTION_NAME(user_id),
 			text_key='text',
 			embedding=em,
 			by_text=False,
@@ -121,7 +121,7 @@ class VectorDB(BaseVectorDB):
 		if not self.client:
 			raise Exception('Error: Weaviate client not initialised')
 
-		if not self.client.schema.exists(CLASS_NAME(user_id)):
+		if not self.client.schema.exists(COLLECTION_NAME(user_id)):
 			self.setup_schema(user_id)
 
 		file_filter = {
@@ -131,7 +131,7 @@ class VectorDB(BaseVectorDB):
 		}
 
 		results = self.client.query \
-			.get(CLASS_NAME(user_id), ['source', 'modified']) \
+			.get(COLLECTION_NAME(user_id), ['source', 'modified']) \
 			.with_additional('id') \
 			.with_where(file_filter) \
 			.do()
@@ -145,7 +145,7 @@ class VectorDB(BaseVectorDB):
 			dsources[source] = True
 
 		try:
-			results = results['data']['Get'][CLASS_NAME(user_id)]
+			results = results['data']['Get'][COLLECTION_NAME(user_id)]
 			output = {}
 			for result in results:
 				# case sensitive matching
