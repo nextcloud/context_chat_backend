@@ -8,11 +8,10 @@ ENV TRANSFORMERS_CACHE /app/model_files
 
 WORKDIR /app
 
-COPY reqs.txt .
 COPY schackles schackles
 COPY main.py .
 COPY config.yaml .
-COPY .env .
+COPY reqs.txt .
 
 RUN python3 -m pip install --no-deps -r reqs.txt
 RUN rm -rf ~/.cache

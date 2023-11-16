@@ -22,6 +22,8 @@ def create_server(config: dict[str, tuple[str, dict]]):
 	config: dict
 		A dictionary containing the services to be deployed.
 	"""
+	app.extra["CONFIG"] = config
+
 	if config.get("embedding"):
 		from .models import init_model
 

@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse as FastAPIJSONResponse
 from langchain.llms.base import LLM
 
 from .chain import embed_sources, process_query
+# from .download import download_model
 from .ocs_utils import AppAPIAuthMiddleware, get_nc_url, ocs_call
 from .utils import value_of
 from .vectordb import BaseVectorDB
@@ -98,7 +99,19 @@ def _():
 
 @app.post("/init")
 def _():
-	# parse and set the app config from config.yaml
+	# TODO: testing required
+	# config = app.extra.get("CONFIG") or {}
+
+	# for model_type in ("embedding", "llm"):
+	# 	if (model_config := config.get(model_type)) is not None:
+	# 		model_name = (
+	# 			model_config.get("model_name")
+	# 			or model_config.get("model_path")
+	# 			or model_config.get("model_id")
+	# 		)
+	# 		if not download_model(model_name):
+	# 			return JSONResponse(f"Error: Model download failed for {model_name}", 500)
+
 	ocs_call(
 		method="PUT",
 		path=f"/index.php/apps/app_api/apps/status/{getenv('APP_ID')}",
