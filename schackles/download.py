@@ -5,11 +5,16 @@ import zipfile
 from logging import error as log_error
 from pathlib import Path
 
+from dotenv import load_dotenv
 import requests
 
-_BASE_URL = 'https://download.nextcloud.com/server/apps/schackles/'
+load_dotenv()
+
+_BASE_URL = os.getenv('DOWNLOAD_URI', 'https://download.nextcloud.com/server/apps/schackles') \
+	.removesuffix('/') + '/'
 _DEFAULT_EXT = '.tar.gz'
 _KNOWN_EXTENSIONS = [
+	'gguf',
 	'h5',
 	'pt',
 	'bin',
@@ -33,24 +38,52 @@ _model_names: dict[str, str | None] = {
 }
 
 
-def download_model(model_name: str) -> bool:
+def download_all_models(config: dict) -> str | None:
+	"""
+	Downloads all models specified in the config.yaml file
+
+	Args
+	----
+	config: dict
+		config.yaml loaded as a dict
+
+	Returns
+	-------
+	str | None
+		The name of the model that failed to download, if any
+	"""
+	for model_type in ("embedding", "llm"):
+		if (model_config := config.get(model_type)) is not None:
+			model_config = model_config[1]
+			model_name = (
+				model_config.get("model_name")
+				or model_config.get("model_path")
+				or model_config.get("model_id")
+			)
+			if not _download_model(model_name):
+				return model_name
+
+	return None
+
+
+def _download_model(model_name_or_path: str) -> bool:
+	# TODO: hash check
+	if os.path.exists(model_name_or_path):
+		return True
+
+	model_name = Path(model_name_or_path).as_posix().replace('model_files/', '')
+
 	if model_name not in _model_names.keys():
 		log_error(f'Error: Unknown model name {model_name}')
 		return False
 
-	# TODO: hash check
-	if os.path.exists(Path('./model_files', model_name).as_posix()):
-		return True
-
-	model_name = Path(model_name).as_posix().replace('model_files/', '')
-
 	if model_name.split('.')[-1] not in _KNOWN_EXTENSIONS \
 		and ''.join(model_name.split('.')[-2:]) not in _KNOWN_EXTENSIONS:
-		url = Path(_BASE_URL, model_name, _DEFAULT_EXT).as_posix()
+		url = _BASE_URL + model_name + _DEFAULT_EXT
+		filepath = Path('./model_files', model_name).as_posix() + _DEFAULT_EXT
 	else:
-		url = Path(_BASE_URL, model_name).as_posix()
-
-	filepath = Path('./model_files', model_name).as_posix()
+		filepath = Path('./model_files', model_name).as_posix()
+		url = _BASE_URL + model_name
 
 	try:
 		f = open(filepath, 'wb')
