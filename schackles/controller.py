@@ -99,9 +99,10 @@ def _():
 
 @app.post("/init")
 def _():
-	config = app.extra.get("CONFIG") or {}
-	if (model_name := download_all_models(config)) is not None:
-		return JSONResponse(f"Error: Model download failed for {model_name}", 500)
+	if getenv("DISABLE_CUSTOM_DOWNLOAD_URI", "0") != "1":
+		config = app.extra.get("CONFIG") or {}
+		if (model_name := download_all_models(config)) is not None:
+			return JSONResponse(f"Error: Model download failed for {model_name}", 500)
 
 	ocs_call(
 		method="PUT",
