@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import uvicorn
 
 from .controller import app
+from .download import download_all_models
 from .models import models
 from .utils import to_int
 from .vectordb import vector_dbs
@@ -22,6 +23,10 @@ def create_server(config: dict[str, tuple[str, dict]]):
 	config: dict
 		A dictionary containing the services to be deployed.
 	"""
+	if getenv("DISABLE_CUSTOM_DOWNLOAD_URI", "0") != "1":
+		if (model_name := download_all_models(config)) is not None:
+			raise Exception(f"Error: Model download failed for {model_name}")
+
 	app.extra["CONFIG"] = config
 
 	if config.get("embedding"):

@@ -8,7 +8,6 @@ from fastapi.responses import JSONResponse as FastAPIJSONResponse
 from langchain.llms.base import LLM
 
 from .chain import embed_sources, process_query
-from .download import download_all_models
 from .ocs_utils import AppAPIAuthMiddleware, get_nc_url, ocs_call
 from .utils import value_of
 from .vectordb import BaseVectorDB
@@ -99,11 +98,6 @@ def _():
 
 @app.post("/init")
 def _():
-	if getenv("DISABLE_CUSTOM_DOWNLOAD_URI", "0") != "1":
-		config = app.extra.get("CONFIG") or {}
-		if (model_name := download_all_models(config)) is not None:
-			return JSONResponse(f"Error: Model download failed for {model_name}", 500)
-
 	ocs_call(
 		method="PUT",
 		path=f"/index.php/apps/app_api/apps/status/{getenv('APP_ID')}",
