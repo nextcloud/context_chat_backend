@@ -1,5 +1,5 @@
 from langchain.embeddings import LlamaCppEmbeddings
-from langchain.llms import LlamaCpp
+from langchain.llms.llamacpp import LlamaCpp
 
 
 def get_model_for(model_type: str, model_config: dict):
