@@ -11,7 +11,7 @@ vectordb:
 
 embedding:
   instructor:
-    model_name: ./model_files/hkunlp_instructor-base
+    model_name: hkunlp/instructor-base
     model_kwargs:
       device: cpu
 

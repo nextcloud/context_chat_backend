@@ -30,7 +30,7 @@ _KNOWN_EXTENSIONS = [
 ]
 
 _model_names: dict[str, str | None] = {
-	'hkunlp_instructor-base': 'hkunlp_instructor-base.tar.gz',
+	'hkunlp/instructor-base': 'hkunlp_instructor-base.tar.gz',
 	'dolphin-2.2.1-mistral-7b.Q5_K_M.gguf': 'dolphin-2.2.1-mistral-7b.Q5_K_M.gguf',
 	'sentence-transformers/all-mpnet-base-v2': 'sentence-transformers_all-mpnet-base-v2.tar.gz',
 	'all-MiniLM-L6-v2': 'sentence-transformers_all-MiniLM-L6-v2.tar.gz',
