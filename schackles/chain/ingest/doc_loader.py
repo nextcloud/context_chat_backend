@@ -36,7 +36,7 @@ def _load_pdf(file: BinaryIO) -> str:
 
 
 def _load_csv(file: BinaryIO) -> str:
-	return read_csv(file).to_string(header=False)
+	return read_csv(file).to_string(header=False, na_rep='')
 
 
 def _load_epub(file: BinaryIO) -> str:
@@ -66,7 +66,7 @@ def _load_xml(file: BinaryIO) -> str:
 
 
 def _load_xlsx(file: BinaryIO) -> str:
-	return read_excel(file).to_string(header=False)
+	return read_excel(file).to_string(header=False, na_rep='')
 
 
 def _load_odt(file: BinaryIO) -> str:
