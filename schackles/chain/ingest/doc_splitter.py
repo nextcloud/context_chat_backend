@@ -22,8 +22,8 @@ def get_splitter_for(mimetype: str = 'text/plain') -> TextSplitter:
 		'text/csv': RecursiveCharacterTextSplitter(separators=['\n', ' ', ''], **kwargs),
 		# remove end tags for less verbosity, and remove all whitespace outside of tags
 		'application/xml': RecursiveCharacterTextSplitter(separators=['\n', ' ', ''], **kwargs),
-		'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': RecursiveCharacterTextSplitter(separators=['\n{2,}', '\n', ' ', ''], **kwargs),  # noqa: E501
-		'application/vnd.ms-excel.sheet.macroEnabled.12': RecursiveCharacterTextSplitter(separators=['\n{2,}', '\n', ' ', ''], **kwargs),  # noqa: E501
+		'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': RecursiveCharacterTextSplitter(separators=['\n\n', '\n', ' ', ''], **kwargs),  # noqa: E501
+		'application/vnd.ms-excel.sheet.macroEnabled.12': RecursiveCharacterTextSplitter(separators=['\n\n', '\n', ' ', ''], **kwargs),  # noqa: E501
 	}
 
 	if mimetype in mt_map.keys():
@@ -31,7 +31,7 @@ def get_splitter_for(mimetype: str = 'text/plain') -> TextSplitter:
 
 	# all other mimetypes
 	return RecursiveCharacterTextSplitter(
-		separators=['\n{2,}', '\n', r'\.', r'\?', '!', ';', r'\|+', ' ', ''],
+		separators=['\n\n', '\n', r'\.', r'\?', '!', ';', r'\|+', ' ', ''],
 		**kwargs
 	)
 
