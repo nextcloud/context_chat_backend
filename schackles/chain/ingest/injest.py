@@ -1,45 +1,18 @@
 from logging import error as log_error
+import re
 
 from fastapi.datastructures import UploadFile
 from langchain.schema import Document
-from langchain.text_splitter import (
-	MarkdownTextSplitter,
-	RecursiveCharacterTextSplitter,
-	TextSplitter
-)
 
-from ..utils import to_int
-from ..vectordb import BaseVectorDB
-
-
-_ALLOWED_MIME_TYPES = [
-	'text/plain',
-	'text/markdown',
-	'application/json',
-]
+from .doc_loader import decode_source
+from .doc_splitter import get_splitter_for
+from .mimetype_list import SUPPORTED_MIMETYPES
+from ...utils import to_int
+from ...vectordb import BaseVectorDB
 
 
 def _allowed_file(file: UploadFile) -> bool:
-	return file.headers.get('type', default='') in _ALLOWED_MIME_TYPES
-
-
-def _get_splitter_for(mimetype: str = "text/plain") -> TextSplitter:
-	kwargs = {
-		"chunk_size": 3000,
-		"chunk_overlap": 200,
-		"add_start_index": True,
-		"strip_whitespace": True,
-		"is_separator_regex": True,
-	}
-
-	if mimetype == "text/plain" or not mimetype:
-		return RecursiveCharacterTextSplitter(separators=["\n\n", "\n", ".", " ", ""], **kwargs)
-
-	if mimetype == "text/markdown":
-		return MarkdownTextSplitter(**kwargs)
-
-	if mimetype == "application/json":
-		return RecursiveCharacterTextSplitter(separators=["{", "}", "[", "]", ",", ""], **kwargs)
+	return file.headers.get('type', default='') in SUPPORTED_MIMETYPES
 
 
 def _filter_documents(
@@ -91,7 +64,11 @@ def _sources_to_documents(sources: list[UploadFile]) -> list[Document]:
 			log_error("userId not found in headers for source: " + source.filename)
 			continue
 
-		content = source.file.read().decode("utf-8")
+		# transform the source to have text data
+		content = decode_source(source)
+		if content is None or content == "":
+			continue
+
 		metadata = {
 			"source": source.filename,
 			"type": source.headers.get("type"),
@@ -140,9 +117,13 @@ def _process_sources(vectordb: BaseVectorDB, sources: list[UploadFile]) -> bool:
 		type_bucketed_docs = _bucket_by_type(filtered_docs)
 
 		for _type, _docs in type_bucketed_docs.items():
-			text_splitter = _get_splitter_for(_type)
+			text_splitter = get_splitter_for(_type)
 			split_docs = text_splitter.split_documents(_docs)
 			split_documents.extend(split_docs)
+
+		# replace more than two newlines with two newlines
+		for doc in split_documents:
+			doc.page_content = re.sub(r'((\r)?\n){3,}', '\n\n', doc.page_content)
 
 		# filter out empty documents
 		split_documents = list(filter(lambda doc: doc.page_content != "", split_documents))
