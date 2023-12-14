@@ -175,7 +175,7 @@ def _(userId: str, query: str, use_context: bool = True, ctx_limit: int = 5):
 
 	template = app.extra.get("LLM_TEMPLATE")
 
-	output = process_query(
+	output, sources = process_query(
 		user_id=userId,
 		vectordb=db,
 		llm=llm,
@@ -188,4 +188,7 @@ def _(userId: str, query: str, use_context: bool = True, ctx_limit: int = 5):
 	if output is None:
 		return JSONResponse("Error: check if the model specified supports the query type", 500)
 
-	return JSONResponse(output)
+	return JSONResponse({
+		"output": output,
+		"sources": sources,
+	})
