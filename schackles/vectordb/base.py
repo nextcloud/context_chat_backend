@@ -19,7 +19,7 @@ class BaseVectorDB(ABC):
 			user_id: str,
 			embedding: Optional[Embeddings] = None  # Use this embedding if not None or use global embedding
 		) -> Optional[VectorStore]:
-		"""
+		'''
 		Creates and returns the langchain vectordb client object for the given user_id.
 
 		Args
@@ -33,11 +33,11 @@ class BaseVectorDB(ABC):
 		-------
 		Optional[VectorStore]
 			Client object for the VectorDB or None if error occurs.
-		"""
+		'''
 
 	@abstractmethod
 	def setup_schema(self, user_id: str) -> None:
-		"""
+		'''
 		Sets up the schema for the VectorDB
 
 		Args
@@ -48,11 +48,11 @@ class BaseVectorDB(ABC):
 		Returns
 		-------
 		None
-		"""
+		'''
 
 	@abstractmethod
 	def get_objects_from_sources(self, user_id: str, source_names: List[str]) -> dict:
-		"""
+		'''
 		Get all objects with the given source names.
 		(Only gets the following fields: [id, source, modified])
 
@@ -76,10 +76,10 @@ class BaseVectorDB(ABC):
 					'modified': str,
 				}
 			}
-		"""
+		'''
 
 	def delete_by_ids(self, user_id: str, ids: list[str]) -> Optional[bool]:
-		"""
+		'''
 		Deletes all documents with the given ids for the given user.
 
 		Args
@@ -94,7 +94,7 @@ class BaseVectorDB(ABC):
 		Optional[bool]
 			Optional[bool]: True if deletion is successful,
 			False otherwise, None if not implemented.
-		"""
+		'''
 		if len(ids) == 0:
 			return True
 

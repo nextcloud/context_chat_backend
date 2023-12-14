@@ -18,41 +18,41 @@ if value_of(getenv('WEAVIATE_URL')) is None:
 
 
 class_schema = {
-	"properties": [
+	'properties': [
 		{
-			"dataType": ["text"],
-			"description": "The actual text",
-			"name": "text",
+			'dataType': ['text'],
+			'description': 'The actual text',
+			'name': 'text',
 		},
 		{
-			"dataType": ["text"],
-			"description": "The type of source/mimetype of file",
-			"name": "type",
+			'dataType': ['text'],
+			'description': 'The type of source/mimetype of file',
+			'name': 'type',
 		},
 		{
-			"dataType": ["text"],
-			"description": "The source of the text (for files: `file: fileId`)",
-			"name": "source",
+			'dataType': ['text'],
+			'description': 'The source of the text (for files: `file: fileId`)',
+			'name': 'source',
 		},
 		{
-			"dataType": ["int"],
-			"description": "Start index of chunk",
-			"name": "start_index",
+			'dataType': ['int'],
+			'description': 'Start index of chunk',
+			'name': 'start_index',
 		},
 		{
 			# https://weaviate.io/developers/weaviate/config-refs/datatypes#datatype-date
-			"dataType": ["text"],
-			"description": "Last modified time of the file",
-			"name": "modified",
+			'dataType': ['text'],
+			'description': 'Last modified time of the file',
+			'name': 'modified',
 		},
 	],
 	# TODO: optimisation for large number of objects
-	"vectorIndexType": "hnsw",
-	"vectorIndexConfig": {
-		"skip": False,
-		# "ef": 99,
-		# "efConstruction": 127,  # minimise this for faster indexing
-		# "maxConnections": 63,
+	'vectorIndexType': 'hnsw',
+	'vectorIndexConfig': {
+		'skip': False,
+		# 'ef': 99,
+		# 'efConstruction': 127,  # minimise this for faster indexing
+		# 'maxConnections': 63,
 	}
 }
 
@@ -87,7 +87,7 @@ class VectorDB(BaseVectorDB):
 			return
 
 		self.client.schema.create_class({
-			"class": COLLECTION_NAME(user_id),
+			'class': COLLECTION_NAME(user_id),
 			**class_schema,
 		})
 
@@ -125,9 +125,9 @@ class VectorDB(BaseVectorDB):
 			self.setup_schema(user_id)
 
 		file_filter = {
-			"path": ["source"],
-			"operator": "ContainsAny",
-			"valueTextList": source_names,
+			'path': ['source'],
+			'operator': 'ContainsAny',
+			'valueTextList': source_names,
 		}
 
 		results = self.client.query \

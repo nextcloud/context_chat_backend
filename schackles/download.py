@@ -39,7 +39,7 @@ _model_names: dict[str, str | None] = {
 
 
 def download_all_models(config: dict) -> str | None:
-	"""
+	'''
 	Downloads all models specified in the config.yaml file
 
 	Args
@@ -51,14 +51,14 @@ def download_all_models(config: dict) -> str | None:
 	-------
 	str | None
 		The name of the model that failed to download, if any
-	"""
-	for model_type in ("embedding", "llm"):
+	'''
+	for model_type in ('embedding', 'llm'):
 		if (model_config := config.get(model_type)) is not None:
 			model_config = model_config[1]
 			model_name = (
-				model_config.get("model_name")
-				or model_config.get("model_path")
-				or model_config.get("model_id")
+				model_config.get('model_name')
+				or model_config.get('model_path')
+				or model_config.get('model_id')
 			)
 			if not _download_model(model_name):
 				return model_name
@@ -91,7 +91,7 @@ def _download_model(model_name_or_path: str) -> bool:
 		r.raw.decode_content = True  # content decompression
 
 		if r.status_code >= 400:
-			log_error(f'Error: Network error while downloading "{url}": {r}')
+			log_error(f"Error: Network error while downloading '{url}': {r}")
 			return False
 
 		shutil.copyfileobj(r.raw, f, length=16 * 1024 * 1024)  # 16MB chunks

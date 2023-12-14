@@ -20,24 +20,24 @@ def _filter_documents(
 	vectordb: BaseVectorDB,
 	documents: list[Document]
 ) -> list[Document]:
-	"""
+	'''
 	Returns a filtered list of documents that are not already in the vectordb
 	or have been modified since they were last added.
 	It also deletes the old documents to prevent duplicates.
-	"""
+	'''
 	to_delete = {}
 
 	input_sources = {}
 	for meta in documents:
-		if meta.metadata.get("source") is None:
+		if meta.metadata.get('source') is None:
 			continue
-		input_sources[meta.metadata.get("source")] = meta.metadata.get("modified")
+		input_sources[meta.metadata.get('source')] = meta.metadata.get('modified')
 
 	existing_objects = vectordb.get_objects_from_sources(user_id, list(input_sources.keys()))
 	for source, existing_meta in existing_objects.items():
 		# recently modified files are re-embedded
-		if to_int(input_sources.get(source)) > to_int(existing_meta.get("modified")):
-			to_delete[source] = existing_meta.get("id")
+		if to_int(input_sources.get(source)) > to_int(existing_meta.get('modified')):
+			to_delete[source] = existing_meta.get('id')
 
 	# delete old sources
 	vectordb.delete_by_ids(user_id, to_delete.values())
@@ -49,7 +49,7 @@ def _filter_documents(
 
 	filtered_documents = [
 		doc for doc in documents
-		if doc.metadata.get("source") in new_sources
+		if doc.metadata.get('source') in new_sources
 	]
 
 	return filtered_documents
@@ -59,20 +59,20 @@ def _sources_to_documents(sources: list[UploadFile]) -> list[Document]:
 	documents = {}
 
 	for source in sources:
-		user_id = source.headers.get("userId")
+		user_id = source.headers.get('userId')
 		if user_id is None:
-			log_error("userId not found in headers for source: " + source.filename)
+			log_error('userId not found in headers for source: ' + source.filename)
 			continue
 
 		# transform the source to have text data
 		content = decode_source(source)
-		if content is None or content == "":
+		if content is None or content == '':
 			continue
 
 		metadata = {
-			"source": source.filename,
-			"type": source.headers.get("type"),
-			"modified": source.headers.get("modified"),
+			'source': source.filename,
+			'type': source.headers.get('type'),
+			'modified': source.headers.get('modified'),
 		}
 
 		document = Document(page_content=content, metadata=metadata)
@@ -89,7 +89,7 @@ def _bucket_by_type(documents: list[Document]) -> dict[str, list[Document]]:
 	bucketed_documents = {}
 
 	for doc in documents:
-		doc_type = doc.metadata.get("type")
+		doc_type = doc.metadata.get('type')
 
 		if bucketed_documents.get(doc_type) is not None:
 			bucketed_documents[doc_type].append(doc)
@@ -126,7 +126,7 @@ def _process_sources(vectordb: BaseVectorDB, sources: list[UploadFile]) -> bool:
 			doc.page_content = re.sub(r'((\r)?\n){3,}', '\n\n', doc.page_content)
 
 		# filter out empty documents
-		split_documents = list(filter(lambda doc: doc.page_content != "", split_documents))
+		split_documents = list(filter(lambda doc: doc.page_content != '', split_documents))
 		if len(split_documents) == 0:
 			continue
 
@@ -150,7 +150,7 @@ def embed_sources(
 	# either not a file or a file that is allowed
 	sources_filtered = [
 		source for source in sources
-		if not source.filename.startswith("file: ")
+		if not source.filename.startswith('file: ')
 		or _allowed_file(source)
 	]
 

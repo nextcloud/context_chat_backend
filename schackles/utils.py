@@ -16,7 +16,7 @@ def value_of(value: str | list | None, default: str | None = None) -> str | None
 
 # class name/index name is capitalized (user1 => User1) maybe because it is a class name,
 # so the solution is to use Vector_user1 instead of user1
-COLLECTION_NAME = lambda user_id: f"Vector_{user_id}"
+COLLECTION_NAME = lambda user_id: f'Vector_{user_id}'
 
 
 def to_int(value: Any | None, default: int = 0) -> int:

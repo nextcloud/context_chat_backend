@@ -116,7 +116,7 @@ _loader_map = {
 	'application/xml': _load_xml,
 	'message/rfc822': _load_email,
 	'application/vnd.ms-outlook': _load_email,
-	"text/org": _load_org,
+	'text/org': _load_org,
 }
 
 
