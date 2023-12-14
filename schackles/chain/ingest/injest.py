@@ -121,9 +121,11 @@ def _process_sources(vectordb: BaseVectorDB, sources: list[UploadFile]) -> bool:
 			split_docs = text_splitter.split_documents(_docs)
 			split_documents.extend(split_docs)
 
-		# replace more than two newlines with two newlines
+		# replace more than two newlines with two newlines (also blank spaces, more than 4)
 		for doc in split_documents:
 			doc.page_content = re.sub(r'((\r)?\n){3,}', '\n\n', doc.page_content)
+			# NOTE: do not use this with all docs when programming files are added
+			doc.page_content = re.sub(r'(\s){5,}', r'\g<1>', doc.page_content)
 
 		# filter out empty documents
 		split_documents = list(filter(lambda doc: doc.page_content != '', split_documents))
