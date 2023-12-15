@@ -164,7 +164,7 @@ def _(sources: list[UploadFile]):
 
 
 @app.get('/query')
-def _(userId: str, query: str, use_context: bool = True, ctx_limit: int = 5):
+def _(userId: str, query: str, useContext: bool = True, ctxLimit: int = 5):
 	llm: LLM = app.extra.get('LLM_MODEL')
 	if llm is None:
 		return JSONResponse('Error: LLM not initialised', 500)
@@ -180,8 +180,8 @@ def _(userId: str, query: str, use_context: bool = True, ctx_limit: int = 5):
 		vectordb=db,
 		llm=llm,
 		query=query,
-		use_context=use_context,
-		ctx_limit=ctx_limit,
+		use_context=useContext,
+		ctx_limit=ctxLimit,
 		**({'template': template} if template else {}),
 	)
 
