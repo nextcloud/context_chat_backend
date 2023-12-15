@@ -3,7 +3,7 @@
 from pprint import pprint
 
 from ruamel.yaml import YAML
-from schackles import create_server, models, vector_dbs
+from context_chat_backend import create_server, models, vector_dbs
 
 
 def _first_in_list(

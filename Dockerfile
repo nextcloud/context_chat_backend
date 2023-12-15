@@ -10,7 +10,7 @@ RUN apt update && apt install -y --no-install-recommends pandoc
 
 WORKDIR /app
 
-COPY schackles schackles
+COPY context_chat_backend context_chat_backend
 COPY main.py .
 COPY config.yaml .
 COPY reqs.txt .

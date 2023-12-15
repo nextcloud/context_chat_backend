@@ -1,31 +1,31 @@
 <?xml version="1.0"?>
 <info>
-	<id>schackles</id>
-	<name>Chat With Your Documents Backend</name>
-	<summary>Python backend for Chat With Your Documents</summary>
+	<id>context_chat_backend</id>
+	<name>Context Chat Backend</name>
+	<summary>Python backend for Context Chat</summary>
 	<description>
-	<![CDATA[This is a Python backend for Chat With Your Documents. It exposes a REST API for the Nextcloud App to use.
+	<![CDATA[This is a Python backend for Context Chat. It exposes a REST API for the Nextcloud App to use.
 It is useful for people who want to index their documents and ask questions about them.
 
-Refer to [How to install](https://github.com/nextcloud/schackles/blob/master/HOW_TO_INSTALL.md) to try it.
+Refer to [How to install](https://github.com/nextcloud/context_chat_backend/blob/master/readme.markdown) to try it.
 	]]></description>
 	<version>1.0.0</version>
 	<licence>GPLv3</licence>
 	<author mail="kyteinsky@gmail.com" homepage="https://github.com/kyteinsky">Anupam Kumar</author>
-	<namespace>Schackles</namespace>
+	<namespace>Context Chat</namespace>
 	<category>integration</category>
-	<website>https://github.com/nextcloud/schackles</website>
-	<bugs>https://github.com/nextcloud/schackles/issues</bugs>
-	<repository type="git">https://github.com/nextcloud/schackles.git</repository>
+	<website>https://github.com/nextcloud/context_chat_backend</website>
+	<bugs>https://github.com/nextcloud/context_chat_backend/issues</bugs>
+	<repository type="git">https://github.com/nextcloud/context_chat_backend.git</repository>
 	<dependencies>
 		<nextcloud min-version="27" max-version="28"/>
 	</dependencies>
 	<external-app>
-		<!-- <docker-install>
+		<docker-install>
 			<registry>ghcr.io</registry>
-			<image>nextcloud/schackles</image>
+			<image>nextcloud/context_chat_backend</image>
 			<image-tag>1.0.0</image-tag>
-		</docker-install> -->
+		</docker-install>
 		<scopes>
 			<required>
 			</required>

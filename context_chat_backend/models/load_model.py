@@ -11,7 +11,7 @@ def load_model(model_type: str, model_info: tuple[str, dict]) -> Embeddings | LL
 	model_name, model_config = model_info
 	model_config.pop('template', '')
 
-	module = import_module(f'.{model_name}', 'schackles.models')
+	module = import_module(f'.{model_name}', 'context_chat_backend.models')
 
 	if module is None or not hasattr(module, 'get_model_for'):
 		raise AssertionError(f'Error: could not load {model_name} model')

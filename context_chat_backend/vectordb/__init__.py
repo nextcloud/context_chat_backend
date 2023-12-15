@@ -24,7 +24,7 @@ def get_vector_db(db_name: str) -> BaseVectorDB:
 	if db_name not in vector_dbs:
 		raise AssertionError(f'Error: vector_db should be one of {vector_dbs}')
 
-	module = import_module(f'.{db_name}', 'schackles.vectordb')
+	module = import_module(f'.{db_name}', 'context_chat_backend.vectordb')
 
 	if module is None or not hasattr(module, 'VectorDB'):
 		raise AssertionError(f'Error: could not load {db_name}')

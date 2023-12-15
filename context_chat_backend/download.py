@@ -10,7 +10,7 @@ import requests
 
 load_dotenv()
 
-_BASE_URL = os.getenv('DOWNLOAD_URI', 'https://download.nextcloud.com/server/apps/schackles') \
+_BASE_URL = os.getenv('DOWNLOAD_URI', 'https://download.nextcloud.com/server/apps/context_chat_backend') \
 	.removesuffix('/') + '/'
 _DEFAULT_EXT = '.tar.gz'
 _KNOWN_EXTENSIONS = [
