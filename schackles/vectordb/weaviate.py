@@ -31,6 +31,11 @@ class_schema = {
 		},
 		{
 			'dataType': ['text'],
+			'description': 'The name or subject of the source',
+			'name': 'title',
+		},
+		{
+			'dataType': ['text'],
 			'description': 'The source of the text (for files: `file: fileId`)',
 			'name': 'source',
 		},
@@ -111,7 +116,7 @@ class VectorDB(BaseVectorDB):
 			embedding=em,
 			by_text=False,
 		)
-		weaviate_obj._query_attrs = ['text', 'start_index', 'source', 'type', 'modified']
+		weaviate_obj._query_attrs = ['text', 'start_index', 'source', 'title', 'type', 'modified']
 
 		return weaviate_obj
 

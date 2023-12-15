@@ -71,6 +71,7 @@ def _sources_to_documents(sources: list[UploadFile]) -> list[Document]:
 
 		metadata = {
 			'source': source.filename,
+			'title': source.headers.get('title'),
 			'type': source.headers.get('type'),
 			'modified': source.headers.get('modified'),
 		}
