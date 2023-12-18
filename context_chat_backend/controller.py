@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse as FastAPIJSONResponse
 from langchain.llms.base import LLM
 
 from .chain import embed_sources, process_query
-from .ocs_utils import AppAPIAuthMiddleware, get_nc_url, ocs_call
+from .ocs_utils import AppAPIAuthMiddleware, get_nc_url
 from .utils import value_of
 from .vectordb import BaseVectorDB
 
@@ -94,16 +94,6 @@ def _(enabled: bool):
 def _():
 	print('heartbeat_handler: result=ok')
 	return JSONResponse(content={'status': 'ok'}, status_code=200)
-
-
-@app.post('/init')
-def _():
-	ocs_call(
-		method='PUT',
-		path=f'/index.php/apps/app_api/apps/status/{getenv("APP_ID")}',
-		json_data={'progress': 100},
-	)
-	return JSONResponse(content={}, status_code=200)
 
 
 @app.post('/deleteSources')
