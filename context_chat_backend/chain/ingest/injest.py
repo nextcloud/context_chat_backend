@@ -104,7 +104,8 @@ def _process_sources(vectordb: BaseVectorDB, sources: list[UploadFile]) -> bool:
 	ddocuments: dict[str, list[Document]] = _sources_to_documents(sources)
 
 	if len(ddocuments.keys()) == 0:
-		return []
+		# document(s) were empty, not an error
+		return True
 
 	success = True
 
@@ -136,7 +137,7 @@ def _process_sources(vectordb: BaseVectorDB, sources: list[UploadFile]) -> bool:
 		user_client = vectordb.get_user_client(user_id)
 		if user_client is None:
 			log_error('Error: Weaviate client not initialised')
-			return {}
+			return False
 
 		doc_ids = user_client.add_documents(split_documents)
 
