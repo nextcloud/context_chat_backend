@@ -40,7 +40,7 @@ def _filter_documents(
 			to_delete[source] = existing_meta.get('id')
 
 	# delete old sources
-	vectordb.delete_by_ids(user_id, to_delete.values())
+	vectordb.delete_by_ids(user_id, list(to_delete.values()))
 
 	# sources not already in the vectordb + the ones that were deleted
 	new_sources = set(input_sources.keys()) \
