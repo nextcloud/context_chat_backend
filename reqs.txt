@@ -19,6 +19,7 @@ chromadb==0.4.17
 click==8.1.7
 coloredlogs==15.0.1
 cryptography==41.0.4
+ctransformers==0.2.27
 dataclasses-json==0.6.3
 defusedxml==0.7.1
 Deprecated==1.2.14
@@ -89,6 +90,7 @@ pip-autoremove==0.10.0
 posthog==3.0.2
 protobuf==4.25.0
 pulsar-client==3.3.0
+py-cpuinfo==9.0.0
 pyasn1==0.5.0
 pyasn1-modules==0.3.0
 pycodestyle==2.11.0

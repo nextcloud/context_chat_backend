@@ -59,6 +59,8 @@ def download_all_models(config: dict) -> str | None:
 				model_config.get('model_name')
 				or model_config.get('model_path')
 				or model_config.get('model_id')
+				or model_config.get('model_file')
+				or model_config.get('model')
 			)
 			if not _download_model(model_name):
 				return model_name
