@@ -1,19 +1,23 @@
+from logging import error as log_error
+from pathlib import Path
 import os
+import re
 import shutil
 import tarfile
 import zipfile
-from logging import error as log_error
-from pathlib import Path
 
 from dotenv import load_dotenv
 import requests
 
 load_dotenv()
 
-_BASE_URL = os.getenv('DOWNLOAD_URI', 'https://download.nextcloud.com/server/apps/context_chat_backend') \
-	.removesuffix('/') + '/'
+_MODELS_DIR = 'model_files'
+_BASE_URL = os.getenv(
+	'DOWNLOAD_URI',
+	'https://download.nextcloud.com/server/apps/context_chat_backend'
+).removesuffix('/') + '/'
 _DEFAULT_EXT = '.tar.gz'
-_KNOWN_EXTENSIONS = [
+_KNOWN_EXTENSIONS = (
 	'gguf',
 	'h5',
 	'pt',
@@ -22,19 +26,22 @@ _KNOWN_EXTENSIONS = [
 	'txt',
 	'pkl',
 	'pickle',
-	'safetensors'
+	'safetensors',
 	'tar.gz',
 	'tar.bz2',
 	'tar.xz',
 	'zip',
-]
+)
+_KNOWN_ARCHIVES = (
+	'.tar.gz',
+	'.tar.bz2',
+	'.tar.xz',
+	'.zip',
+)
 
 _model_names: dict[str, str | None] = {
-	'hkunlp/instructor-base': 'hkunlp_instructor-base.tar.gz',
-	'dolphin-2.2.1-mistral-7b.Q5_K_M.gguf': 'dolphin-2.2.1-mistral-7b.Q5_K_M.gguf',
-	'sentence-transformers/all-mpnet-base-v2': 'sentence-transformers_all-mpnet-base-v2.tar.gz',
-	'all-MiniLM-L6-v2': 'sentence-transformers_all-MiniLM-L6-v2.tar.gz',
-	'gpt2': 'models--gpt2.tar.gz',
+	'hkunlp/instructor-base': ('hkunlp_instructor-base', '.tar.gz'),
+	'dolphin-2.2.1-mistral-7b.Q5_K_M.gguf': ('dolphin-2.2.1-mistral-7b.Q5_K_M.gguf', ''),
 }
 
 
@@ -69,23 +76,30 @@ def download_all_models(config: dict) -> str | None:
 
 
 def _download_model(model_name_or_path: str) -> bool:
+	if not model_name_or_path:
+		log_error('Error: Model name or path not specified')
+		return False
+
 	# TODO: hash check
 	if os.path.exists(model_name_or_path):
 		return True
 
-	model_name = Path(model_name_or_path).as_posix().replace('model_files/', '')
+	if (extracted_name := _model_names.get(model_name_or_path)) is not None \
+		and os.path.exists(Path(_MODELS_DIR, extracted_name[0])):
+		return True
 
-	if model_name not in _model_names.keys():
-		log_error(f'Error: Unknown model name {model_name}')
-		return False
+	model_name = re.sub(r'^.*' + _MODELS_DIR + r'/', '', model_name_or_path)
 
-	if model_name.split('.')[-1] not in _KNOWN_EXTENSIONS \
-		and ''.join(model_name.split('.')[-2:]) not in _KNOWN_EXTENSIONS:
-		url = _BASE_URL + model_name + _DEFAULT_EXT
-		filepath = Path('./model_files', model_name).as_posix() + _DEFAULT_EXT
-	else:
-		filepath = Path('./model_files', model_name).as_posix()
+	if model_name in _model_names.keys():
+		model_file = _model_names[model_name][0] + _model_names[model_name][1]
+		url = _BASE_URL + model_file
+		filepath = Path(_MODELS_DIR, model_file).as_posix()
+	elif model_name.endswith(_KNOWN_EXTENSIONS):
 		url = _BASE_URL + model_name
+		filepath = Path(_MODELS_DIR, model_name).as_posix()
+	else:
+		url = _BASE_URL + model_name + _DEFAULT_EXT
+		filepath = Path(_MODELS_DIR, model_name + _DEFAULT_EXT).as_posix()
 
 	try:
 		f = open(filepath, 'wb')
@@ -101,7 +115,7 @@ def _download_model(model_name_or_path: str) -> bool:
 
 		return _extract_n_save(model_name, filepath)
 	except OSError as e:
-		print(e)
+		log_error(e)
 		return False
 
 
@@ -111,12 +125,7 @@ def _extract_n_save(model_name: str, filepath: str) -> bool:
 		return False
 
 	# extract the model if it is a compressed file
-	if (
-		filepath.endswith('.tar.gz')
-		or filepath.endswith('.tar.bz2')
-		or filepath.endswith('.tar.xz')
-		or filepath.endswith('.zip')
-	):
+	if (filepath.endswith(_KNOWN_ARCHIVES)):
 		try:
 			if filepath.endswith('.tar.gz'):
 				tar = tarfile.open(filepath, 'r:gz')
@@ -127,7 +136,7 @@ def _extract_n_save(model_name: str, filepath: str) -> bool:
 			else:
 				tar = zipfile.ZipFile(filepath, 'r')
 
-			tar.extractall('./model_files')
+			tar.extractall(_MODELS_DIR)
 			tar.close()
 			os.remove(filepath)
 		except OSError as e:
@@ -136,10 +145,10 @@ def _extract_n_save(model_name: str, filepath: str) -> bool:
 
 		return True
 
-	model_name = Path(model_name).as_posix().replace('model_files/', '')
+	model_name = re.sub(r'^.*' + _MODELS_DIR + r'/', '', model_name)
 	try:
-		os.rename(filepath, Path('./model_files', model_name).as_posix())
+		os.rename(filepath, Path(_MODELS_DIR, model_name).as_posix())
 		return True
 	except OSError as e:
-		log_error(f'Error: File move into `model_files` failed: {e}')
+		log_error(f'Error: File move into `{_MODELS_DIR}` failed: {e}')
 		return False
