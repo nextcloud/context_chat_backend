@@ -14,7 +14,7 @@ Install the Context Chat App from the [App Store](https://apps.nextcloud.com/app
 Install the Assistant App from the [App Store](https://apps.nextcloud.com/apps/assistant)
 ]]></description>
 	<version>1.0.0</version>
-	<licence>GPLv3</licence>
+	<licence>agpl</licence>
 	<author mail="kyteinsky@gmail.com" homepage="https://github.com/kyteinsky">Anupam Kumar</author>
 	<namespace>Context Chat</namespace>
 	<category>integration</category>
