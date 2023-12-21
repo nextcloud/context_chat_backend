@@ -13,7 +13,7 @@ Install the AppAPI App from the [App Store](https://apps.nextcloud.com/apps/app_
 Install the Context Chat App from the [App Store](https://apps.nextcloud.com/apps/context_chat)
 Install the Assistant App from the [App Store](https://apps.nextcloud.com/apps/assistant)
 ]]></description>
-	<version>0.1.0</version>
+	<version>1.0.0</version>
 	<licence>GPLv3</licence>
 	<author mail="kyteinsky@gmail.com" homepage="https://github.com/kyteinsky">Anupam Kumar</author>
 	<namespace>Context Chat</namespace>
@@ -28,7 +28,7 @@ Install the Assistant App from the [App Store](https://apps.nextcloud.com/apps/a
 		<docker-install>
 			<registry>ghcr.io</registry>
 			<image>nextcloud/context_chat_backend</image>
-			<image-tag>0.1.0</image-tag>
+			<image-tag>1.0.0</image-tag>
 		</docker-install>
 		<scopes>
 			<required>

@@ -18,10 +18,9 @@ Install the Assistant App from the [App Store](https://apps.nextcloud.com/apps/a
 3. `pip install --no-deps -r reqs.txt`
 4. Install pandoc from your desired package manager (`# apt install pandoc` for Debian-based systems)
 5. Copy example.env to .env and fill in the variables
-6. For using the Llama model as the llm, download a gguf llm model from [Hugging Face like the Dolphin Mistral Model](https://huggingface.co/TheBloke/dolphin-2.2.1-mistral-7B-GGUF/resolve/main/dolphin-2.2.1-mistral-7b.Q5_K_M.gguf) and place it in `model_files/` (huggingface provider models are auto downloaded)
-7. Configure `config.yaml` for the model name, model type and its parameters (which also includes model file's path and model id as per requirements, see example config)
-8. `./main.py`
-9. [Follow the below steps to register the app in the app ecosystem](#register-as-an-ex-app)
+6. Configure `config.yaml` for the model name, model type and its parameters (which also includes model file's path and model id as per requirements, see example config)
+7. `./main.py`
+8. [Follow the below steps to register the app in the app ecosystem](#register-as-an-ex-app)
 
 ## Local Setup (with docker)
 
