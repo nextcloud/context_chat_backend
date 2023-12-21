@@ -26,7 +26,10 @@ def process_query(
 		return llm.predict(query), []
 
 	context_docs = user_client.similarity_search(query, k=ctx_limit)
-	context_text = '\n\n'.join(map(lambda d: d.page_content, context_docs))
+	context_text = '\n\n'.join(map(
+		lambda d: f'{d.metadata.get("title")}\n{d.page_content}',
+		context_docs,
+	))
 
 	output = llm.predict(template.format(context=context_text, question=query)).strip()
 	unique_sources = list(set(map(lambda d: d.metadata.get('source', ''), context_docs)))
