@@ -18,10 +18,10 @@ help:
 	@echo "  "
 	@echo "  register28 perform registration of running 'Context Chat' into the 'manual_install' deploy daemon."
 
-.PHONY: build-push
-build-push:
-	docker login ghcr.io
-	docker buildx build --push --platform linux/arm64/v8,linux/amd64 --tag ghcr.io/nextcloud/context_chat_backend:0.1.0 --tag ghcr.io/nextcloud/context_chat_backend:latest .
+#.PHONY: build-push
+#build-push:
+#	docker login ghcr.io
+#	docker buildx build --push --platform linux/arm64/v8,linux/amd64 --tag ghcr.io/nextcloud/context_chat_backend:0.1.0 --tag ghcr.io/nextcloud/context_chat_backend:latest .
 
 .PHONY: deploy28
 deploy28:
