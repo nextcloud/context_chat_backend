@@ -25,7 +25,7 @@ Install the Assistant App from the [App Store](https://apps.nextcloud.com/apps/a
 
 ## Local Setup (with docker)
 
-1. `docker build -t context_chat_backend_dev . -f Dockerfile-dev` (this is a good place to edit the example.env file before building the container)
+1. `docker build -t context_chat_backend_dev . -f Dockerfile.dev` (this is a good place to edit the example.env file before building the container)
 2. `docker run --add-host=host.docker.internal:host-gateway -p10034:10034 context_chat_backend_dev`
 3. Volumes can be mounted for `model_files` and `vector_db_files` if you wish with `-v $(pwd)/model_files:/app/model_files` and similar for vector_db_files
 3. If your Nextcloud is running inside a docker container, ensure you have mounted the docker socket inside your container and has the correct permissions for the web server user to have access to it or add the web server to the docker group:
