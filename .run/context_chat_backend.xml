@@ -4,7 +4,7 @@
     <option name="INTERPRETER_OPTIONS" value="" />
     <option name="PARENT_ENVS" value="true" />
     <envs>
-      <env name="AE_VERSION" value="1.0.0" />
+      <env name="AE_VERSION" value="1.4.4" />
       <env name="APP_ID" value="context_chat_backend" />
       <env name="APP_PERSISTENT_STORAGE" value="$USER_HOME$/context_chat_backend_files" />
       <env name="APP_PORT" value="9001" />
