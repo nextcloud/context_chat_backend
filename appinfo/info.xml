@@ -4,25 +4,26 @@
 	<name>Context Chat Backend</name>
 	<summary>Python backend for Context Chat</summary>
 	<description>
-	<![CDATA[This is a Python backend for Context Chat. It exposes a REST API for the Nextcloud App to use.
-It is useful for people who want to index their documents and ask questions about them.
+	<![CDATA[This is the Python backend for Context Chat.  
+Context Chat is useful for people who want to ask questions from a large language model but using their documents as context.
 
-Note: The Context Chat app, the AppAPI app and a Text Processing OCP API consumer (the Assitant app is recommended for this purpose) from the Nextcloud App Store are required for this to work.
+Three mandatory apps are required for this app to work (can be installed from the Apps page):
+- AppAPI: https://apps.nextcloud.com/apps/app_api
+- Context Chat: https://apps.nextcloud.com/apps/context_chat
+- Assistant: https://apps.nextcloud.com/apps/assistant (The OCS API or the `occ` commands can also be used to interact with this app but it recommended to do that through a Text Processing OCP API consumer like the Assitant app.)
 
-Install the AppAPI App from the [App Store](https://apps.nextcloud.com/apps/app_api)
-Install the Context Chat App from the [App Store](https://apps.nextcloud.com/apps/context_chat)
-Install the Assistant App from the [App Store](https://apps.nextcloud.com/apps/assistant)
+This app then should be installed from the "External Apps" page.
 ]]></description>
-	<version>1.0.0</version>
+	<version>1.0.1</version>
 	<licence>agpl</licence>
 	<author mail="kyteinsky@gmail.com" homepage="https://github.com/kyteinsky">Anupam Kumar</author>
 	<namespace>Context Chat</namespace>
-	<category>integration</category>
+	<category>office</category>
 	<website>https://github.com/nextcloud/context_chat_backend</website>
 	<bugs>https://github.com/nextcloud/context_chat_backend/issues</bugs>
 	<repository type="git">https://github.com/nextcloud/context_chat_backend.git</repository>
 	<dependencies>
-		<nextcloud min-version="28" max-version="28"/>
+		<nextcloud min-version="28" max-version="29"/>
 	</dependencies>
 	<external-app>
 		<docker-install>

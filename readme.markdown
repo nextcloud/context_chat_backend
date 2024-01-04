@@ -1,17 +1,15 @@
 # Context Chat
 
-## Install
+## Simple Install
 
-1. Install two mandatory apps for this app to work as desired in your Nextcloud install: Context Chat app and the AppAPI app
-2. You can use the OCS API or the `occ` commands to interact with this app but it recommended to do that through a Text Processing OCP API consumer like the Assitant app.
+1. Install three mandatory apps for this app to work as desired in your Nextcloud install from the "Apps" page:
+	- AppAPI: https://apps.nextcloud.com/apps/app_api
+	- Context Chat: https://apps.nextcloud.com/apps/context_chat
+	- Assistant: https://apps.nextcloud.com/apps/assistant (The OCS API or the `occ` commands can also be used to interact with this app but it recommended to do that through a Text Processing OCP API consumer like the Assitant app.)
+2. Install this backend app (Context Chat Backend: https://apps.nextcloud.com/apps/context_chat_backend) from the "External Apps" page
+3. Start using Context Chat from the Assistant UI
 
-## Required Apps
-
-Install the AppAPI App from the [App Store](https://apps.nextcloud.com/apps/app_api)
-Install the Context Chat App from the [App Store](https://apps.nextcloud.com/apps/context_chat)
-Install the Assistant App from the [App Store](https://apps.nextcloud.com/apps/assistant)
-
-## Local Setup (without docker)
+## Complex Install (without docker)
 
 1. `python -m venv .venv`
 2. `. .venv/bin/activate`
@@ -22,7 +20,7 @@ Install the Assistant App from the [App Store](https://apps.nextcloud.com/apps/a
 7. `./main.py`
 8. [Follow the below steps to register the app in the app ecosystem](#register-as-an-ex-app)
 
-## Local Setup (with docker)
+## Complex Install (with docker)
 
 1. `docker build -t context_chat_backend_dev . -f Dockerfile.dev` (this is a good place to edit the example.env file before building the container)
 2. `docker run --add-host=host.docker.internal:host-gateway -p10034:10034 context_chat_backend_dev`
