@@ -9,6 +9,11 @@
 2. Install this backend app (Context Chat Backend: https://apps.nextcloud.com/apps/context_chat_backend) from the "External Apps" page
 3. Start using Context Chat from the Assistant UI
 
+> [!NOTE]
+> Ensure docker is installed and the Nextcloud's web server user has access to `/var/run/docker.sock`, the docker socket.  
+> Mount the docker.sock in the Nextcloud container if you happen to use a containerized install of Nextcloud and ensure correct permissions for the web server user to access it.  
+> See 4th point in [Complex Install (with docker)](#complex-install-with-docker) on how to do this
+
 ## Complex Install (without docker)
 
 1. `python -m venv .venv`
@@ -25,7 +30,7 @@
 1. `docker build -t context_chat_backend_dev . -f Dockerfile.dev` (this is a good place to edit the example.env file before building the container)
 2. `docker run --add-host=host.docker.internal:host-gateway -p10034:10034 context_chat_backend_dev`
 3. Volumes can be mounted for `model_files` and `vector_db_files` if you wish with `-v $(pwd)/model_files:/app/model_files` and similar for vector_db_files
-3. If your Nextcloud is running inside a docker container, ensure you have mounted the docker socket inside your container and has the correct permissions for the web server user to have access to it or add the web server to the docker group:
+4. If your Nextcloud is running inside a docker container, ensure you have mounted the docker socket inside your container and has the correct permissions for the web server user to have access to it or add the web server to the docker group:
 	- for docker compose
 	```yaml
 	    volumes:
@@ -35,7 +40,7 @@
 	```
 	-v /var/run/docker.sock:/var/run/docker.sock:ro
 	```
-4. [Follow the below steps to register the app in the app ecosystem](#register-as-an-ex-app)
+5. [Follow the below steps to register the app in the app ecosystem](#register-as-an-ex-app)
 
 ## Register as an Ex-App
 
