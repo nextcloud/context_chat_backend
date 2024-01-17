@@ -13,7 +13,7 @@ import requests
 
 load_dotenv()
 
-_MODELS_DIR = 'model_files'
+_MODELS_DIR = os.getenv('MODEL_DIR', 'persistent_storage/model_files')
 _BASE_URL = os.getenv(
 	'DOWNLOAD_URI',
 	'https://download.nextcloud.com/server/apps/context_chat_backend'
@@ -100,6 +100,9 @@ def _model_exists(model_name_or_path: str) -> bool:
 	if os.path.exists(model_name_or_path):
 		return True
 
+	if os.path.exists(Path(_MODELS_DIR, model_name_or_path)):
+		return True
+
 	if (extracted_name := _model_config.get(model_name_or_path)) is not None \
 		and os.path.exists(Path(_MODELS_DIR, extracted_name[0])):
 		return True
@@ -115,7 +118,10 @@ def _download_model(model_name_or_path: str) -> bool:
 	if _model_exists(model_name_or_path):
 		return True
 
-	model_name = re.sub(r'^.*' + _MODELS_DIR + r'/', '', model_name_or_path)
+	if model_name_or_path.startswith('/'):
+		model_name = os.path.basename(model_name_or_path)
+	else:
+		model_name = re.sub(r'^.*' + _MODELS_DIR + r'/', '', model_name_or_path)
 
 	if model_name in _model_config.keys():
 		model_file = _model_config[model_name][0] + _model_config[model_name][1]
