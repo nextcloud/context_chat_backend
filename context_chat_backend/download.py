@@ -8,6 +8,7 @@ import tarfile
 import zipfile
 
 from dotenv import load_dotenv
+from fastapi import FastAPI
 import requests
 
 load_dotenv()
@@ -46,34 +47,64 @@ _model_config: dict[str, str | None] = {
 }
 
 
-def download_all_models(config: dict) -> str | None:
+def _get_model_name_or_path(config: dict, model_type: str) -> str | None:
+	if (model_config := config.get(model_type)) is not None:
+		model_config = model_config[1]
+		return (
+			model_config.get('model_name')
+			or model_config.get('model_path')
+			or model_config.get('model_id')
+			or model_config.get('model_file')
+			or model_config.get('model')
+		)
+
+
+def _set_app_config(app: FastAPI, config: dict[str, tuple[str, dict]]):
 	'''
-	Downloads all models specified in the config.yaml file
+	Sets the app config as an extra attribute to the app object.
 
 	Args
 	----
+	app: FastAPI
+		The FastAPI app object
 	config: dict
-		config.yaml loaded as a dict
-
-	Returns
-	-------
-	str | None
-		The name of the model that failed to download, if any
+		A dictionary containing the services to be deployed.
 	'''
-	for model_type in ('embedding', 'llm'):
-		if (model_config := config.get(model_type)) is not None:
-			model_config = model_config[1]
-			model_name = (
-				model_config.get('model_name')
-				or model_config.get('model_path')
-				or model_config.get('model_id')
-				or model_config.get('model_file')
-				or model_config.get('model')
-			)
-			if not _download_model(model_name):
-				return model_name
+	if config.get('embedding'):
+		from .models import init_model
 
-	return None
+		model = init_model('embedding', config.get('embedding'))
+		app.extra['EMBEDDING_MODEL'] = model
+
+	if config.get('vectordb'):
+		from .vectordb import get_vector_db
+
+		client_klass = get_vector_db(config.get('vectordb')[0])
+
+		if app.extra.get('EMBEDDING_MODEL') is not None:
+			app.extra['VECTOR_DB'] = client_klass(app.extra['EMBEDDING_MODEL'], **config.get('vectordb')[1])
+		else:
+			app.extra['VECTOR_DB'] = client_klass(**config.get('vectordb')[1])
+
+	if config.get('llm'):
+		from .models import init_model
+
+		llm_name, llm_config = config.get('llm')
+		app.extra['LLM_TEMPLATE'] = llm_config.pop('template', '')
+
+		model = init_model('llm', (llm_name, llm_config))
+		app.extra['LLM_MODEL'] = model
+
+
+def _model_exists(model_name_or_path: str) -> bool:
+	if os.path.exists(model_name_or_path):
+		return True
+
+	if (extracted_name := _model_config.get(model_name_or_path)) is not None \
+		and os.path.exists(Path(_MODELS_DIR, extracted_name[0])):
+		return True
+
+	return False
 
 
 def _download_model(model_name_or_path: str) -> bool:
@@ -81,11 +112,7 @@ def _download_model(model_name_or_path: str) -> bool:
 		log_error('Error: Model name or path not specified')
 		return False
 
-	if os.path.exists(model_name_or_path):
-		return True
-
-	if (extracted_name := _model_config.get(model_name_or_path)) is not None \
-		and os.path.exists(Path(_MODELS_DIR, extracted_name[0])):
+	if _model_exists(model_name_or_path):
 		return True
 
 	model_name = re.sub(r'^.*' + _MODELS_DIR + r'/', '', model_name_or_path)
@@ -164,3 +191,39 @@ def _extract_n_save(model_name: str, filepath: str) -> bool:
 	except OSError as e:
 		log_error(f'Error: File move into `{_MODELS_DIR}` failed: {e}')
 		return False
+
+
+async def download_all_models(app: FastAPI, update_progress: callable):
+	'''
+	Downloads all models specified in the config.yaml file
+	and sets the required keys in the app object.
+
+	Args
+	----
+	app: FastAPI object
+	'''
+	config = app.extra['CONFIG']
+
+	if os.getenv('DISABLE_CUSTOM_DOWNLOAD_URI', '0') == '1':
+		await update_progress(100)
+		_set_app_config(app, config)
+		return
+
+	progress = 0
+	for model_type in ('embedding', 'llm'):
+		model_name = _get_model_name_or_path(config, model_type)
+		if not _download_model(model_name):
+			raise Exception(f'Error: Model download failed for {model_name}')
+		await update_progress(progress := progress + 50)
+
+	_set_app_config(app, config)
+
+
+def model_init(app: FastAPI) -> bool:
+	for model_type in ('embedding', 'llm'):
+		model_name = _get_model_name_or_path(app.extra['CONFIG'], model_type)
+		if not _model_exists(model_name):
+			return False
+
+	_set_app_config(app, app.extra['CONFIG'])
+	return True

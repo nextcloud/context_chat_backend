@@ -73,7 +73,7 @@ def get_nc_url() -> str:
 	return getenv('NEXTCLOUD_URL').removesuffix('/index.php').removesuffix('/')
 
 
-def ocs_call(
+async def ocs_call(
 	method: str,
 	path: str,
 	params: Optional[dict] = {},
@@ -112,12 +112,12 @@ def ocs_call(
 
 	_sign_request(headers, kwargs.get('username', ''))
 
-	return httpx.request(
-		method=method.upper(),
-		url=f'{get_nc_url()}/{path.removeprefix("/")}',
-		params=params,
-		content=data_bytes,
-		headers=headers,
-		**kwargs,
-	)
-
+	async with httpx.AsyncClient() as client:
+		return await client.request(
+			method=method.upper(),
+			url=f'{get_nc_url()}/{path.removeprefix("/")}',
+			params=params,
+			content=data_bytes,
+			headers=headers,
+			**kwargs,
+		)
