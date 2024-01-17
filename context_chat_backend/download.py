@@ -1,3 +1,4 @@
+from hashlib import file_digest
 from logging import error as log_error
 from pathlib import Path
 import os
@@ -39,9 +40,9 @@ _KNOWN_ARCHIVES = (
 	'.zip',
 )
 
-_model_names: dict[str, str | None] = {
-	'hkunlp/instructor-base': ('hkunlp_instructor-base', '.tar.gz'),
-	'dolphin-2.2.1-mistral-7b.Q5_K_M.gguf': ('dolphin-2.2.1-mistral-7b.Q5_K_M.gguf', ''),
+_model_config: dict[str, str | None] = {
+	'hkunlp/instructor-base': ('hkunlp_instructor-base', '.tar.gz', '19751ec112564f2c568b96a794dd4a16f335ee42b2535a890b577fc5137531eb'),  # noqa: E501
+	'dolphin-2.2.1-mistral-7b.Q5_K_M.gguf': ('dolphin-2.2.1-mistral-7b.Q5_K_M.gguf', '', '591a9b807bfa6dba9a5aed1775563e4364d7b7b3b714fc1f9e427fa0e2bf6ace'),  # noqa: E501
 }
 
 
@@ -80,18 +81,17 @@ def _download_model(model_name_or_path: str) -> bool:
 		log_error('Error: Model name or path not specified')
 		return False
 
-	# TODO: hash check
 	if os.path.exists(model_name_or_path):
 		return True
 
-	if (extracted_name := _model_names.get(model_name_or_path)) is not None \
+	if (extracted_name := _model_config.get(model_name_or_path)) is not None \
 		and os.path.exists(Path(_MODELS_DIR, extracted_name[0])):
 		return True
 
 	model_name = re.sub(r'^.*' + _MODELS_DIR + r'/', '', model_name_or_path)
 
-	if model_name in _model_names.keys():
-		model_file = _model_names[model_name][0] + _model_names[model_name][1]
+	if model_name in _model_config.keys():
+		model_file = _model_config[model_name][0] + _model_config[model_name][1]
 		url = _BASE_URL + model_file
 		filepath = Path(_MODELS_DIR, model_file).as_posix()
 	elif model_name.endswith(_KNOWN_EXTENSIONS):
@@ -102,7 +102,7 @@ def _download_model(model_name_or_path: str) -> bool:
 		filepath = Path(_MODELS_DIR, model_name + _DEFAULT_EXT).as_posix()
 
 	try:
-		f = open(filepath, 'wb')
+		f = open(filepath, 'w+b')
 		r = requests.get(url, stream=True)
 		r.raw.decode_content = True  # content decompression
 
@@ -111,6 +111,18 @@ def _download_model(model_name_or_path: str) -> bool:
 			return False
 
 		shutil.copyfileobj(r.raw, f, length=16 * 1024 * 1024)  # 16MB chunks
+
+		# hash check if the config is declared
+		if model_name in _model_config.keys():
+			f.seek(0)
+			original_digest = _model_config.get(model_name, (None, None, None))[2]
+			digest = file_digest(f, 'sha256').hexdigest()
+			if (original_digest != digest):
+				log_error(
+					f'Error: Model file ({filepath}) corrupted:\nexpected hash {original_digest}\ngot {digest}'
+				)
+				return False
+
 		f.close()
 
 		return _extract_n_save(model_name, filepath)
