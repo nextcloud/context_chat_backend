@@ -1,7 +1,7 @@
 from .load_model import load_model
 
 _embedding_models = ['llama', 'hugging_face', 'instructor']
-_llm_models = ['llama', 'hugging_face']
+_llm_models = ['llama', 'hugging_face', 'ctransformer']
 
 models = {
 	'embedding': _embedding_models,
