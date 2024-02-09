@@ -120,7 +120,13 @@ class VectorDB(BaseVectorDB):
 
 		return weaviate_obj
 
-	def get_objects_from_sources(self, user_id: str, source_names: List[str]) -> dict:
+	def get_objects_from_metadata(
+		self,
+		user_id: str,
+		metadata_key: str,
+		values: List[str],
+		contains: bool = False,
+	) -> dict:
 		# NOTE: the limit of objects returned is not known, maybe it would be better to set one manually
 
 		if not self.client:
@@ -129,35 +135,50 @@ class VectorDB(BaseVectorDB):
 		if not self.client.schema.exists(COLLECTION_NAME(user_id)):
 			self.setup_schema(user_id)
 
-		file_filter = {
-			'path': ['source'],
+		if len(values) == 0:
+			return {}
+
+		# todo
+		if len(values) == 1:
+			if contains:
+				data_filter = { metadata_key: { '$in': values[0] } }
+			else:
+				data_filter = { metadata_key: values[0] }
+		else:
+			if contains:
+				data_filter = {'$or': [{ metadata_key: { '$in': val } } for val in values]}
+			else:
+				data_filter = {'$or': [{ metadata_key: val } for val in values]}
+
+		data_filter = {
+			'path': [metadata_key],
 			'operator': 'ContainsAny',
-			'valueTextList': source_names,
+			'valueTextList': values,
 		}
 
 		results = self.client.query \
-			.get(COLLECTION_NAME(user_id), ['source', 'modified']) \
+			.get(COLLECTION_NAME(user_id), [metadata_key, 'modified']) \
 			.with_additional('id') \
-			.with_where(file_filter) \
+			.with_where(data_filter) \
 			.do()
 
 		if results.get('errors') is not None:
 			log_error(f'Error: Weaviate query error: {results.get("errors")}')
 			return {}
 
-		dsources = {}
-		for source in source_names:
-			dsources[source] = True
+		dmeta = {}
+		for val in values:
+			dmeta[val] = True
 
 		try:
 			results = results['data']['Get'][COLLECTION_NAME(user_id)]
 			output = {}
 			for result in results:
 				# case sensitive matching
-				if dsources.get(result['source']) is None:
+				if dmeta.get(result[metadata_key]) is None:
 					continue
 
-				output[result['source']] = {
+				output[result[metadata_key]] = {
 					'id': result['_additional']['id'],
 					'modified': result['modified'],
 				}
