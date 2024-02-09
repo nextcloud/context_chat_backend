@@ -66,9 +66,27 @@ def _(userId: str):
 
 	db.setup_schema(userId)
 
-    return JSONResponse(
-        client.get_collection(COLLECTION_NAME(userId)).get()
-    )
+	return JSONResponse(
+		client.get_collection(COLLECTION_NAME(userId)).get()
+	)
+
+
+# TODO: for testing, remove later
+@app.get('/search')
+def _(userId: str, keyword: str):
+	from chromadb import ClientAPI
+	from .utils import COLLECTION_NAME
+
+	db: BaseVectorDB = app.extra.get('VECTOR_DB')
+	client: ClientAPI = db.client
+	db.setup_schema(userId)
+
+	return JSONResponse(
+		client.get_collection(COLLECTION_NAME(userId)).get(
+			where_document={'$contains': [{'source': keyword}]},
+			include=['metadatas'],
+		)
+	)
 
 
 # TODO: for testing, remove later
