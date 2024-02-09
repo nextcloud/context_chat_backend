@@ -49,7 +49,7 @@
 	```
 	occ app_api:app:register context_chat_backend manual_install --json-info \
 		"{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"1.0.2\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system_app\":0}" \
-		--force-scopes
+		--force-scopes --wait-finish
 	```
 
 The command to unregister is given below (force is used to also remove apps whose container has been removed)

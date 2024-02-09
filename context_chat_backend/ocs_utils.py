@@ -112,12 +112,15 @@ def ocs_call(
 
 	_sign_request(headers, kwargs.get('username', ''))
 
+	verify_ssl = getenv('HTTPX_VERIFY_SSL', '1') == '1'
+
 	return httpx.request(
 		method=method.upper(),
 		url=f'{get_nc_url()}/{path.removeprefix("/")}',
 		params=params,
 		content=data_bytes,
 		headers=headers,
+		verify=verify_ssl,
 		**kwargs,
 	)
 
