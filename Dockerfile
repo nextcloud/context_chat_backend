@@ -11,4 +11,4 @@ COPY context_chat_backend context_chat_backend
 COPY main.py .
 COPY config.yaml .
 
-CMD ["python3", "main.py"]
+ENTRYPOINT ["python3", "main.py"]

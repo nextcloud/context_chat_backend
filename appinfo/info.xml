@@ -28,8 +28,8 @@ This app then should be installed from the "External Apps" page.
 	<external-app>
 		<docker-install>
 			<registry>ghcr.io</registry>
-			<image>nextcloud/context_chat_backend</image>
-			<image-tag>1.0.0</image-tag>
+			<image>kyteinsky/context_chat_backend</image>
+			<image-tag>latest</image-tag>
 		</docker-install>
 		<scopes>
 			<required>

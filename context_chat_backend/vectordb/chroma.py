@@ -60,7 +60,13 @@ class VectorDB(BaseVectorDB):
 			embedding_function=em,
 		)
 
-	def get_objects_from_sources(self, user_id: str, source_names: List[str]) -> dict:
+	def get_objects_from_metadata(
+		self,
+		user_id: str,
+		metadata_key: str,
+		values: List[str],
+		contains: bool = False,
+	) -> dict:
 		# NOTE: the limit of objects returned is not known, maybe it would be better to set one manually
 
 		if not self.client:
@@ -68,13 +74,23 @@ class VectorDB(BaseVectorDB):
 
 		self.setup_schema(user_id)
 
-		sources_filter = {'$or': [{ 'source': source } for source in source_names]}
-		# placeholder 'or' for single source above
-		sources_filter['$or'].append({ '': { '$in': source_names } })
+		if len(values) == 0:
+			return {}
+
+		if len(values) == 1:
+			if contains:
+				data_filter = { metadata_key: { '$in': values[0] } }
+			else:
+				data_filter = { metadata_key: values[0] }
+		else:
+			if contains:
+				data_filter = {'$or': [{ metadata_key: { '$in': val } } for val in values]}
+			else:
+				data_filter = {'$or': [{ metadata_key: val } for val in values]}
 
 		try:
 			results = self.client.get_collection(COLLECTION_NAME(user_id)).get(
-				where=sources_filter,
+				where=data_filter,
 				include=['metadatas']
 			)
 		except Exception as e:
@@ -88,7 +104,7 @@ class VectorDB(BaseVectorDB):
 		try:
 			for i, _id in enumerate(results.get('ids')):
 				meta = results['metadatas'][i]
-				output[meta['source']] = {
+				output[meta[metadata_key]] = {
 					'id': _id,
 					'modified': meta['modified'],
 				}

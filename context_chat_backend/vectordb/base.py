@@ -51,17 +51,28 @@ class BaseVectorDB(ABC):
 		'''
 
 	@abstractmethod
-	def get_objects_from_sources(self, user_id: str, source_names: List[str]) -> dict:
+	def get_objects_from_metadata(
+		self,
+		user_id: str,
+		metadata_key: str,
+		values: List[str],
+		contains: bool = False,
+	) -> dict:
 		'''
-		Get all objects with the given source names.
-		(Only gets the following fields: [id, source, modified])
+		Get all objects with the given metadata key and values.
+		(Only gets the following fields: [id, 'metadata_key', modified])
 
 		Args
 		----
 		user_id: str
 			User ID for whose database to get the sources.
-		source_names: List[str]
-			List of source names to get.
+		metadata_key: str
+			Metadata key to get.
+		values: List[str]
+			List of metadata names to get.
+		contains: bool
+			If True, gets all objects that contain any of the given values,
+			otherwise gets all objects that have the given values.
 
 		Returns
 		-------
@@ -71,7 +82,7 @@ class BaseVectorDB(ABC):
 			otherwise:
 
 			{
-				['source': str]: {
+				[metadata_key: str]: {
 					'id': str,
 					'modified': str,
 				}

@@ -13,7 +13,7 @@ import requests
 
 load_dotenv()
 
-_MODELS_DIR = os.getenv('MODEL_DIR', 'persistent_storage/model_files')
+_MODELS_DIR = ''
 _BASE_URL = os.getenv(
 	'DOWNLOAD_URI',
 	'https://download.nextcloud.com/server/apps/context_chat_backend'
@@ -111,6 +111,11 @@ def _model_exists(model_name_or_path: str) -> bool:
 
 
 def _download_model(model_name_or_path: str) -> bool:
+	# # todo
+	# import time
+	# time.sleep(30)
+	# return True
+
 	if not model_name_or_path:
 		log_error('Error: Model name or path not specified')
 		return False
@@ -166,8 +171,7 @@ def _download_model(model_name_or_path: str) -> bool:
 
 def _extract_n_save(model_name: str, filepath: str) -> bool:
 	if not os.path.exists(filepath):
-		log_error('Error: Model file not found after successful download. This should not happen.')
-		return False
+		raise OSError('Error: Model file not found after successful download. This should not happen.')
 
 	# extract the model if it is a compressed file
 	if (filepath.endswith(_KNOWN_ARCHIVES)):
@@ -185,8 +189,7 @@ def _extract_n_save(model_name: str, filepath: str) -> bool:
 			tar.close()
 			os.remove(filepath)
 		except OSError as e:
-			log_error(f'Error: Model extraction failed: {e}')
-			return False
+			raise OSError('Error: Model extraction failed') from e
 
 		return True
 
@@ -195,8 +198,7 @@ def _extract_n_save(model_name: str, filepath: str) -> bool:
 		os.rename(filepath, Path(_MODELS_DIR, model_name).as_posix())
 		return True
 	except OSError as e:
-		log_error(f'Error: File move into `{_MODELS_DIR}` failed: {e}')
-		return False
+		raise OSError(f'Error: File move into `{_MODELS_DIR}` failed') from e
 
 
 async def download_all_models(app: FastAPI, update_progress: callable):
@@ -211,7 +213,7 @@ async def download_all_models(app: FastAPI, update_progress: callable):
 	config = app.extra['CONFIG']
 
 	if os.getenv('DISABLE_CUSTOM_DOWNLOAD_URI', '0') == '1':
-		await update_progress(100)
+		update_progress(100)
 		_set_app_config(app, config)
 		return
 
@@ -220,12 +222,18 @@ async def download_all_models(app: FastAPI, update_progress: callable):
 		model_name = _get_model_name_or_path(config, model_type)
 		if not _download_model(model_name):
 			raise Exception(f'Error: Model download failed for {model_name}')
-		await update_progress(progress := progress + 50)
+		print(f'Model {model_name} downloaded successfully', flush=True)
+		update_progress(progress := progress + 50)
+		print('Out of func, progress:', progress, flush=True)
 
 	_set_app_config(app, config)
 
 
 def model_init(app: FastAPI) -> bool:
+	# the env var is set in the __init__.py file
+	global _MODELS_DIR
+	_MODELS_DIR = os.getenv('MODEL_DIR', 'persistent_storage/model_files')
+
 	for model_type in ('embedding', 'llm'):
 		model_name = _get_model_name_or_path(app.extra['CONFIG'], model_type)
 		if not _model_exists(model_name):

@@ -62,6 +62,25 @@ def _(userId: str):
 	)
 
 
+# TODO: for testing, remove later
+@app.get('/search')
+@enabled_guard(app)
+def _(userId: str, keyword: str):
+	from chromadb import ClientAPI
+	from .utils import COLLECTION_NAME
+
+	db: BaseVectorDB = app.extra.get('VECTOR_DB')
+	client: ClientAPI = db.client
+	db.setup_schema(userId)
+
+	return JSONResponse(
+		client.get_collection(COLLECTION_NAME(userId)).get(
+			where_document={'$contains': [{'source': keyword}]},
+			include=['metadatas'],
+		)
+	)
+
+
 @app.put('/enabled')
 def _(enabled: bool):
 	app.extra['ENABLED'] = enabled
@@ -77,18 +96,22 @@ def _():
 
 @app.post('/init')
 async def _(bg_tasks: BackgroundTasks):
-	async def update_progress(progress: int):
-		await ocs_call(
+	def update_progress(progress: int):
+		print('in update_progress:', progress, flush=True)
+		ocs_call(
 			method='PUT',
 			path=f'/ocs/v1.php/apps/app_api/apps/status/{getenv("APP_ID")}',
 			json_data={ 'progress': min(100, progress) },
 		)
+		print('update_progress: done', flush=True)
 
 	if not app.extra.get('ENABLED', False):
+		# todo
+		# bg_tasks.is_async = True
 		bg_tasks.add_task(download_all_models, app, update_progress)
 	else:
 		print('App already initialised')
-		await update_progress(100)
+		bg_tasks.add_task(update_progress, 100)
 
 	return JSONResponse(content={}, status_code=200)
 
@@ -106,11 +129,39 @@ def _(userId: Annotated[str, Body()], sourceNames: Annotated[list[str], Body()])
 	if db is None:
 		return JSONResponse('Error: VectorDB not initialised', 500)
 
-	source_objs = db.get_objects_from_sources(userId, sourceNames)
+	source_objs = db.get_objects_from_metadata(userId, 'source', sourceNames)
 	res = db.delete_by_ids(userId, [
 		source.get('id')
 		for source in source_objs.values()
 		if value_of(source.get('id') is not None)
+	])
+
+	# NOTE: None returned in `delete_by_ids` should have meant an error but it didn't in the case of
+	# weaviate maybe because of the way weaviate wrapper is implemented (langchain's api does not take
+	# class name as input, which will be required in future versions of weaviate)
+	if res is None:
+		print('Deletion query returned "None". This can happen in Weaviate even if the deletion was \
+successful, therefore not considered an error for now.')
+
+	if res is False:
+		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
+
+	return JSONResponse('All valid sources deleted')
+
+
+@app.post('/deleteMatchingSources')
+@enabled_guard(app)
+def _(userId: Annotated[str, Body()], keyword: Annotated[str, Body()]):
+	db: BaseVectorDB = app.extra.get('VECTOR_DB')
+
+	if db is None:
+		return JSONResponse('Error: VectorDB not initialised', 500)
+
+	objs = db.get_objects_from_metadata(userId, 'source', [keyword])
+	res = db.delete_by_ids(userId, [
+		obj.get('id')
+		for obj in objs.values()
+		if value_of(obj.get('id') is not None)
 	])
 
 	# NOTE: None returned in `delete_by_ids` should have meant an error but it didn't in the case of

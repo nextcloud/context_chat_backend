@@ -33,7 +33,11 @@ def _filter_documents(
 			continue
 		input_sources[meta.metadata.get('source')] = meta.metadata.get('modified')
 
-	existing_objects = vectordb.get_objects_from_sources(user_id, list(input_sources.keys()))
+	existing_objects = vectordb.get_objects_from_metadata(
+		user_id,
+		'source',
+		list(input_sources.keys())
+	)
 	for source, existing_meta in existing_objects.items():
 		# recently modified files are re-embedded
 		if to_int(input_sources.get(source)) > to_int(existing_meta.get('modified')):
