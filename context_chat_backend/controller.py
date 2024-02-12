@@ -66,7 +66,7 @@ def _(userId: str):
 
 	db.setup_schema(userId)
 
-	return JSONResponse(
+    return JSONResponse(
 		client.get_collection(COLLECTION_NAME(userId)).get()
 	)
 
