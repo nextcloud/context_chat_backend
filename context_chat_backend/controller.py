@@ -209,14 +209,16 @@ def _(userId: str, query: str, useContext: bool = True, ctxLimit: int = 5):
 		return JSONResponse('Error: VectorDB not initialised', 500)
 
 	template = app.extra.get('LLM_TEMPLATE')
+	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
 
-	output, sources = process_query(
+	(output, sources) = process_query(
 		user_id=userId,
 		vectordb=db,
 		llm=llm,
 		query=query,
 		use_context=useContext,
 		ctx_limit=ctxLimit,
+		end_separator=end_separator,
 		**({'template': template} if template else {}),
 	)
 

@@ -17,7 +17,8 @@ def process_query(
 	use_context: bool = True,
 	ctx_limit: int = 5,
 	template: str = _LLM_TEMPLATE,
-) -> (str, list):
+	end_separator: str = '',
+) -> tuple[str, list]:
 	if not use_context:
 		return llm.predict(query), []
 
@@ -31,7 +32,8 @@ def process_query(
 		context_docs,
 	))
 
-	output = llm.predict(template.format(context=context_text, question=query)).strip()
+	output = llm.predict(template.format(context=context_text, question=query)) \
+		.strip().rstrip(end_separator).strip()
 	unique_sources = list(set(map(lambda d: d.metadata.get('source', ''), context_docs)))
 
-	return output, unique_sources
+	return (output, unique_sources)
