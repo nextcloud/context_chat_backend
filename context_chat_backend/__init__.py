@@ -50,6 +50,7 @@ def create_server(config: dict[str, tuple[str, dict]]):
 
 		llm_name, llm_config = config.get('llm')
 		app.extra['LLM_TEMPLATE'] = llm_config.pop('template', '')
+		app.extra['LLM_END_SEPARATOR'] = llm_config.pop('end_separator', '')
 
 		model = init_model('llm', (llm_name, llm_config))
 		app.extra['LLM_MODEL'] = model

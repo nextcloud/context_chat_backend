@@ -82,7 +82,7 @@ def _(userId: str):
     client: ClientAPI = db.client
     db.setup_schema(userId)
 
-	return JSONResponse(
+    return JSONResponse(
 		client.get_collection(COLLECTION_NAME(userId)).get()
 	)
 
@@ -216,34 +216,22 @@ def _(userId: str, query: str, useContext: bool = True, ctxLimit: int = 5):
     if db is None:
         return JSONResponse('Error: VectorDB not initialised', 500)
 
-    template = app.extra.get('LLM_TEMPLATE')
+	template = app.extra.get('LLM_TEMPLATE')
+	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
 
-    output, sources = process_query(
-        user_id=userId,
-        vectordb=db,
-        llm=llm,
-        query=query,
-        use_context=useContext,
-        ctx_limit=ctxLimit,
-        **({'template': template} if template else {}),
-    )
-    end_time = int(time.time())
+	(output, sources) = process_query(
+		user_id=userId,
+		vectordb=db,
+		llm=llm,
+		query=query,
+		use_context=useContext,
+		ctx_limit=ctxLimit,
+		end_separator=end_separator,
+		**({'template': template} if template else {}),
+	)
 
-    # Calculate elapsed time in seconds
-    elapsed_seconds = end_time - start_time
-
-    # Convert to hours, minutes, seconds
-    hours = elapsed_seconds // 3600
-    minutes = (elapsed_seconds % 3600) // 60
-    seconds = elapsed_seconds % 60
-
-    # Format elapsed time as a string
-    elapsed_formatted = f"{hours}:{minutes}:{seconds}"
-    readable_time = datetime.fromtimestamp(end_time).strftime('%H:%M:%S')
-    print(f"\033[1;46m\033[1;37mEnd Time:\033[0m {readable_time}")
-    print(f"\033[1;42m\033[1;37mElapsed:\033[0m {elapsed_formatted}")
-    if output is None:
-        return JSONResponse('Error: check if the model specified supports the query type', 500)
+	if output is None:
+		return JSONResponse('Error: check if the model specified supports the query type', 500)
 
     return JSONResponse({
         'output': output,

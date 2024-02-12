@@ -10,6 +10,7 @@ __all__ = ['load_model']
 def load_model(model_type: str, model_info: tuple[str, dict]) -> Embeddings | LLM | None:
 	model_name, model_config = model_info
 	model_config.pop('template', '')
+	model_config.pop('end_separator', '')
 
 	module = import_module(f'.{model_name}', 'context_chat_backend.models')
 
