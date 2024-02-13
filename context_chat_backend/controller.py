@@ -3,12 +3,11 @@ from typing import Annotated, Any
 
 from dotenv import load_dotenv
 from fastapi import Body, FastAPI, Request, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse as FastAPIJSONResponse
 from langchain.llms.base import LLM
 
 from .chain import embed_sources, process_query
-from .ocs_utils import AppAPIAuthMiddleware, get_nc_url
+from .ocs_utils import AppAPIAuthMiddleware
 from .utils import value_of
 from .vectordb import BaseVectorDB
 
@@ -18,13 +17,6 @@ app = FastAPI(debug=getenv('DEBUG', '0') == '1')
 
 
 # middlewares
-
-app.add_middleware(
-	CORSMiddleware,
-	allow_origins=[get_nc_url()],
-	allow_methods=['*'],
-	allow_headers=['*'],
-)
 
 if value_of(getenv('DISABLE_AAA', '0')) == '0':
 	app.add_middleware(AppAPIAuthMiddleware)
@@ -59,7 +51,7 @@ def _(request: Request):
 	'''
 	Server check
 	'''
-	return f'Hello, {request.headers.get("username", "anon")}!'
+	return f'Hello, {request.scope.get("username", "anon")}!'
 
 
 # TODO: for testing, remove later
