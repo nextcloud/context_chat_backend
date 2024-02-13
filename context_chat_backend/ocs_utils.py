@@ -2,15 +2,14 @@ import json
 from base64 import b64decode, b64encode
 from logging import error as log_error
 from os import getenv
+from packaging import version
 from typing import Optional, Union
 
 import httpx
-from fastapi import Request, Response, responses
-from starlette.datastructures import MutableHeaders
-from starlette.middleware.base import (
-	BaseHTTPMiddleware,
-	RequestResponseEndpoint,
-)
+from starlette.datastructures import Headers, URL
+from starlette.responses import JSONResponse
+from starlette.status import HTTP_401_UNAUTHORIZED
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 
 def _sign_request(headers: dict, username: str = '') -> None:
@@ -20,25 +19,26 @@ def _sign_request(headers: dict, username: str = '') -> None:
 	headers['AUTHORIZATION-APP-API'] = b64encode(f'{username}:{getenv("APP_SECRET")}'.encode('UTF=8'))
 
 
-def _verify_signature(request: Request) -> str:
-	# no auth of /heartbeat
-	if request.url.path == '/heartbeat':
-		return 'anon'
-
-	# Header 'AA-VERSION' contains AppAPI version, for now it can be only one version,
-	# so no handling of it.
-
-	if request.headers.get('EX-APP-ID') != getenv('APP_ID'):
-		log_error(f'Invalid EX-APP-ID:{request.headers.get("EX-APP-ID")} != {getenv("APP_ID")}')
+def _verify_signature(headers: Headers) -> str:
+	if headers.get('AA-VERSION') is None:
+		log_error('AppAPI header AA-VERSION not set')
 		return None
 
-	if request.headers.get('EX-APP-VERSION') != getenv('APP_VERSION'):
+	if version.parse(headers.get('AA-VERSION')) < version.parse(getenv('AA_VERSION')):
+		log_error('AppAPI version should be at least', getenv('AA_VERSION'))
+		return None
+
+	if headers.get('EX-APP-ID') != getenv('APP_ID'):
+		log_error(f'Invalid EX-APP-ID:{headers.get("EX-APP-ID")} != {getenv("APP_ID")}')
+		return None
+
+	if headers.get('EX-APP-VERSION') != getenv('APP_VERSION'):
 		log_error(
-			f'Invalid EX-APP-VERSION:{request.headers.get("EX-APP-VERSION")} <=> {getenv("APP_VERSION")}'
+			f'Invalid EX-APP-VERSION:{headers.get("EX-APP-VERSION")} <=> {getenv("APP_VERSION")}'
 		)
 		return None
 
-	auth_aa = b64decode(request.headers.get('AUTHORIZATION-APP-API')).decode('UTF-8')
+	auth_aa = b64decode(headers.get('AUTHORIZATION-APP-API')).decode('UTF-8')
 	username, app_secret = auth_aa.split(':', maxsplit=1)
 
 	if app_secret != getenv('APP_SECRET'):
@@ -48,25 +48,36 @@ def _verify_signature(request: Request) -> str:
 	return username
 
 
-class AppAPIAuthMiddleware(BaseHTTPMiddleware):
+class AppAPIAuthMiddleware:
 	'''
 	Ensures the presence of AppAPI headers and verifies the app secret.
-	It also adds the username to the request headers.
+	It also adds the username to the scope (request.scope)
 	'''
-	async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-		if (username := _verify_signature(request)) is not None:
-			new_headers = MutableHeaders(request.headers)
-			new_headers['username'] = username
+	def __init__(self, app: ASGIApp) -> None:
+		self.app = app
 
-			request._headers = new_headers
-			request.scope.update(headers=request.headers.raw)
+	async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+		if scope['type'] != 'http':
+			await self.app(scope, receive, send)
+			return
 
-			return await call_next(request)
+		url = URL(scope=scope)
+		if (url.path == '/heartbeat'):
+			# no auth of /heartbeat
+			await self.app(scope, receive, send)
+			return
 
-		return responses.JSONResponse(
+		headers = Headers(scope=scope)
+		if (username := _verify_signature(headers)) is not None:
+			scope['username'] = username
+			await self.app(scope, receive, send)
+			return
+
+		error_response = JSONResponse(
 			content={'error': 'Invalid signature of the request'},
-			status_code=401
+			status_code=HTTP_401_UNAUTHORIZED,
 		)
+		await error_response(scope, receive, send)
 
 
 def get_nc_url() -> str:

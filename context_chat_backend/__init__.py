@@ -61,7 +61,7 @@ def create_server(config: dict[str, tuple[str, dict]]):
 		port=to_int(getenv('APP_PORT'), 9000),
 		http='h11',
 		interface='asgi3',
-		log_level=('warning', 'debug')[getenv('DEBUG', '0') == '1'],
+		log_level=('warning', 'trace')[getenv('DEBUG', '0') == '1'],
 		use_colors=True,
 		limit_concurrency=100,
 		backlog=100,
