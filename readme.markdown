@@ -48,7 +48,7 @@
 2. Register the app using the deploy daemon (be mindful of the port number and the app's version):
 	```
 	occ app_api:app:register context_chat_backend manual_install --json-info \
-		"{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"1.0.2\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system_app\":0}" \
+		"{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"1.1.0\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system_app\":0}" \
 		--force-scopes --wait-finish
 	```
 
@@ -66,8 +66,8 @@ Mount the docker.sock in the Nextcloud container if you happen to use a containe
 
 - for docker compose
 ```yaml
-		volumes:
-		- /var/run/docker.sock:/var/run/docker.sock:ro
+volumes:
+- /var/run/docker.sock:/var/run/docker.sock:ro
 ```
 
 - for docker container, use this option with the `docker run` command
