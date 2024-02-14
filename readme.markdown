@@ -1,4 +1,5 @@
 
+
 # Context Chat
 
 > [!WARNING]
@@ -8,13 +9,18 @@
 
   
 
+  
+
 1. Install three mandatory apps for this app to work as desired in your Nextcloud install from the "Apps" page:
 	- AppAPI (>= v2.0.3): https://apps.nextcloud.com/apps/app_api
 	- Context Chat (>= 1.1.0): https://apps.nextcloud.com/apps/context_chat
 	- Assistant: https://apps.nextcloud.com/apps/assistant (The OCS API or the `occ` commands can also be used to interact with this app but it recommended to do that through a Text Processing OCP API consumer like the Assitant app.)
 2. Install this backend app (Context Chat Backend: https://apps.nextcloud.com/apps/context_chat_backend) from the "External Apps" page
 
+
 3. Start using Context Chat from the Assistant UI
+
+  
 
   
 

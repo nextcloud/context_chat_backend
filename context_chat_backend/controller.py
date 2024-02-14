@@ -1,5 +1,7 @@
 import time
 
+import time
+
 from os import getenv
 from typing import Annotated
 
@@ -23,6 +25,7 @@ app = FastAPI(debug=getenv('DEBUG', '0') == '1')
 # middlewares
 
 if value_of(getenv('DISABLE_AAA', '0')) == '0':
+    app.add_middleware(AppAPIAuthMiddleware)
     app.add_middleware(AppAPIAuthMiddleware)
 
 
@@ -128,6 +131,8 @@ def _(enabled: bool):
 def _():
     print('heartbeat_handler: result=ok')
     return JSONResponse(content={'status': 'ok'}, status_code=200)
+    print('heartbeat_handler: result=ok')
+    return JSONResponse(content={'status': 'ok'}, status_code=200)
 
 
 @app.post('/init')
@@ -145,12 +150,17 @@ def _(bg_tasks: BackgroundTasks):
 @enabled_guard(app)
 def _(userId: Annotated[str, Body()], sourceNames: Annotated[list[str], Body()]):
     sourceNames = [source.strip() for source in sourceNames if source.strip() != '']
+    sourceNames = [source.strip() for source in sourceNames if source.strip() != '']
 
+    if len(sourceNames) == 0:
+        return JSONResponse('No sources provided', 400)
     if len(sourceNames) == 0:
         return JSONResponse('No sources provided', 400)
 
 	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
 
+    if db is None:
+        return JSONResponse('Error: VectorDB not initialised', 500)
     if db is None:
         return JSONResponse('Error: VectorDB not initialised', 500)
 
@@ -177,13 +187,18 @@ def _(userId: Annotated[str, Body()], providerKey: Annotated[str, Body()]):
 
     if res is False:
         return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
+    if res is False:
+        return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
 
+    return JSONResponse('All valid sources deleted')
     return JSONResponse('All valid sources deleted')
 
 
 @app.put('/loadSources')
 @enabled_guard(app)
 def _(sources: list[UploadFile]):
+    if len(sources) == 0:
+        return JSONResponse('No sources provided', 400)
     if len(sources) == 0:
         return JSONResponse('No sources provided', 400)
 
@@ -204,7 +219,11 @@ def _(sources: list[UploadFile]):
     result = embed_sources(db, sources)
     if not result:
         return JSONResponse('Error: All sources were not loaded, check logs for more info', 500)
+    result = embed_sources(db, sources)
+    if not result:
+        return JSONResponse('Error: All sources were not loaded, check logs for more info', 500)
 
+    return JSONResponse('All sources loaded')
     return JSONResponse('All sources loaded')
 
 
