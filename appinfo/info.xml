@@ -32,12 +32,7 @@ This app then should be installed from the "External Apps" page.
 			<image-tag>1.1.1</image-tag>
 		</docker-install>
 		<scopes>
-			<required>
-			</required>
-			<optional>
-			</optional>
 		</scopes>
-		<protocol>http</protocol>
 		<system>false</system>
 	</external-app>
 </info>
