@@ -21,7 +21,7 @@ class VectorDB(BaseVectorDB):
 				anonymized_telemetry=False,
 				**{
 					'is_persistent': True,
-					'persist_directory': getenv('VECTORDB_DIR', './vector_db_data'),
+					'persist_directory': getenv('VECTORDB_DIR', './persistent_storage/vector_db_data'),
 					**kwargs,
 				},
 			))
