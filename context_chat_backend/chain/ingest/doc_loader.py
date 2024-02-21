@@ -122,6 +122,11 @@ _loader_map = {
 
 def decode_source(source: UploadFile) -> str | None:
 	try:
+		# .pot files are powerpoint templates but also plain text files,
+		# so we skip them to prevent decoding errors
+		if source.headers.get('title').endswith('.pot'):
+			return None
+
 		if _loader_map.get(source.headers.get('type')):
 			return _loader_map[source.headers.get('type')](source.file)
 
