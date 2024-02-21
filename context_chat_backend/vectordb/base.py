@@ -66,13 +66,13 @@ class BaseVectorDB(ABC):
 		----
 		user_id: str
 			User ID for whose database to get the sources.
-			metadata_key: str
-				Metadata key to get.
-			values: List[str]
-				List of metadata names to get.
-			contains: bool
-				If True, gets all objects that contain any of the given values,
-				otherwise gets all objects that have the given values.
+		metadata_key: str
+			Metadata key to get.
+		values: List[str]
+			List of metadata names to get.
+		contains: bool
+			If True, gets all objects that contain any of the given values,
+			otherwise gets all objects that have the given values.
 
 		Returns
 		-------
@@ -82,7 +82,7 @@ class BaseVectorDB(ABC):
 			otherwise:
 
 			{
-				['metadata_key': str]: {
+				[metadata_key: str]: {
 					'id': str,
 					'modified': str,
 				}

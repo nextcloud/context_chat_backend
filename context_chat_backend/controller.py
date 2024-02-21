@@ -1,14 +1,14 @@
 from os import getenv
-from typing import Annotated, Any
+from typing import Annotated
 
 from dotenv import load_dotenv
-from fastapi import Body, FastAPI, Request, UploadFile
-from fastapi.responses import JSONResponse as FastAPIJSONResponse
+from fastapi import Body, FastAPI, Request, UploadFile, BackgroundTasks
 from langchain.llms.base import LLM
 
 from .chain import embed_sources, process_query
+from .download import download_all_models
 from .ocs_utils import AppAPIAuthMiddleware
-from .utils import value_of
+from .utils import enabled_guard, JSONResponse, update_progress, value_of
 from .vectordb import BaseVectorDB
 
 load_dotenv()
@@ -22,30 +22,6 @@ if value_of(getenv('DISABLE_AAA', '0')) == '0':
 	app.add_middleware(AppAPIAuthMiddleware)
 
 
-def JSONResponse(
-	content: Any = 'ok',
-	status_code: int = 200,
-	**kwargs
-) -> FastAPIJSONResponse:
-	'''
-	Wrapper for FastAPI JSONResponse
-	'''
-	if isinstance(content, str):
-		if status_code >= 400:
-			return FastAPIJSONResponse(
-				content={ 'error': content },
-				status_code=status_code,
-				**kwargs,
-			)
-		return FastAPIJSONResponse(
-			content={ 'message': content },
-			status_code=status_code,
-			**kwargs,
-		)
-
-	return FastAPIJSONResponse(content, status_code, **kwargs)
-
-
 @app.get('/')
 def _(request: Request):
 	'''
@@ -56,6 +32,7 @@ def _(request: Request):
 
 # TODO: for testing, remove later
 @app.get('/world')
+@enabled_guard(app)
 def _(query: str | None = None):
 	em = app.extra.get('EMBEDDING_MODEL')
 	return em.embed_query(query if query is not None else 'what is an apple?')
@@ -63,6 +40,7 @@ def _(query: str | None = None):
 
 # TODO: for testing, remove later
 @app.get('/vectors')
+@enabled_guard(app)
 def _(userId: str):
 	from chromadb import ClientAPI
 	from .utils import COLLECTION_NAME
@@ -78,6 +56,7 @@ def _(userId: str):
 
 # TODO: for testing, remove later
 @app.get('/search')
+@enabled_guard(app)
 def _(userId: str, keyword: str):
 	from chromadb import ClientAPI
 	from .utils import COLLECTION_NAME
@@ -96,7 +75,8 @@ def _(userId: str, keyword: str):
 
 @app.put('/enabled')
 def _(enabled: bool):
-	print(f'{enabled:}')
+	app.extra['ENABLED'] = enabled
+	print('App', 'enabled' if enabled else 'disabled', flush=True)
 	return JSONResponse(content={'error': ''}, status_code=200)
 
 
@@ -106,7 +86,19 @@ def _():
 	return JSONResponse(content={'status': 'ok'}, status_code=200)
 
 
+@app.post('/init')
+def _(bg_tasks: BackgroundTasks):
+	if not app.extra.get('ENABLED', False):
+		bg_tasks.add_task(download_all_models, app)
+		return JSONResponse(content={}, status_code=200)
+
+	update_progress(100)
+	print('App already initialised', flush=True)
+	return JSONResponse(content={}, status_code=200)
+
+
 @app.post('/deleteSources')
+@enabled_guard(app)
 def _(userId: Annotated[str, Body()], sourceNames: Annotated[list[str], Body()]):
 	sourceNames = [source.strip() for source in sourceNames if source.strip() != '']
 
@@ -139,6 +131,7 @@ successful, therefore not considered an error for now.')
 
 
 @app.post('/deleteMatchingSources')
+@enabled_guard(app)
 def _(userId: Annotated[str, Body()], keyword: Annotated[str, Body()]):
 	db: BaseVectorDB = app.extra.get('VECTOR_DB')
 
@@ -166,6 +159,7 @@ successful, therefore not considered an error for now.')
 
 
 @app.put('/loadSources')
+@enabled_guard(app)
 def _(sources: list[UploadFile]):
 	if len(sources) == 0:
 		return JSONResponse('No sources provided', 400)
@@ -191,6 +185,7 @@ def _(sources: list[UploadFile]):
 
 
 @app.get('/query')
+@enabled_guard(app)
 def _(userId: str, query: str, useContext: bool = True, ctxLimit: int = 5):
 	llm: LLM = app.extra.get('LLM_MODEL')
 	if llm is None:

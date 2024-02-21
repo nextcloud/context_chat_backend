@@ -125,13 +125,15 @@ def ocs_call(
 
 	verify_ssl = getenv('HTTPX_VERIFY_SSL', '1') == '1'
 
-	return httpx.request(
-		method=method.upper(),
-		url=f'{get_nc_url()}/{path.removeprefix("/")}',
-		params=params,
-		content=data_bytes,
-		headers=headers,
-		verify=verify_ssl,
-		**kwargs,
-	)
+	with httpx.Client(verify=verify_ssl) as client:
+		ret = client.request(
+			method=method.upper(),
+			url=f'{get_nc_url()}/{path.removeprefix("/")}',
+			params=params,
+			content=data_bytes,
+			headers=headers,
+			**kwargs,
+		)
 
+		if ret.status_code // 100 != 2:
+			log_error(f'ocs_call: {method} {path} failed with {ret.status_code}: {ret.text}')
