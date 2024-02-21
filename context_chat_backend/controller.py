@@ -43,7 +43,7 @@ def _(query: str | None = None):
 @enabled_guard(app)
 def _(userId: str):
 	from chromadb import ClientAPI
-	from .utils import COLLECTION_NAME
+	from .vectordb import COLLECTION_NAME
 
 	db: BaseVectorDB = app.extra.get('VECTOR_DB')
 	client: ClientAPI = db.client
@@ -59,7 +59,7 @@ def _(userId: str):
 @enabled_guard(app)
 def _(userId: str, keyword: str):
 	from chromadb import ClientAPI
-	from .utils import COLLECTION_NAME
+	from .vectordb import COLLECTION_NAME
 
 	db: BaseVectorDB = app.extra.get('VECTOR_DB')
 	client: ClientAPI = db.client

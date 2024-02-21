@@ -9,7 +9,7 @@ from chromadb.config import Settings
 from chromadb import Client
 
 from .base import BaseVectorDB
-from ..utils import COLLECTION_NAME
+from . import COLLECTION_NAME
 
 load_dotenv()
 

@@ -8,7 +8,8 @@ from langchain.vectorstores import VectorStore, Weaviate
 from weaviate import AuthApiKey, Client
 
 from .base import BaseVectorDB
-from ..utils import COLLECTION_NAME, value_of
+from . import COLLECTION_NAME
+from ..utils import value_of
 
 load_dotenv()
 
