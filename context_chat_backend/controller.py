@@ -1,7 +1,7 @@
 import time
 
 from os import getenv
-from typing import Annotated, Any
+from typing import Annotated
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile
@@ -73,6 +73,7 @@ def _(userId: str):
 
 # TODO: for testing, remove later
 @app.get('/search')
+@enabled_guard(app)
 def _(userId: str, keyword: str):
 	from chromadb import ClientAPI
 	from .utils import COLLECTION_NAME
