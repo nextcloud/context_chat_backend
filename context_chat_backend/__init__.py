@@ -1,70 +1,40 @@
-from os import getenv
+import os
 
 from dotenv import load_dotenv
-import uvicorn
 
+from .config_parser import get_config
 from .controller import app
-from .download import download_all_models
-from .models import models
+from .download import model_init
 from .utils import to_int
-from .vectordb import vector_dbs
 
 load_dotenv()
 
-__all__ = ['create_server', 'vector_dbs', 'models']
+__all__ = ['app', 'to_int']
 
 
-def create_server(config: dict[str, tuple[str, dict]]):
+def _setup_env_vars():
 	'''
-	Creates a FastAPI server with the given config.
-
-	Args
-	----
-	config: dict
-		A dictionary containing the services to be deployed.
+	Sets up the environment variables for persistent storage.
 	'''
-	if getenv('DISABLE_CUSTOM_DOWNLOAD_URI', '0') != '1':
-		if (model_name := download_all_models(config)) is not None:
-			raise Exception(f'Error: Model download failed for {model_name}')
+	persistent_storage = os.getenv('APP_PERSISTENT_STORAGE', 'persistent_storage')
 
-	app.extra['CONFIG'] = config
+	vector_db_dir = os.path.join(persistent_storage, 'vector_db_data')
+	if not os.path.exists(vector_db_dir):
+		os.makedirs(vector_db_dir, 0o750, True)
 
-	if config.get('embedding'):
-		from .models import init_model
+	model_dir = os.path.join(persistent_storage, 'model_files')
+	if not os.path.exists(model_dir):
+		os.makedirs(model_dir, 0o750, True)
 
-		model = init_model('embedding', config.get('embedding'))
-		app.extra['EMBEDDING_MODEL'] = model
+	os.environ['APP_PERSISTENT_STORAGE'] = persistent_storage
+	os.environ['VECTORDB_DIR'] = vector_db_dir
+	os.environ['MODEL_DIR'] = model_dir
+	os.environ['SENTENCE_TRANSFORMERS_HOME'] = os.getenv('SENTENCE_TRANSFORMERS_HOME', model_dir)
+	os.environ['TRANSFORMERS_CACHE'] = os.getenv('TRANSFORMERS_CACHE', model_dir)
 
-	if config.get('vectordb'):
-		from .vectordb import get_vector_db
 
-		client_klass = get_vector_db(config.get('vectordb')[0])
+_setup_env_vars()
 
-		if app.extra.get('EMBEDDING_MODEL') is not None:
-			app.extra['VECTOR_DB'] = client_klass(app.extra['EMBEDDING_MODEL'], **config.get('vectordb')[1])
-		else:
-			app.extra['VECTOR_DB'] = client_klass(**config.get('vectordb')[1])
-
-	if config.get('llm'):
-		from .models import init_model
-
-		llm_name, llm_config = config.get('llm')
-		app.extra['LLM_TEMPLATE'] = llm_config.pop('template', '')
-		app.extra['LLM_END_SEPARATOR'] = llm_config.pop('end_separator', '')
-
-		model = init_model('llm', (llm_name, llm_config))
-		app.extra['LLM_MODEL'] = model
-
-	uvicorn.run(
-		app=app,
-		host=getenv('APP_HOST', '0.0.0.0'),
-		port=to_int(getenv('APP_PORT'), 9000),
-		http='h11',
-		interface='asgi3',
-		log_level=('warning', 'trace')[getenv('DEBUG', '0') == '1'],
-		use_colors=True,
-		limit_concurrency=100,
-		backlog=100,
-		timeout_keep_alive=10,
-		h11_max_incomplete_event_size=5 * 1024 * 1024,  # 5MB
-	)
+app.extra['CONFIG'] = get_config()
+app.extra['ENABLED'] = model_init(app)
+print('App', 'enabled' if app.extra['ENABLED'] else 'disabled', 'at startup', flush=True)
