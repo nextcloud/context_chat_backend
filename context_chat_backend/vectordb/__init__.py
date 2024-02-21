@@ -4,7 +4,12 @@ from .base import BaseVectorDB
 
 vector_dbs = ['weaviate', 'chroma']
 
-__all__ = ['get_vector_db', 'vector_dbs', 'BaseVectorDB']
+__all__ = ['get_vector_db', 'vector_dbs', 'BaseVectorDB', 'COLLECTION_NAME']
+
+
+# class name/index name is capitalized (user1 => User1) maybe because it is a class name,
+# so the solution is to use Vector_user1 instead of user1
+COLLECTION_NAME = lambda user_id: f'Vector_{user_id}'
 
 
 def get_vector_db(db_name: str) -> BaseVectorDB:
