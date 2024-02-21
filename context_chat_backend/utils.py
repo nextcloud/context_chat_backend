@@ -23,11 +23,6 @@ def value_of(value: T, default: T | None = None) -> T | None:
 	return value
 
 
-# class name/index name is capitalized (user1 => User1) maybe because it is a class name,
-# so the solution is to use Vector_user1 instead of user1
-COLLECTION_NAME = lambda user_id: f'Vector_{user_id}'
-
-
 def to_int(value: Any | None, default: int = 0) -> int:
 	if value is None:
 		return default
