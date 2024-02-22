@@ -4,14 +4,14 @@ from os import getenv
 from typing import Annotated
 
 from dotenv import load_dotenv
-from fastapi import Body, FastAPI, Request, UploadFile, BackgroundTasks
+from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile
 from langchain.llms.base import LLM
 from datetime import datetime
 
 from .chain import embed_sources, process_query
 from .download import download_all_models
 from .ocs_utils import AppAPIAuthMiddleware
-from .utils import enabled_guard, JSONResponse, update_progress, value_of
+from .utils import JSONResponse, enabled_guard, update_progress, value_of
 from .vectordb import BaseVectorDB
 
 load_dotenv()
@@ -37,20 +37,33 @@ def _(request: Request):
 @app.get('/world')
 @enabled_guard(app)
 def _(query: str | None = None):
-    em = app.extra.get('EMBEDDING_MODEL')
-    return em.embed_query(query if query is not None else 'what is an apple?')
+	from langchain.schema.embeddings import Embeddings
+	em: Embeddings | None = app.extra.get('EMBEDDING_MODEL')
+
+	if em is None:
+		return JSONResponse('Error: Embedding model not initialised', 500)
+
+	return em.embed_query(query if query is not None else 'what is an apple?')
 
 
 # TODO: for testing, remove later
 @app.get('/vectors')
 @enabled_guard(app)
 def _(userId: str):
-	from chromadb import ClientAPI
+	from chromadb.api import ClientAPI
+
 	from .vectordb import COLLECTION_NAME
 
-    db: BaseVectorDB = app.extra.get('VECTOR_DB')
-    client: ClientAPI = db.client
-    db.setup_schema(userId)
+	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
+	if db is None:
+		return JSONResponse('Error: VectorDB not initialised', 500)
+
+	client: ClientAPI | None = db.client
+
+	if client is None:
+		return JSONResponse('Error: VectorDB client not initialised', 500)
+
+	db.setup_schema(userId)
 
     return JSONResponse(
 		client.get_collection(COLLECTION_NAME(userId)).get()
@@ -61,18 +74,19 @@ def _(userId: str):
 @app.get('/search')
 @enabled_guard(app)
 def _(userId: str, sourceNames: str):
-	sourceNames: list[str] = [source.strip() for source in sourceNames.split(',') if source.strip() != '']
+	sourceList = [source.strip() for source in sourceNames.split(',') if source.strip() != '']
 
-	if len(sourceNames) == 0:
+	if len(sourceList) == 0:
 		return JSONResponse('No sources provided', 400)
 
-	db: BaseVectorDB = app.extra.get('VECTOR_DB')
+	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
 
 	if db is None:
 		return JSONResponse('Error: VectorDB not initialised', 500)
 
-	source_objs = db.get_objects_from_metadata(userId, 'source', sourceNames)
-	sources = list(map(lambda s: s.get('id'), source_objs.values()))
+	source_objs = db.get_objects_from_metadata(userId, 'source', sourceList)
+	# sources = list(map(lambda s: s.get('id'), source_objs.values()))
+	sources = [s.get('id') for s in source_objs.values()]
 
 	return JSONResponse({ 'sources': sources })
 
@@ -109,7 +123,7 @@ def _(userId: Annotated[str, Body()], sourceNames: Annotated[list[str], Body()])
     if len(sourceNames) == 0:
         return JSONResponse('No sources provided', 400)
 
-    db: BaseVectorDB = app.extra.get('VECTOR_DB')
+	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
 
     if db is None:
         return JSONResponse('Error: VectorDB not initialised', 500)
@@ -128,7 +142,7 @@ def _(userId: Annotated[str, Body()], providerKey: Annotated[str, Body()]):
 	if value_of(providerKey) is None:
 		return JSONResponse('Invalid provider key provided', 400)
 
-	db: BaseVectorDB = app.extra.get('VECTOR_DB')
+	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
 
 	if db is None:
 		return JSONResponse('Error: VectorDB not initialised', 500)
@@ -148,18 +162,18 @@ def _(sources: list[UploadFile]):
         return JSONResponse('No sources provided', 400)
 
 	# TODO: headers validation using pydantic
-	if not all([
+	if not (
 		value_of(source.headers.get('userId'))
 		and value_of(source.headers.get('type'))
 		and value_of(source.headers.get('modified'))
 		and value_of(source.headers.get('provider'))
-		for source in sources]
+		for source in sources
 	):
 		return JSONResponse('Invaild/missing headers', 400)
 
-    db: BaseVectorDB = app.extra.get('VECTOR_DB')
-    if db is None:
-        return JSONResponse('Error: VectorDB not initialised', 500)
+	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
+	if db is None:
+		return JSONResponse('Error: VectorDB not initialised', 500)
 
     result = embed_sources(db, sources)
     if not result:
@@ -171,18 +185,13 @@ def _(sources: list[UploadFile]):
 @app.get('/query')
 @enabled_guard(app)
 def _(userId: str, query: str, useContext: bool = True, ctxLimit: int = 5):
-    print(f"\033[1;43m\033[1;37mReceived:\033[0m {userId} - {query}", flush=True)
-    start_time = int(time.time())
-    readable_time = datetime.fromtimestamp(start_time).strftime('%H:%M:%S')
-    print(f"\033[1;46m\033[1;37mStart Time:\033[0m {readable_time}", flush=True)
+	llm: LLM | None = app.extra.get('LLM_MODEL')
+	if llm is None:
+		return JSONResponse('Error: LLM not initialised', 500)
 
-    llm: LLM = app.extra.get('LLM_MODEL')
-    if llm is None:
-        return JSONResponse('Error: LLM not initialised', 500)
-
-    db: BaseVectorDB = app.extra.get('VECTOR_DB')
-    if db is None:
-        return JSONResponse('Error: VectorDB not initialised', 500)
+	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
+	if db is None:
+		return JSONResponse('Error: VectorDB not initialised', 500)
 
 	template = app.extra.get('LLM_TEMPLATE')
 	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
@@ -201,7 +210,7 @@ def _(userId: str, query: str, useContext: bool = True, ctxLimit: int = 5):
 	if output is None:
 		return JSONResponse('Error: check if the model specified supports the query type', 500)
 
-    return JSONResponse({
-        'output': output,
-        'sources': sources,
-    })
+	return JSONResponse({
+		'output': output,
+		'sources': list(sources),
+	})

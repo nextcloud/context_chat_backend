@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from functools import wraps
 from os import getenv
 from typing import Any, TypeVar
@@ -58,7 +59,7 @@ def JSONResponse(
 
 
 def enabled_guard(app: FastAPI):
-	def decorator(func: callable):
+	def decorator(func: Callable):
 		'''
 		Decorator to check if the service is enabled
 		'''

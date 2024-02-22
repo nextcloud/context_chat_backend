@@ -1,9 +1,16 @@
 from pprint import pprint
+from typing import TypedDict
 
 from ruamel.yaml import YAML
 
 from .models import models
 from .vectordb import vector_dbs
+
+
+class TConfig(TypedDict):
+	vectordb: tuple[str, dict]
+	embedding: tuple[str, dict]
+	llm: tuple[str, dict]
 
 
 def _first_in_list(
@@ -21,7 +28,7 @@ def _first_in_list(
 	return None
 
 
-def get_config(file_path: str = 'config.yaml') -> dict[str, tuple[str, dict]]:
+def get_config(file_path: str = 'config.yaml') -> TConfig:
 	'''
 	Get the config from the given file path (relative to the root directory).
 	'''
@@ -32,26 +39,29 @@ def get_config(file_path: str = 'config.yaml') -> dict[str, tuple[str, dict]]:
 		except Exception as e:
 			raise AssertionError('Error: could not load config from', file_path, 'file') from e
 
-	selected_config = {
-		'vectordb': _first_in_list(config.get('vectordb', {}), vector_dbs),
-		'embedding': _first_in_list(config.get('embedding', {}), models['embedding']),
-		'llm': _first_in_list(config.get('llm', {}), models['llm']),
-	}
-
-	if not selected_config['vectordb']:
+	vectordb = _first_in_list(config.get('vectordb', {}), vector_dbs)
+	if not vectordb:
 		raise AssertionError(
 			f'Error: vectordb should be at least one of {vector_dbs} in the config file'
 		)
 
-	if not selected_config['embedding']:
+	embedding = _first_in_list(config.get('embedding', {}), models['embedding'])
+	if not embedding:
 		raise AssertionError(
 			f'Error: embedding model should be at least one of {models["embedding"]} in the config file'
 		)
 
-	if not selected_config['llm']:
+	llm = _first_in_list(config.get('llm', {}), models['llm'])
+	if not llm:
 		raise AssertionError(
 			f'Error: llm model should be at least one of {models["llm"]} in the config file'
 		)
+
+	selected_config: TConfig = {
+		'vectordb': vectordb,
+		'embedding': embedding,
+		'llm': llm,
+	}
 
 	pprint(f'Selected config: {selected_config}')
 
