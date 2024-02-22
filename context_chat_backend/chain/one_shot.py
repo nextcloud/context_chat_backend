@@ -29,11 +29,11 @@ def process_query(
 	end_separator: str = '',
 ) -> tuple[str, list[str]]:
 	if not use_context:
-		return llm.predict(query), []
+		return llm.predict(query), set()
 
 	user_client = vectordb.get_user_client(user_id)
 	if user_client is None:
-		return llm.predict(query), []
+		return llm.predict(query), set()
 
 	if ctx_filter is not None:
 		context_docs = user_client.similarity_search(query, k=ctx_limit, filter=ctx_filter)

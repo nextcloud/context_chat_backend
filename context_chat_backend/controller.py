@@ -75,12 +75,12 @@ def _(userId: str):
 @app.get('/search')
 @enabled_guard(app)
 def _(userId: str, sourceNames: str):
-	sourceNames: list[str] = [source.strip() for source in sourceNames.split(',') if source.strip() != '']
+	sourceList = [source.strip() for source in sourceNames.split(',') if source.strip() != '']
 
-	if len(sourceNames) == 0:
+	if len(sourceList) == 0:
 		return JSONResponse('No sources provided', 400)
 
-	db: BaseVectorDB = app.extra.get('VECTOR_DB')
+	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
 
 	if db is None:
 		return JSONResponse('Error: VectorDB not initialised', 500)
