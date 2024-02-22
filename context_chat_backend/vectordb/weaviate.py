@@ -51,6 +51,11 @@ class_schema = {
 			'description': 'Last modified time of the file',
 			'name': 'modified',
 		},
+		{
+			'dataType': ['text'],
+			'description': 'The provider of the source',
+			'name': 'provider',
+		}
 	],
 	# TODO: optimisation for large number of objects
 	'vectorIndexType': 'hnsw',
@@ -126,30 +131,16 @@ class VectorDB(BaseVectorDB):
 		user_id: str,
 		metadata_key: str,
 		values: List[str],
-		contains: bool = False,
 	) -> dict:
 		# NOTE: the limit of objects returned is not known, maybe it would be better to set one manually
 
 		if not self.client:
 			raise Exception('Error: Weaviate client not initialised')
 
-		if not self.client.schema.exists(COLLECTION_NAME(user_id)):
-			self.setup_schema(user_id)
+		self.setup_schema(user_id)
 
 		if len(values) == 0:
 			return {}
-
-		# todo
-		if len(values) == 1:
-			if contains:
-				data_filter = { metadata_key: { '$in': values[0] } }
-			else:
-				data_filter = { metadata_key: values[0] }
-		else:
-			if contains:
-				data_filter = {'$or': [{ metadata_key: { '$in': val } } for val in values]}
-			else:
-				data_filter = {'$or': [{ metadata_key: val } for val in values]}
 
 		data_filter = {
 			'path': [metadata_key],

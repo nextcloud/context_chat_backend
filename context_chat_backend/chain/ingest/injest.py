@@ -78,6 +78,7 @@ def _sources_to_documents(sources: list[UploadFile]) -> list[Document]:
 			'title': source.headers.get('title'),
 			'type': source.headers.get('type'),
 			'modified': source.headers.get('modified'),
+			'provider': source.headers.get('provider'),
 		}
 
 		document = Document(page_content=content, metadata=metadata)
@@ -158,7 +159,7 @@ def embed_sources(
 	# either not a file or a file that is allowed
 	sources_filtered = [
 		source for source in sources
-		if not source.filename.startswith('file: ')
+		if (source.filename is not None and not source.filename.startswith('file: '))
 		or _allowed_file(source)
 	]
 

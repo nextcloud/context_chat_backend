@@ -57,20 +57,21 @@ def _(userId: str):
 # TODO: for testing, remove later
 @app.get('/search')
 @enabled_guard(app)
-def _(userId: str, keyword: str):
-	from chromadb import ClientAPI
-	from .vectordb import COLLECTION_NAME
+def _(userId: str, sourceNames: str):
+	sourceNames: list[str] = [source.strip() for source in sourceNames.split(',') if source.strip() != '']
+
+	if len(sourceNames) == 0:
+		return JSONResponse('No sources provided', 400)
 
 	db: BaseVectorDB = app.extra.get('VECTOR_DB')
-	client: ClientAPI = db.client
-	db.setup_schema(userId)
 
-	return JSONResponse(
-		client.get_collection(COLLECTION_NAME(userId)).get(
-			where_document={'$contains': [{'source': keyword}]},
-			include=['metadatas'],
-		)
-	)
+	if db is None:
+		return JSONResponse('Error: VectorDB not initialised', 500)
+
+	source_objs = db.get_objects_from_metadata(userId, 'source', sourceNames)
+	sources = list(map(lambda s: s.get('id'), source_objs.values()))
+
+	return JSONResponse({ 'sources': sources })
 
 
 @app.put('/enabled')
@@ -110,19 +111,7 @@ def _(userId: Annotated[str, Body()], sourceNames: Annotated[list[str], Body()])
 	if db is None:
 		return JSONResponse('Error: VectorDB not initialised', 500)
 
-	source_objs = db.get_objects_from_metadata(userId, 'source', sourceNames)
-	res = db.delete_by_ids(userId, [
-		source.get('id')
-		for source in source_objs.values()
-		if value_of(source.get('id') is not None)
-	])
-
-	# NOTE: None returned in `delete_by_ids` should have meant an error but it didn't in the case of
-	# weaviate maybe because of the way weaviate wrapper is implemented (langchain's api does not take
-	# class name as input, which will be required in future versions of weaviate)
-	if res is None:
-		print('Deletion query returned "None". This can happen in Weaviate even if the deletion was \
-successful, therefore not considered an error for now.')
+	res = db.delete(userId, 'source', sourceNames)
 
 	if res is False:
 		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
@@ -130,27 +119,18 @@ successful, therefore not considered an error for now.')
 	return JSONResponse('All valid sources deleted')
 
 
-@app.post('/deleteMatchingSources')
+@app.post('/deleteSourcesByProvider')
 @enabled_guard(app)
-def _(userId: Annotated[str, Body()], keyword: Annotated[str, Body()]):
+def _(userId: Annotated[str, Body()], providerKey: Annotated[str, Body()]):
+	if value_of(providerKey) is None:
+		return JSONResponse('Invalid provider key provided', 400)
+
 	db: BaseVectorDB = app.extra.get('VECTOR_DB')
 
 	if db is None:
 		return JSONResponse('Error: VectorDB not initialised', 500)
 
-	objs = db.get_objects_from_metadata(userId, 'source', [keyword], True)
-	res = db.delete_by_ids(userId, [
-		obj.get('id')
-		for obj in objs.values()
-		if value_of(obj.get('id') is not None)
-	])
-
-	# NOTE: None returned in `delete_by_ids` should have meant an error but it didn't in the case of
-	# weaviate maybe because of the way weaviate wrapper is implemented (langchain's api does not take
-	# class name as input, which will be required in future versions of weaviate)
-	if res is None:
-		print('Deletion query returned "None". This can happen in Weaviate even if the deletion was \
-successful, therefore not considered an error for now.')
+	res = db.delete(userId, 'provider', [providerKey])
 
 	if res is False:
 		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
@@ -169,6 +149,7 @@ def _(sources: list[UploadFile]):
 		value_of(source.headers.get('userId'))
 		and value_of(source.headers.get('type'))
 		and value_of(source.headers.get('modified'))
+		and value_of(source.headers.get('provider'))
 		for source in sources]
 	):
 		return JSONResponse('Invaild/missing headers', 400)
