@@ -2,13 +2,13 @@ from os import getenv
 from typing import Annotated
 
 from dotenv import load_dotenv
-from fastapi import Body, FastAPI, Request, UploadFile, BackgroundTasks
+from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile
 from langchain.llms.base import LLM
 
 from .chain import embed_sources, process_query
 from .download import download_all_models
 from .ocs_utils import AppAPIAuthMiddleware
-from .utils import enabled_guard, JSONResponse, update_progress, value_of
+from .utils import JSONResponse, enabled_guard, update_progress, value_of
 from .vectordb import BaseVectorDB
 
 load_dotenv()
@@ -34,7 +34,12 @@ def _(request: Request):
 @app.get('/world')
 @enabled_guard(app)
 def _(query: str | None = None):
-	em = app.extra.get('EMBEDDING_MODEL')
+	from langchain.schema.embeddings import Embeddings
+	em: Embeddings | None = app.extra.get('EMBEDDING_MODEL')
+
+	if em is None:
+		return JSONResponse('Error: Embedding model not initialised', 500)
+
 	return em.embed_query(query if query is not None else 'what is an apple?')
 
 
@@ -42,11 +47,19 @@ def _(query: str | None = None):
 @app.get('/vectors')
 @enabled_guard(app)
 def _(userId: str):
-	from chromadb import ClientAPI
+	from chromadb.api import ClientAPI
+
 	from .vectordb import COLLECTION_NAME
 
-	db: BaseVectorDB = app.extra.get('VECTOR_DB')
-	client: ClientAPI = db.client
+	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
+	if db is None:
+		return JSONResponse('Error: VectorDB not initialised', 500)
+
+	client: ClientAPI | None = db.client
+
+	if client is None:
+		return JSONResponse('Error: VectorDB client not initialised', 500)
+
 	db.setup_schema(userId)
 
 	return JSONResponse(
@@ -58,18 +71,19 @@ def _(userId: str):
 @app.get('/search')
 @enabled_guard(app)
 def _(userId: str, sourceNames: str):
-	sourceNames: list[str] = [source.strip() for source in sourceNames.split(',') if source.strip() != '']
+	sourceList = [source.strip() for source in sourceNames.split(',') if source.strip() != '']
 
-	if len(sourceNames) == 0:
+	if len(sourceList) == 0:
 		return JSONResponse('No sources provided', 400)
 
-	db: BaseVectorDB = app.extra.get('VECTOR_DB')
+	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
 
 	if db is None:
 		return JSONResponse('Error: VectorDB not initialised', 500)
 
-	source_objs = db.get_objects_from_metadata(userId, 'source', sourceNames)
-	sources = list(map(lambda s: s.get('id'), source_objs.values()))
+	source_objs = db.get_objects_from_metadata(userId, 'source', sourceList)
+	# sources = list(map(lambda s: s.get('id'), source_objs.values()))
+	sources = [s.get('id') for s in source_objs.values()]
 
 	return JSONResponse({ 'sources': sources })
 
@@ -106,7 +120,7 @@ def _(userId: Annotated[str, Body()], sourceNames: Annotated[list[str], Body()])
 	if len(sourceNames) == 0:
 		return JSONResponse('No sources provided', 400)
 
-	db: BaseVectorDB = app.extra.get('VECTOR_DB')
+	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
 
 	if db is None:
 		return JSONResponse('Error: VectorDB not initialised', 500)
@@ -125,7 +139,7 @@ def _(userId: Annotated[str, Body()], providerKey: Annotated[str, Body()]):
 	if value_of(providerKey) is None:
 		return JSONResponse('Invalid provider key provided', 400)
 
-	db: BaseVectorDB = app.extra.get('VECTOR_DB')
+	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
 
 	if db is None:
 		return JSONResponse('Error: VectorDB not initialised', 500)
@@ -145,16 +159,16 @@ def _(sources: list[UploadFile]):
 		return JSONResponse('No sources provided', 400)
 
 	# TODO: headers validation using pydantic
-	if not all([
+	if not (
 		value_of(source.headers.get('userId'))
 		and value_of(source.headers.get('type'))
 		and value_of(source.headers.get('modified'))
 		and value_of(source.headers.get('provider'))
-		for source in sources]
+		for source in sources
 	):
 		return JSONResponse('Invaild/missing headers', 400)
 
-	db: BaseVectorDB = app.extra.get('VECTOR_DB')
+	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
 	if db is None:
 		return JSONResponse('Error: VectorDB not initialised', 500)
 
@@ -168,11 +182,11 @@ def _(sources: list[UploadFile]):
 @app.get('/query')
 @enabled_guard(app)
 def _(userId: str, query: str, useContext: bool = True, ctxLimit: int = 5):
-	llm: LLM = app.extra.get('LLM_MODEL')
+	llm: LLM | None = app.extra.get('LLM_MODEL')
 	if llm is None:
 		return JSONResponse('Error: LLM not initialised', 500)
 
-	db: BaseVectorDB = app.extra.get('VECTOR_DB')
+	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
 	if db is None:
 		return JSONResponse('Error: VectorDB not initialised', 500)
 
@@ -195,5 +209,5 @@ def _(userId: str, query: str, useContext: bool = True, ctxLimit: int = 5):
 
 	return JSONResponse({
 		'output': output,
-		'sources': sources,
+		'sources': list(sources),
 	})

@@ -1,14 +1,14 @@
-from logging import error as log_error
 import re
+from logging import error as log_error
 
 from fastapi.datastructures import UploadFile
 from langchain.schema import Document
 
+from ...utils import to_int
+from ...vectordb import BaseVectorDB
 from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
 from .mimetype_list import SUPPORTED_MIMETYPES
-from ...utils import to_int
-from ...vectordb import BaseVectorDB
 
 
 def _allowed_file(file: UploadFile) -> bool:
@@ -51,21 +51,22 @@ def _filter_documents(
 		.difference(set(existing_objects))
 	new_sources.update(set(to_delete.keys()))
 
-	filtered_documents = [
+	return [
 		doc for doc in documents
 		if doc.metadata.get('source') in new_sources
 	]
 
-	return filtered_documents
 
-
-def _sources_to_documents(sources: list[UploadFile]) -> list[Document]:
+def _sources_to_documents(sources: list[UploadFile]) -> dict[str, list[Document]]:
+	'''
+	Converts a list of sources to a dictionary of documents with the user_id as the key.
+	'''
 	documents = {}
 
 	for source in sources:
 		user_id = source.headers.get('userId')
 		if user_id is None:
-			log_error('userId not found in headers for source: ' + source.filename)
+			log_error(f'userId not found in headers for source: {source.filename}')
 			continue
 
 		# transform the source to have text data

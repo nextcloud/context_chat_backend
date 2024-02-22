@@ -1,15 +1,14 @@
 from logging import error as log_error
 from os import getenv
-from typing import List, Optional
 
 from dotenv import load_dotenv
 from langchain.schema.embeddings import Embeddings
 from langchain.vectorstores import VectorStore, Weaviate
 from weaviate import AuthApiKey, Client
 
-from .base import BaseVectorDB
-from . import COLLECTION_NAME
 from ..utils import value_of
+from . import COLLECTION_NAME
+from .base import BaseVectorDB, TSearchDict
 
 load_dotenv()
 
@@ -69,20 +68,20 @@ class_schema = {
 
 
 class VectorDB(BaseVectorDB):
-	def __init__(self, embedding: Optional[Embeddings] = None, **kwargs):
+	def __init__(self, embedding: Embeddings | None = None, **kwargs):
 		try:
 			client = Client(
 				**({
-					'auth_client_secret': AuthApiKey(getenv('WEAVIATE_APIKEY')),
+					'auth_client_secret': AuthApiKey(getenv('WEAVIATE_APIKEY', '')),
 				} if value_of(getenv('WEAVIATE_APIKEY')) is not None else {}),
-				**{**{
+				**{
 					'url': getenv('WEAVIATE_URL'),
 					'timeout_config': (1, 20),
 					**kwargs,
-				}},
+				},
 			)
 		except Exception as e:
-			raise Exception(f'Error: Weaviate connection error: {e}')
+			raise Exception('Error: Weaviate connection error') from e
 
 		if not client.is_ready():
 			raise Exception('Error: Weaviate connection error')
@@ -105,8 +104,8 @@ class VectorDB(BaseVectorDB):
 	def get_user_client(
 			self,
 			user_id: str,
-			embedding: Optional[Embeddings] = None  # Use this embedding if not None or use global embedding
-		) -> Optional[VectorStore]:
+			embedding: Embeddings | None = None  # Use this embedding if not None or use global embedding
+		) -> VectorStore | None:
 		self.setup_schema(user_id)
 
 		em = None
@@ -130,8 +129,8 @@ class VectorDB(BaseVectorDB):
 		self,
 		user_id: str,
 		metadata_key: str,
-		values: List[str],
-	) -> dict:
+		values: list[str],
+	) -> TSearchDict:
 		# NOTE: the limit of objects returned is not known, maybe it would be better to set one manually
 
 		if not self.client:

@@ -1,19 +1,20 @@
-from logging import error as log_error
 import re
 import tempfile
+from collections.abc import Callable
+from logging import error as log_error
 from typing import BinaryIO
 
 from fastapi import UploadFile
+from langchain.document_loaders import (
+	UnstructuredEmailLoader,
+	UnstructuredPowerPointLoader,
+)
 from pandas import read_csv, read_excel
 from pypandoc import convert_text
 from pypdf import PdfReader
-from langchain.document_loaders import (
-	UnstructuredPowerPointLoader,
-	UnstructuredEmailLoader,
-)
 
 
-def _temp_file_wrapper(file: BinaryIO, loader: callable, sep: str = '\n') -> str:
+def _temp_file_wrapper(file: BinaryIO, loader: Callable, sep: str = '\n') -> str:
 	raw_bytes = file.read()
 	tmp = tempfile.NamedTemporaryFile(mode='wb')
 	tmp.write(raw_bytes)
@@ -25,7 +26,7 @@ def _temp_file_wrapper(file: BinaryIO, loader: callable, sep: str = '\n') -> str
 		import os
 		os.remove(tmp.name)
 
-	return sep.join(map(lambda d: d.page_content, docs))
+	return sep.join(d.page_content for d in docs)
 
 
 # -- LOADERS -- #
@@ -40,11 +41,11 @@ def _load_csv(file: BinaryIO) -> str:
 
 
 def _load_epub(file: BinaryIO) -> str:
-	return convert_text(file.read(), 'plain', 'epub').strip()
+	return convert_text(str(file.read()), 'plain', 'epub').strip()
 
 
 def _load_docx(file: BinaryIO) -> str:
-	return convert_text(file.read(), 'plain', 'docx').strip()
+	return convert_text(str(file.read()), 'plain', 'docx').strip()
 
 
 def _load_ppt_x(file: BinaryIO) -> str:
@@ -52,11 +53,11 @@ def _load_ppt_x(file: BinaryIO) -> str:
 
 
 def _load_rtf(file: BinaryIO) -> str:
-	return convert_text(file.read(), 'plain', 'rtf').strip()
+	return convert_text(str(file.read()), 'plain', 'rtf').strip()
 
 
 def _load_rst(file: BinaryIO) -> str:
-	return convert_text(file.read(), 'plain', 'rst').strip()
+	return convert_text(str(file.read()), 'plain', 'rst').strip()
 
 
 def _load_xml(file: BinaryIO) -> str:
@@ -70,7 +71,7 @@ def _load_xlsx(file: BinaryIO) -> str:
 
 
 def _load_odt(file: BinaryIO) -> str:
-	return convert_text(file.read(), 'plain', 'odt').strip()
+	return convert_text(str(file.read()), 'plain', 'odt').strip()
 
 
 def _load_email(file: BinaryIO, ext: str = 'eml') -> str | None:
@@ -95,7 +96,7 @@ def _load_email(file: BinaryIO, ext: str = 'eml') -> str | None:
 
 
 def _load_org(file: BinaryIO) -> str:
-	return convert_text(file.read(), 'plain', 'org').strip()
+	return convert_text(str(file.read()), 'plain', 'org').strip()
 
 
 # -- LOADER FUNCTION MAP -- #
@@ -124,11 +125,15 @@ def decode_source(source: UploadFile) -> str | None:
 	try:
 		# .pot files are powerpoint templates but also plain text files,
 		# so we skip them to prevent decoding errors
-		if source.headers.get('title').endswith('.pot'):
+		if source.headers.get('title', '').endswith('.pot'):
 			return None
 
-		if _loader_map.get(source.headers.get('type')):
-			return _loader_map[source.headers.get('type')](source.file)
+		mimetype = source.headers.get('type')
+		if mimetype is None:
+			return None
+
+		if _loader_map.get(mimetype):
+			return _loader_map[mimetype](source.file)
 
 		return source.file.read().decode('utf-8')
 	except Exception as e:

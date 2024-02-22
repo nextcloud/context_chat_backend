@@ -17,7 +17,7 @@ def get_splitter_for(mimetype: str = 'text/plain') -> TextSplitter:
 
 	mt_map = {
 		'text/markdown': MarkdownTextSplitter(**kwargs),
-		'application/json': RecursiveCharacterTextSplitter(separators=['{', '}', r'\[', r'\]', ',', ''], **kwargs),  # noqa: E501
+		'application/json': RecursiveCharacterTextSplitter(separators=['{', '}', r'\[', r'\]', ',', ''], **kwargs),
 		# processed csv, does not contain commas
 		'text/csv': RecursiveCharacterTextSplitter(separators=['\n', ' ', ''], **kwargs),
 		# remove end tags for less verbosity, and remove all whitespace outside of tags
@@ -26,7 +26,7 @@ def get_splitter_for(mimetype: str = 'text/plain') -> TextSplitter:
 		'application/vnd.ms-excel.sheet.macroEnabled.12': RecursiveCharacterTextSplitter(separators=['\n\n', '\n', ' ', ''], **kwargs),  # noqa: E501
 	}
 
-	if mimetype in mt_map.keys():
+	if mimetype in mt_map:
 		return mt_map[mimetype]
 
 	# all other mimetypes

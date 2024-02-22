@@ -1,21 +1,20 @@
 from logging import error as log_error
 from os import getenv
-from typing import List, Optional
 
+from chromadb import Client, Where
+from chromadb.config import Settings
 from dotenv import load_dotenv
 from langchain.schema.embeddings import Embeddings
-from langchain.vectorstores import VectorStore, Chroma
-from chromadb.config import Settings
-from chromadb import Client
+from langchain.vectorstores import Chroma, VectorStore
 
-from .base import BaseVectorDB
 from . import COLLECTION_NAME
+from .base import BaseVectorDB, TSearchDict
 
 load_dotenv()
 
 
 class VectorDB(BaseVectorDB):
-	def __init__(self, embedding: Optional[Embeddings] = None, **kwargs):
+	def __init__(self, embedding: Embeddings | None = None, **kwargs):
 		try:
 			client = Client(Settings(
 				anonymized_telemetry=False,
@@ -26,7 +25,7 @@ class VectorDB(BaseVectorDB):
 				},
 			))
 		except Exception as e:
-			raise Exception(f'Error: Chromadb instantiation error: {e}')
+			raise Exception('Error: Chromadb instantiation error') from e
 
 		if client.heartbeat() <= 0:
 			raise Exception('Error: Chromadb connection error')
@@ -44,8 +43,8 @@ class VectorDB(BaseVectorDB):
 	def get_user_client(
 			self,
 			user_id: str,
-			embedding: Optional[Embeddings] = None  # Use this embedding if not None or use global embedding
-		) -> Optional[VectorStore]:
+			embedding: Embeddings | None = None  # Use this embedding if not None or use global embedding
+		) -> VectorStore | None:
 		self.setup_schema(user_id)
 
 		em = None
@@ -64,8 +63,8 @@ class VectorDB(BaseVectorDB):
 		self,
 		user_id: str,
 		metadata_key: str,
-		values: List[str],
-	) -> dict:
+		values: list[str],
+	) -> TSearchDict:
 		# NOTE: the limit of objects returned is not known, maybe it would be better to set one manually
 
 		if not self.client:
@@ -76,7 +75,7 @@ class VectorDB(BaseVectorDB):
 		if len(values) == 0:
 			return {}
 
-		data_filter = { metadata_key: { '$in': values } }
+		data_filter: Where = { metadata_key: { '$in': values } }  # type: ignore
 
 		try:
 			results = self.client.get_collection(COLLECTION_NAME(user_id)).get(
@@ -87,13 +86,17 @@ class VectorDB(BaseVectorDB):
 			log_error(f'Error: Chromadb query error: {e}')
 			return {}
 
-		if len(results.get('ids')) == 0:
+		if len(results.get('ids', [])) == 0:
+			return {}
+
+		res_metadatas = results.get('metadatas')
+		if res_metadatas is None:
 			return {}
 
 		output = {}
 		try:
 			for i, _id in enumerate(results.get('ids')):
-				meta = results['metadatas'][i]
+				meta = res_metadatas[i]
 				output[meta[metadata_key]] = {
 					'id': _id,
 					'modified': meta['modified'],

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import Any, TypedDict
 
 from langchain.schema.embeddings import Embeddings
 from langchain.vectorstores import VectorStore
@@ -7,20 +7,27 @@ from langchain.vectorstores import VectorStore
 from ..utils import value_of
 
 
+class TSearchObject(TypedDict):
+	id: str
+	modified: str
+
+TSearchDict = dict[str, TSearchObject]
+
+
 class BaseVectorDB(ABC):
-	client = None
-	embedding = None
+	client: Any = None
+	embedding: Any = None
 
 	@abstractmethod
-	def __init__(self, embedding: Optional[Embeddings] = None, **kwargs):
+	def __init__(self, embedding: Embeddings | None = None, **kwargs):
 		self.embedding = embedding
 
 	@abstractmethod
 	def get_user_client(
 			self,
 			user_id: str,
-			embedding: Optional[Embeddings] = None  # Use this embedding if not None or use global embedding
-		) -> Optional[VectorStore]:
+			embedding: Embeddings | None = None  # Use this embedding if not None or use global embedding
+		) -> VectorStore | None:
 		'''
 		Creates and returns the langchain vectordb client object for the given user_id.
 
@@ -28,12 +35,12 @@ class BaseVectorDB(ABC):
 		----
 		user_id: str
 			User ID for which to create the client object.
-		embedding: Optional[Embeddings]
+		embedding: Embeddings | None
 			Embeddings object to use for embedding documents.
 
 		Returns
 		-------
-		Optional[VectorStore]
+		VectorStore | None
 			Client object for the VectorDB or None if error occurs.
 		'''
 
@@ -57,8 +64,8 @@ class BaseVectorDB(ABC):
 		self,
 		user_id: str,
 		metadata_key: str,
-		values: List[str],
-	) -> dict:
+		values: list[str],
+	) -> TSearchDict:
 		'''
 		Get all objects with the given metadata key and values.
 		(Only gets the following fields: [id, 'metadata_key', modified])
@@ -69,22 +76,12 @@ class BaseVectorDB(ABC):
 			User ID for whose database to get the sources.
 		metadata_key: str
 			Metadata key to get.
-		values: List[str]
+		values: list[str]
 			List of metadata names to get.
 
 		Returns
 		-------
-		List[dict]
-			if error occurs: {}
-
-			otherwise:
-
-			{
-				[metadata_key: str]: {
-					'id': str,
-					'modified': str,
-				}
-			}
+		TSearchDict
 		'''
 
 	def delete_by_ids(self, user_id: str, ids: list[str]) -> bool:

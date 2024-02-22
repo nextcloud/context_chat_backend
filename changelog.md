@@ -32,4 +32,3 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 ## 1.0.0 – 2023-12-21
 ### Added
 * the app
-

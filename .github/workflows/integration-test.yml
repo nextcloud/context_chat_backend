@@ -128,13 +128,17 @@ jobs:
       - name: Prepare docs
         run: |
           cd data/admin/files/documentation
-          find ./ -depth -name "*.rst" -exec sh -c 'mv "$1" "${1%.rst}.txt"' _ {} \;
+          find ./admin_manual/ -depth -name "*.rst" -exec sh -c 'mv "$1" "${1%.rst}.txt"' _ {} \;
           git status
 
       - name: Setup python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: |
+            reqs.txt
+            reqs.dev
 
       - name: Install and init backend
         run: |
@@ -163,4 +167,4 @@ jobs:
         run: |
           tail data/nextcloud.log
           echo '--------------------------------------------------'
-          tail context_chat_backend/backend_logs
+          [ -f context_chat_backend/backend_logs ] && cat context_chat_backend/backend_logs || echo "No backend logs"
