@@ -4,6 +4,8 @@ from typing import List, Optional
 from langchain.schema.embeddings import Embeddings
 from langchain.vectorstores import VectorStore
 
+from ..utils import value_of
+
 
 class BaseVectorDB(ABC):
 	client = None
@@ -56,7 +58,6 @@ class BaseVectorDB(ABC):
 		user_id: str,
 		metadata_key: str,
 		values: List[str],
-		contains: bool = False,
 	) -> dict:
 		'''
 		Get all objects with the given metadata key and values.
@@ -70,9 +71,6 @@ class BaseVectorDB(ABC):
 			Metadata key to get.
 		values: List[str]
 			List of metadata names to get.
-		contains: bool
-			If True, gets all objects that contain any of the given values,
-			otherwise gets all objects that have the given values.
 
 		Returns
 		-------
@@ -89,7 +87,7 @@ class BaseVectorDB(ABC):
 			}
 		'''
 
-	def delete_by_ids(self, user_id: str, ids: list[str]) -> Optional[bool]:
+	def delete_by_ids(self, user_id: str, ids: list[str]) -> bool:
 		'''
 		Deletes all documents with the given ids for the given user.
 
@@ -102,9 +100,9 @@ class BaseVectorDB(ABC):
 
 		Returns
 		-------
-		Optional[bool]
-			Optional[bool]: True if deletion is successful,
-			False otherwise, None if not implemented.
+		bool
+			True if deletion is successful,
+			False otherwise
 		'''
 		if len(ids) == 0:
 			return True
@@ -113,4 +111,49 @@ class BaseVectorDB(ABC):
 		if user_client is None:
 			return False
 
-		return user_client.delete(ids)
+		res = user_client.delete(ids)
+
+		# NOTE: None should have meant an error but it didn't in the case of
+		# weaviate maybe because of the way weaviate wrapper is implemented (langchain's api does not take
+		# class name as input, which will be required in future versions of weaviate)
+		if res is None:
+			print('Deletion query returned "None". This can happen in Weaviate even if the deletion was \
+successful, therefore not considered an error for now.')
+			return True
+
+		return res
+
+	def delete(self, user_id: str, metadata_key: str, values: list[str]) -> bool:
+		'''
+		Deletes all documents with the matching values for the given metadata key.
+
+		Args
+		----
+		user_id: str
+			User ID from whose database to delete the documents.
+		metadata_key: str
+			Metadata key to delete by.
+		values: list[str]
+			List of metadata values to match.
+
+		Returns
+		-------
+		bool
+			True if deletion is successful,
+			False otherwise
+		'''
+		if len(values) == 0:
+			return True
+
+		user_client = self.get_user_client(user_id)
+		if user_client is None:
+			return False
+
+		objs = self.get_objects_from_metadata(user_id, metadata_key, values)
+		ids = [
+			obj.get('id')
+			for obj in objs.values()
+			if value_of(obj.get('id') is not None)
+		]
+
+		return self.delete_by_ids(user_id, ids)
