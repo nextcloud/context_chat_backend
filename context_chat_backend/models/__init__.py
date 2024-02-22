@@ -17,7 +17,7 @@ def init_model(model_type: str, model_info: tuple[str, dict]):
 	the same name as the model in the models dir.
 	'''
 	model_name, _ = model_info
-	available_models = models.get(model_type)
+	available_models = models.get(model_type, [])
 
 	if model_name not in available_models:
 		raise AssertionError(f'Error: {model_type}_model should be one of {available_models}')

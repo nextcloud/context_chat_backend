@@ -29,7 +29,6 @@ et-xmlfile==1.1.0
 fastapi==0.104.0
 filelock==3.9.0
 filetype==1.2.0
-flake8==6.1.0
 flatbuffers==23.5.26
 frozenlist==1.4.0
 fsspec==2023.4.0

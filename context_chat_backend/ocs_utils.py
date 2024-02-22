@@ -2,11 +2,10 @@ import json
 from base64 import b64decode, b64encode
 from logging import error as log_error
 from os import getenv
-from packaging import version
-from typing import Optional, Union
 
 import httpx
-from starlette.datastructures import Headers, URL
+from packaging import version
+from starlette.datastructures import URL, Headers
 from starlette.responses import JSONResponse
 from starlette.status import HTTP_401_UNAUTHORIZED
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -19,12 +18,15 @@ def _sign_request(headers: dict, username: str = '') -> None:
 	headers['AUTHORIZATION-APP-API'] = b64encode(f'{username}:{getenv("APP_SECRET")}'.encode('UTF=8'))
 
 
-def _verify_signature(headers: Headers) -> str:
+# We assume that the env variables are set
+def _verify_signature(headers: Headers) -> str | None:
 	if headers.get('AA-VERSION') is None:
 		log_error('AppAPI header AA-VERSION not set')
 		return None
 
-	if version.parse(headers.get('AA-VERSION')) < version.parse(getenv('AA_VERSION')):
+	if headers.get('AA-VERSION') is None or \
+		getenv('AA_VERSION') is None or \
+		version.parse(headers['AA-VERSION']) < version.parse(getenv('AA_VERSION', '')):
 		log_error('AppAPI version should be at least', getenv('AA_VERSION'))
 		return None
 
@@ -38,7 +40,7 @@ def _verify_signature(headers: Headers) -> str:
 		)
 		return None
 
-	auth_aa = b64decode(headers.get('AUTHORIZATION-APP-API')).decode('UTF-8')
+	auth_aa = b64decode(headers.get('AUTHORIZATION-APP-API', '')).decode('UTF-8')
 	username, app_secret = auth_aa.split(':', maxsplit=1)
 
 	if app_secret != getenv('APP_SECRET'):
@@ -81,14 +83,14 @@ class AppAPIAuthMiddleware:
 
 
 def get_nc_url() -> str:
-	return getenv('NEXTCLOUD_URL').removesuffix('/index.php').removesuffix('/')
+	return getenv('NEXTCLOUD_URL', '').removesuffix('/index.php').removesuffix('/')
 
 
 def ocs_call(
 	method: str,
 	path: str,
-	params: Optional[dict] = {},
-	json_data: Optional[Union[dict, list]] = None,
+	params: dict | None = None,
+	json_data: dict | list | None = None,
 	**kwargs,
 ):
 	'''
@@ -111,7 +113,8 @@ def ocs_call(
 			The username to use for signing the request.
 		Additional keyword arguments to pass to the httpx.request function.
 	'''
-	if not params: params = {}
+	if params is None:
+		params = {}
 
 	params.update({'format': 'json'})
 	headers = kwargs.pop('headers', {})

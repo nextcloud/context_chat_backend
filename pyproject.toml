@@ -1,0 +1,42 @@
+[project]
+name = "context_chat_backend"
+version = "1.1.1"
+requires-python = ">=3.11"
+authors = [
+	{ name = "Anupam Kumar", email = "kyteinsky@gmail.com" }
+]
+description = "The Python backend for Context Chat"
+readme = { file = "readme.markdown", content-type = "text/markdown" }
+license = { file = "LICENSE" }
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+	"Private :: Do Not Upload",
+]
+
+[tool.ruff]
+target-version = "py311"
+include = ["context_chat_backend/**/*.py", "main.py"]
+line-length = 120
+fix = true
+
+[tool.ruff.lint]
+select = ["A", "B", "C", "E", "F", "G", "I", "S", "PIE", "RET", "RUF", "UP" , "W"]
+ignore = [
+	"W191",  # Indentation contains tabs
+	"E201",  # Whitespace after opening bracket
+	"E202",  # Whitespace before closing bracket
+	"E731",  # Do not assign a lambda expression, use a def
+	"C901",  # Function is too complex
+	"G004",  # Logging statement uses f-string formatting
+]
+# remove G004 after better logging solution is implemented
+fixable = [
+	"F401",   # Unused import
+	"RUF100"  # Unused noqa comments
+]
+
+[tool.pyright]
+include = ["context_chat_backend/**/*.py", "main.py"]
+pythonVersion = "3.11"
+pythonPlatform = "Linux"

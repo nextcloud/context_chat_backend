@@ -8,7 +8,7 @@ from context_chat_backend.utils import to_int
 if __name__ == '__main__':
 	uvicorn.run(
 		app='context_chat_backend:app',
-		host=getenv('APP_HOST', '0.0.0.0'),
+		host=getenv('APP_HOST', '127.0.0.1'),
 		port=to_int(getenv('APP_PORT'), 9000),
 		http='h11',
 		interface='asgi3',
