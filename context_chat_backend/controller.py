@@ -74,13 +74,19 @@ def _(userId: str):
 # TODO: for testing, remove later
 @app.get('/search')
 @enabled_guard(app)
-def _(userId: str, keyword: str):
-	from chromadb import ClientAPI
-	from .vectordb import COLLECTION_NAME
+def _(userId: str, sourceNames: str):
+	sourceNames: list[str] = [source.strip() for source in sourceNames.split(',') if source.strip() != '']
+
+	if len(sourceNames) == 0:
+		return JSONResponse('No sources provided', 400)
 
 	db: BaseVectorDB = app.extra.get('VECTOR_DB')
-	client: ClientAPI = db.client
-	db.setup_schema(userId)
+
+	if db is None:
+		return JSONResponse('Error: VectorDB not initialised', 500)
+
+	source_objs = db.get_objects_from_metadata(userId, 'source', sourceNames)
+	sources = list(map(lambda s: s.get('id'), source_objs.values()))
 
 	return JSONResponse(
 		client.get_collection(COLLECTION_NAME(userId)).get(
