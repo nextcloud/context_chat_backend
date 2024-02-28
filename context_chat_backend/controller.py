@@ -1,11 +1,12 @@
 from os import getenv
-from typing import Annotated
+from typing import Annotated, Any
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile
 from langchain.llms.base import LLM
+from pydantic import BaseModel, FieldValidationInfo, field_validator
 
-from .chain import embed_sources, process_query
+from .chain import ScopeType, embed_sources, process_query, process_scoped_query
 from .download import download_all_models
 from .ocs_utils import AppAPIAuthMiddleware
 from .utils import JSONResponse, enabled_guard, update_progress, value_of
@@ -190,6 +191,15 @@ def _(userId: str, query: str, useContext: bool = True, ctxLimit: int = 5):
 	if db is None:
 		return JSONResponse('Error: VectorDB not initialised', 500)
 
+	if value_of(userId) is None:
+		return JSONResponse('Empty User ID', 400)
+
+	if value_of(query) is None:
+		return JSONResponse('Empty query', 400)
+
+	if ctxLimit < 1:
+		return JSONResponse('Invalid context chunk limit', 400)
+
 	template = app.extra.get('LLM_TEMPLATE')
 	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
 
@@ -200,14 +210,66 @@ def _(userId: str, query: str, useContext: bool = True, ctxLimit: int = 5):
 		query=query,
 		use_context=useContext,
 		ctx_limit=ctxLimit,
+		template=template,
 		end_separator=end_separator,
-		**({'template': template} if template else {}),
 	)
-
-	if output is None:
-		return JSONResponse('Error: check if the model specified supports the query type', 500)
 
 	return JSONResponse({
 		'output': output,
-		'sources': list(sources),
+		'sources': sources,
+	})
+
+
+class ScopedQuery(BaseModel):
+	userId: str
+	query: str
+	scopeType: ScopeType
+	scopeList: list[str]
+	ctxLimit: int = 5
+
+	@field_validator('userId', 'query', 'scopeList', 'ctxLimit')
+	@classmethod
+	def check_empty_values(cls, value: Any, info: FieldValidationInfo):
+		if value_of(value) is None:
+			raise ValueError('Empty value for field', info.field_name)
+
+		return value
+
+	@field_validator('ctxLimit')
+	@classmethod
+	def at_least_one_context(cls, v: int):
+		if v < 1:
+			raise ValueError('Invalid context chunk limit')
+
+		return v
+
+@app.post('/scopedQuery')
+@enabled_guard(app)
+def _(scopedQuery: ScopedQuery):
+	llm: LLM | None = app.extra.get('LLM_MODEL')
+	if llm is None:
+		return JSONResponse('Error: LLM not initialised', 500)
+
+	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
+	if db is None:
+		return JSONResponse('Error: VectorDB not initialised', 500)
+
+	template = app.extra.get('LLM_TEMPLATE')
+	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
+
+	(output, sources) = process_scoped_query(
+		user_id=scopedQuery.userId,
+		vectordb=db,
+		llm=llm,
+		query=scopedQuery.query,
+		ctx_limit=scopedQuery.ctxLimit,
+		template=template,
+		end_separator=end_separator,
+		scope_type=scopedQuery.scopeType,
+		scope_list=scopedQuery.scopeList,
+	)
+
+	return JSONResponse({
+		'output': output,
+		'sources': sources,
 	})
