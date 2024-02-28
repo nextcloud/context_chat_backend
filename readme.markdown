@@ -53,6 +53,8 @@
 
 2.  `docker run --add-host=host.docker.internal:host-gateway -p10034:10034 context_chat_backend_dev`
 
+1. `docker build -t context_chat_backend_dev . -f Dockerfile`
+2. `docker run --env-file example.env --add-host=host.docker.internal:host-gateway -p10034:10034 context_chat_backend_dev` (this is a good place to edit the example.env file before running the container)
 3. Volumes can be mounted for `model_files` and `vector_db_files` if you wish with `-v $(pwd)/model_files:/app/model_files` and similar for vector_db_files
 4. If your Nextcloud is running inside a docker container, there are two ways to configure the deploy daemon
 5. [Follow the below steps to register the app in the app ecosystem](#register-as-an-ex-app)
@@ -60,8 +62,6 @@
 (For a dev setup, mount the `context_chat_backend/` folder as a volume and set the uvicorn to reload on change)
 
 ## Register as an Ex-App
-
-  
 
 1. Create a manual deploy daemon:
 	```
@@ -91,8 +91,8 @@ Mount the docker.sock in the Nextcloud container if you happen to use a containe
 
 - for docker compose
 ```yaml
-volumes:
-- /var/run/docker.sock:/var/run/docker.sock:ro
+		volumes:
+		- /var/run/docker.sock:/var/run/docker.sock:ro
 ```
 
 - for docker container, use this option with the `docker run` command
