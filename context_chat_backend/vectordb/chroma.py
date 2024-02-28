@@ -1,14 +1,14 @@
 from logging import error as log_error
 from os import getenv
 
-from chromadb import Client, Where
+from chromadb import Client
 from chromadb.config import Settings
 from dotenv import load_dotenv
 from langchain.schema.embeddings import Embeddings
 from langchain.vectorstores import Chroma, VectorStore
 
 from . import COLLECTION_NAME
-from .base import BaseVectorDB, TSearchDict
+from .base import BaseVectorDB, MetadataFilter, TSearchDict
 
 load_dotenv()
 
@@ -59,6 +59,19 @@ class VectorDB(BaseVectorDB):
 			embedding_function=em,
 		)
 
+	def get_metadata_filter(self, filters: list[MetadataFilter]) -> dict | None:
+		if len(filters) == 0:
+			return None
+
+		if len(filters) == 1:
+			return { filters[0]['metadata_key']: { '$in': filters[0]['values'] } }
+
+		return {
+			'$or': [{
+				f['metadata_key']: { '$in': f['values'] }
+			} for f in filters]
+		}
+
 	def get_objects_from_metadata(
 		self,
 		user_id: str,
@@ -72,10 +85,18 @@ class VectorDB(BaseVectorDB):
 
 		self.setup_schema(user_id)
 
-		if len(values) == 0:
+		try:
+			data_filter = self.get_metadata_filter([{
+				'metadata_key': metadata_key,
+				'values': values,
+			}])
+		except KeyError as e:
+			# todo: info instead of error
+			log_error(f'Error: Chromadb filter error: {e}')
 			return {}
 
-		data_filter: Where = { metadata_key: { '$in': values } }  # type: ignore
+		if data_filter is None:
+			return {}
 
 		try:
 			results = self.client.get_collection(COLLECTION_NAME(user_id)).get(

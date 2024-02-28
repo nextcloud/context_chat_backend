@@ -8,7 +8,7 @@ from weaviate import AuthApiKey, Client
 
 from ..utils import value_of
 from . import COLLECTION_NAME
-from .base import BaseVectorDB, TSearchDict
+from .base import BaseVectorDB, MetadataFilter, TSearchDict
 
 load_dotenv()
 
@@ -125,6 +125,26 @@ class VectorDB(BaseVectorDB):
 
 		return weaviate_obj
 
+	def get_metadata_filter(self, filters: list[MetadataFilter]) -> dict | None:
+		if len(filters) == 0:
+			return None
+
+		if len(filters) == 1:
+			return {
+				'path': filters[0]['metadata_key'],
+				'operator': 'ContainsAny',
+				'valueTextList': filters[0]['values'],
+			}
+
+		return {
+			'operator': 'Or',
+			'operands': [{
+					'path': f['metadata_key'],
+					'operator': 'ContainsAny',
+					'valueTextList': f['values'],
+				} for f in filters]
+		}
+
 	def get_objects_from_metadata(
 		self,
 		user_id: str,
@@ -138,14 +158,18 @@ class VectorDB(BaseVectorDB):
 
 		self.setup_schema(user_id)
 
-		if len(values) == 0:
+		try:
+			data_filter = self.get_metadata_filter([{
+				'metadata_key': metadata_key,
+				'values': values,
+			}])
+		except KeyError as e:
+			# todo: info instead of error
+			log_error(f'Error: Chromadb filter error: {e}')
 			return {}
 
-		data_filter = {
-			'path': [metadata_key],
-			'operator': 'ContainsAny',
-			'valueTextList': values,
-		}
+		if data_filter is None:
+			return {}
 
 		results = self.client.query \
 			.get(COLLECTION_NAME(user_id), [metadata_key, 'modified']) \

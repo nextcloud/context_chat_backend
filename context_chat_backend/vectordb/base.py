@@ -14,6 +14,11 @@ class TSearchObject(TypedDict):
 TSearchDict = dict[str, TSearchObject]
 
 
+class MetadataFilter(TypedDict):
+	metadata_key: str
+	values: list[str]
+
+
 class BaseVectorDB(ABC):
 	client: Any = None
 	embedding: Any = None
@@ -57,6 +62,22 @@ class BaseVectorDB(ABC):
 		Returns
 		-------
 		None
+		'''
+
+	@abstractmethod
+	def get_metadata_filter(self, filters: list[MetadataFilter]) -> dict | None:
+		'''
+		Returns the metadata filter for the given filters.
+
+		Args
+		----
+		filters: tuple[MetadataFilter]
+			Tuple of metadata filters.
+
+		Returns
+		-------
+		dict
+			Metadata filter dictionary.
 		'''
 
 	@abstractmethod

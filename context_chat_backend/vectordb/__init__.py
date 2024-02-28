@@ -1,10 +1,10 @@
 from importlib import import_module
 
-from .base import BaseVectorDB
+from .base import BaseVectorDB, MetadataFilter
 
 vector_dbs = ['weaviate', 'chroma']
 
-__all__ = ['get_vector_db', 'vector_dbs', 'BaseVectorDB', 'COLLECTION_NAME']
+__all__ = ['get_vector_db', 'vector_dbs', 'BaseVectorDB', 'COLLECTION_NAME', 'MetadataFilter']
 
 
 # class name/index name is capitalized (user1 => User1) maybe because it is a class name,
