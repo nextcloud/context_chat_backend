@@ -27,7 +27,7 @@ def _verify_signature(headers: Headers) -> str | None:
 	if headers.get('AA-VERSION') is None or \
 		getenv('AA_VERSION') is None or \
 		version.parse(headers['AA-VERSION']) < version.parse(getenv('AA_VERSION', '')):
-		log_error('AppAPI version should be at least', getenv('AA_VERSION'))
+		log_error(f"AppAPI version should be at least {getenv('AA_VERSION')}")
 		return None
 
 	if headers.get('EX-APP-ID') != getenv('APP_ID'):
