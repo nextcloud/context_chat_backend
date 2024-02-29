@@ -157,19 +157,19 @@ def _(userId: Annotated[str, Body()], sourceNames: Annotated[list[str], Body()])
     if len(sourceNames) == 0:
         return JSONResponse('No sources provided', 400)
 
-	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
+    db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
 
     if db is None:
         return JSONResponse('Error: VectorDB not initialised', 500)
     if db is None:
         return JSONResponse('Error: VectorDB not initialised', 500)
 
-	res = db.delete(userId, 'source', sourceNames)
+    res = db.delete(userId, 'source', sourceNames)
 
-	if res is False:
-		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
+    if res is False:
+        return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
 
-	return JSONResponse('All valid sources deleted')
+    return JSONResponse('All valid sources deleted')
 
 
 @app.post('/deleteSourcesByProvider')
@@ -185,14 +185,13 @@ def _(userId: Annotated[str, Body()], providerKey: Annotated[str, Body()]):
 
 	res = db.delete(userId, 'provider', [providerKey])
 
-    if res is False:
-        return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
-    if res is False:
-        return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
+	if res is False:
+		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
+	if res is False:
+		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
 
-    return JSONResponse('All valid sources deleted')
-    return JSONResponse('All valid sources deleted')
-
+	return JSONResponse('All valid sources deleted')
+    
 
 @app.put('/loadSources')
 @enabled_guard(app)
@@ -202,19 +201,19 @@ def _(sources: list[UploadFile]):
     if len(sources) == 0:
         return JSONResponse('No sources provided', 400)
 
-	# TODO: headers validation using pydantic
-	if not (
-		value_of(source.headers.get('userId'))
-		and value_of(source.headers.get('type'))
-		and value_of(source.headers.get('modified'))
-		and value_of(source.headers.get('provider'))
-		for source in sources
-	):
-		return JSONResponse('Invaild/missing headers', 400)
+    # TODO: headers validation using pydantic
+    if not (
+        value_of(source.headers.get('userId'))
+        and value_of(source.headers.get('type'))
+        and value_of(source.headers.get('modified'))
+        and value_of(source.headers.get('provider'))
+        for source in sources
+    ):
+        return JSONResponse('Invaild/missing headers', 400)
 
-	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
-	if db is None:
-		return JSONResponse('Error: VectorDB not initialised', 500)
+    db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
+    if db is None:
+        return JSONResponse('Error: VectorDB not initialised', 500)
 
     result = embed_sources(db, sources)
     if not result:

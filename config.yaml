@@ -15,7 +15,7 @@ embedding:
       device: cpu
 
   llama:
-    model_path: dolphin-2.2.1-mistral-7b.Q5_K_M.gguf
+    model_path: TheBloke/dolphin-2.2.1-mistral-7B-GGUF
     n_batch: 16
     n_ctx: 2048
 
