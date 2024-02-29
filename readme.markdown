@@ -323,12 +323,15 @@ docker build --no-cache -f Dockerfile_CUDA11.8 -t context_chat_backend_dev:11.8 
 - ***Parameter explanation:***
 
 `--no-cache`
+
 Tells Docker to build the image without using any cache from previous builds.
 
 `-f Dockerfile_CUDA11.8`
+
 The `-f` or `--file` option specifies the name of the Dockerfile to use for the build. In this case, `Dockerfile_CUDA11.8`
 
 `-t context_chat_backend_dev:11.8`
+
 The `-t` or `--tag` option allows you to name and optionally tag your image, so you can refer to it later.
 In this case we name it `context_chat_backend_dev`with the specified version `11.8`
 
@@ -352,30 +355,39 @@ docker run -v ./config_cuda.yaml:/app/config.yaml -v ./context_chat_backend:/app
 - ***Parameter explanation:***
 	
 	`-v ./config_cuda.yaml:/app/config.yaml`
+
 	Mounts the config_cuda.yaml which will be used inside the running image
 
 	`-v ./context_chat_backend:/app/context_chat_backend`
+
 	Mounts the context_chat_backend into the docker image
 
 	`-v /var/run/docker.sock:/var/run/docker.sock`
+
 	Mounts the Docker socket file from the host into the container. This is done to allow the Docker client running inside the container to communicate with the Docker daemon on the host, essentially controlling Docker and GPU from within the container.
 
 	`-v ./persistent_storage:/app/persistent_storage`
+
 	Mounts the persistent storage into the docker instance to keep downloaded models stored for the future.
 
 	`--env-file example.env`
+
 	Specifies an environment file named example.env to load environment variables from. Please adjust it for your needs.
 
 	`-p 10034:10034`
+
 	This publishes a container's port (10034) to the host (10034). Please align it with your environment file
 
 	`-e CUDA_VISIBLE_DEVICES=0`
+
 	Used to limit which GPUs are visible to CUDA applications running in the container. In this case, it restricts visibility to only the first GPU.
 
 	`--gpus all`
+
 	Grants the container access to all GPUs available on the host. This is crucial for running GPU-accelerated applications inside the container.
 
 	`context_chat_backend_dev:11.8`
+
 	Specifies the image to use for creating the container. In this case we have build the image in 1.) with the specified tag
 
 **3. Register context_chat_backend**
