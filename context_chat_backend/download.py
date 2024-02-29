@@ -235,6 +235,7 @@ def download_all_models(app: FastAPI):
 	progress = 0
 	for model_type in ('embedding', 'llm'):
 		model_name = _get_model_name_or_path(config, model_type)
+		print("\033[1;33mDownload:\033[0m", model_name, flush=True)
 		if model_name is None:
 			raise Exception(f'Error: Model name/path not found for {model_type}')
 
@@ -242,7 +243,7 @@ def download_all_models(app: FastAPI):
 			raise Exception(f'Error: Model download failed for {model_name}')
 
 		update_progress(progress := progress + 50)
-
+		print("\033[1;32mDownload Done:\033[0m", model_name, flush=True)
 	_set_app_config(app, config)
 
 
