@@ -1,15 +1,10 @@
-import time
-
-import time
-
 from os import getenv
-from typing import Annotated
+from typing import Annotated, Any
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile
 from langchain.llms.base import LLM
 from pydantic import BaseModel, FieldValidationInfo, field_validator
-from datetime import datetime
 
 from .chain import ScopeType, embed_sources, process_query, process_scoped_query
 from .download import download_all_models
@@ -25,8 +20,7 @@ app = FastAPI(debug=getenv('DEBUG', '0') == '1')
 # middlewares
 
 if value_of(getenv('DISABLE_AAA', '0')) == '0':
-    app.add_middleware(AppAPIAuthMiddleware)
-    app.add_middleware(AppAPIAuthMiddleware)
+	app.add_middleware(AppAPIAuthMiddleware)
 
 
 @app.get('/')
@@ -88,31 +82,6 @@ def _(userId: str, sourceNames: str):
 	if db is None:
 		return JSONResponse('Error: VectorDB not initialised', 500)
 
-	source_objs = db.get_objects_from_metadata(userId, 'source', sourceNames)
-	sources = list(map(lambda s: s.get('id'), source_objs.values()))
-
-	return JSONResponse(
-		client.get_collection(COLLECTION_NAME(userId)).get(
-			where_document={'$contains': [{'source': keyword}]},
-			include=['metadatas'],
-		)
-	)
-
-
-# TODO: for testing, remove later
-@app.get('/search')
-@enabled_guard(app)
-def _(userId: str, sourceNames: str):
-	sourceList = [source.strip() for source in sourceNames.split(',') if source.strip() != '']
-
-	if len(sourceList) == 0:
-		return JSONResponse('No sources provided', 400)
-
-	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
-
-	if db is None:
-		return JSONResponse('Error: VectorDB not initialised', 500)
-
 	source_objs = db.get_objects_from_metadata(userId, 'source', sourceList)
 	# sources = list(map(lambda s: s.get('id'), source_objs.values()))
 	sources = [s.get('id') for s in source_objs.values()]
@@ -129,10 +98,8 @@ def _(enabled: bool):
 
 @app.get('/heartbeat')
 def _():
-    print('heartbeat_handler: result=ok')
-    return JSONResponse(content={'status': 'ok'}, status_code=200)
-    print('heartbeat_handler: result=ok')
-    return JSONResponse(content={'status': 'ok'}, status_code=200)
+	print('heartbeat_handler: result=ok')
+	return JSONResponse(content={'status': 'ok'}, status_code=200)
 
 
 @app.post('/init')
@@ -149,27 +116,22 @@ def _(bg_tasks: BackgroundTasks):
 @app.post('/deleteSources')
 @enabled_guard(app)
 def _(userId: Annotated[str, Body()], sourceNames: Annotated[list[str], Body()]):
-    sourceNames = [source.strip() for source in sourceNames if source.strip() != '']
-    sourceNames = [source.strip() for source in sourceNames if source.strip() != '']
+	sourceNames = [source.strip() for source in sourceNames if source.strip() != '']
 
-    if len(sourceNames) == 0:
-        return JSONResponse('No sources provided', 400)
-    if len(sourceNames) == 0:
-        return JSONResponse('No sources provided', 400)
+	if len(sourceNames) == 0:
+		return JSONResponse('No sources provided', 400)
 
-    db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
+	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
 
-    if db is None:
-        return JSONResponse('Error: VectorDB not initialised', 500)
-    if db is None:
-        return JSONResponse('Error: VectorDB not initialised', 500)
+	if db is None:
+		return JSONResponse('Error: VectorDB not initialised', 500)
 
-    res = db.delete(userId, 'source', sourceNames)
+	res = db.delete(userId, 'source', sourceNames)
 
-    if res is False:
-        return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
+	if res is False:
+		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
 
-    return JSONResponse('All valid sources deleted')
+	return JSONResponse('All valid sources deleted')
 
 
 @app.post('/deleteSourcesByProvider')
@@ -187,43 +149,35 @@ def _(userId: Annotated[str, Body()], providerKey: Annotated[str, Body()]):
 
 	if res is False:
 		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
-	if res is False:
-		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
 
 	return JSONResponse('All valid sources deleted')
-    
+
 
 @app.put('/loadSources')
 @enabled_guard(app)
 def _(sources: list[UploadFile]):
-    if len(sources) == 0:
-        return JSONResponse('No sources provided', 400)
-    if len(sources) == 0:
-        return JSONResponse('No sources provided', 400)
+	if len(sources) == 0:
+		return JSONResponse('No sources provided', 400)
 
-    # TODO: headers validation using pydantic
-    if not (
-        value_of(source.headers.get('userId'))
-        and value_of(source.headers.get('type'))
-        and value_of(source.headers.get('modified'))
-        and value_of(source.headers.get('provider'))
-        for source in sources
-    ):
-        return JSONResponse('Invaild/missing headers', 400)
+	# TODO: headers validation using pydantic
+	if not (
+		value_of(source.headers.get('userId'))
+		and value_of(source.headers.get('type'))
+		and value_of(source.headers.get('modified'))
+		and value_of(source.headers.get('provider'))
+		for source in sources
+	):
+		return JSONResponse('Invaild/missing headers', 400)
 
-    db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
-    if db is None:
-        return JSONResponse('Error: VectorDB not initialised', 500)
+	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
+	if db is None:
+		return JSONResponse('Error: VectorDB not initialised', 500)
 
-    result = embed_sources(db, sources)
-    if not result:
-        return JSONResponse('Error: All sources were not loaded, check logs for more info', 500)
-    result = embed_sources(db, sources)
-    if not result:
-        return JSONResponse('Error: All sources were not loaded, check logs for more info', 500)
+	result = embed_sources(db, sources)
+	if not result:
+		return JSONResponse('Error: All sources were not loaded, check logs for more info', 500)
 
-    return JSONResponse('All sources loaded')
-    return JSONResponse('All sources loaded')
+	return JSONResponse('All sources loaded')
 
 
 @app.get('/query')
