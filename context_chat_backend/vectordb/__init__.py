@@ -10,6 +10,7 @@ __all__ = ['get_vector_db', 'vector_dbs', 'BaseVectorDB', 'COLLECTION_NAME', 'Me
 # class name/index name is capitalized (user1 => User1) maybe because it is a class name,
 # so the solution is to use Vector_user1 instead of user1
 COLLECTION_NAME = lambda user_id: f'Vector_{user_id}'
+USER_ID_FROM_COLLECTION = lambda collection: collection.split('_')[-1]
 
 
 def get_vector_db(db_name: str) -> BaseVectorDB:

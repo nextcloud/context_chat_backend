@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from langchain.schema.embeddings import Embeddings
 from langchain.vectorstores import Chroma, VectorStore
 
-from . import COLLECTION_NAME
+from . import COLLECTION_NAME, USER_ID_FROM_COLLECTION
 from .base import BaseVectorDB, MetadataFilter, TSearchDict
 
 load_dotenv()
@@ -32,6 +32,12 @@ class VectorDB(BaseVectorDB):
 
 		self.client = client
 		self.embedding = embedding
+
+	def get_users(self) -> list[str]:
+		if not self.client:
+			raise Exception('Error: Chromadb client not initialised')
+
+		return [USER_ID_FROM_COLLECTION(collection.name) for collection in self.client.list_collections()]
 
 	def setup_schema(self, user_id: str) -> None:
 		if not self.client:

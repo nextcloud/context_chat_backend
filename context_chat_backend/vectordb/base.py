@@ -28,6 +28,17 @@ class BaseVectorDB(ABC):
 		self.embedding = embedding
 
 	@abstractmethod
+	def get_users(self) -> list[str]:
+		'''
+		Returns a list of all user IDs.
+
+		Returns
+		-------
+		list[str]
+			List of user IDs.
+		'''
+
+	@abstractmethod
 	def get_user_client(
 			self,
 			user_id: str,
@@ -175,3 +186,31 @@ successful, therefore not considered an error for now.')
 		]
 
 		return self.delete_by_ids(user_id, ids)
+
+	def delete_for_all_users(self, metadata_key: str, values: list[str]) -> bool:
+		'''
+		Deletes all documents with the matching values for the given metadata key for all users.
+
+		Args
+		----
+		metadata_key: str
+			Metadata key to delete by.
+		values: list[str]
+			List of metadata values to match.
+
+		Returns
+		-------
+		bool
+			True if deletion is successful,
+			False otherwise
+		'''
+		if len(values) == 0:
+			return True
+
+		success = True
+
+		users = self.get_users()
+		for user_id in users:
+			success &= self.delete(user_id, metadata_key, values)
+
+		return success

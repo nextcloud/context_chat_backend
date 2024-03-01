@@ -7,7 +7,7 @@ from langchain.vectorstores import VectorStore, Weaviate
 from weaviate import AuthApiKey, Client
 
 from ..utils import value_of
-from . import COLLECTION_NAME
+from . import COLLECTION_NAME, USER_ID_FROM_COLLECTION
 from .base import BaseVectorDB, MetadataFilter, TSearchDict
 
 load_dotenv()
@@ -88,6 +88,15 @@ class VectorDB(BaseVectorDB):
 
 		self.client = client
 		self.embedding = embedding
+
+	def get_users(self) -> list[str]:
+		if not self.client:
+			raise Exception('Error: Weaviate client not initialised')
+
+		return [
+			USER_ID_FROM_COLLECTION(klass.get('class', ''))
+			for klass in self.client.schema.get().get('classes', [])
+		]
 
 	def setup_schema(self, user_id: str) -> None:
 		if not self.client:

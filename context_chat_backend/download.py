@@ -229,8 +229,6 @@ def download_all_models(app: FastAPI):
 
 	if os.getenv('DISABLE_CUSTOM_DOWNLOAD_URI', '0') == '1':
 		update_progress(100)
-		_set_app_config(app, config)
-		return
 
 	progress = 0
 	for model_type in ('embedding', 'llm'):
@@ -251,6 +249,12 @@ def model_init(app: FastAPI) -> bool:
 	global _MODELS_DIR
 	_MODELS_DIR = os.getenv('MODEL_DIR', 'persistent_storage/model_files')
 
+	config: TConfig = app.extra['CONFIG']
+
+	if os.getenv('DISABLE_CUSTOM_DOWNLOAD_URI', '0') == '1':
+		_set_app_config(app, config)
+		return True
+
 	for model_type in ('embedding', 'llm'):
 		model_name = _get_model_name_or_path(app.extra['CONFIG'], model_type)
 		if model_name is None:
@@ -259,7 +263,6 @@ def model_init(app: FastAPI) -> bool:
 		if not _model_exists(model_name):
 			return False
 
-	config: TConfig = app.extra['CONFIG']
 	_set_app_config(app, config)
 
 	return True

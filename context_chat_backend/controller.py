@@ -47,7 +47,7 @@ def _(query: str | None = None):
 # TODO: for testing, remove later
 @app.get('/vectors')
 @enabled_guard(app)
-def _(userId: str):
+def _():
 	from chromadb.api import ClientAPI
 
 	from .vectordb import COLLECTION_NAME
@@ -61,11 +61,12 @@ def _(userId: str):
 	if client is None:
 		return JSONResponse('Error: VectorDB client not initialised', 500)
 
-	db.setup_schema(userId)
+	vectors = {}
+	for user_id in db.get_users():
+		db.setup_schema(user_id)
+		vectors[user_id] = client.get_collection(COLLECTION_NAME(user_id)).get()
 
-	return JSONResponse(
-		client.get_collection(COLLECTION_NAME(userId)).get()
-	)
+	return JSONResponse(vectors)
 
 
 # TODO: for testing, remove later
@@ -146,6 +147,25 @@ def _(userId: Annotated[str, Body()], providerKey: Annotated[str, Body()]):
 		return JSONResponse('Error: VectorDB not initialised', 500)
 
 	res = db.delete(userId, 'provider', [providerKey])
+
+	if res is False:
+		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
+
+	return JSONResponse('All valid sources deleted')
+
+
+@app.post('/deleteSourcesByProviderForAllUsers')
+@enabled_guard(app)
+def _(providerKey: str = Body(embed=True)):
+	if value_of(providerKey) is None:
+		return JSONResponse('Invalid provider key provided', 400)
+
+	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
+
+	if db is None:
+		return JSONResponse('Error: VectorDB not initialised', 500)
+
+	res = db.delete_for_all_users('provider', [providerKey])
 
 	if res is False:
 		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
@@ -237,11 +257,11 @@ class ScopedQuery(BaseModel):
 
 	@field_validator('ctxLimit')
 	@classmethod
-	def at_least_one_context(cls, v: int):
-		if v < 1:
+	def at_least_one_context(cls, value: int):
+		if value < 1:
 			raise ValueError('Invalid context chunk limit')
 
-		return v
+		return value
 
 @app.post('/scopedQuery')
 @enabled_guard(app)
