@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 1.2.0 - 2024-03-11
+### Fixed
+* fix: convert getenv's output to str
+* type fixes and other numerous fixes
+* fix: metadata search for provider
+* move COLLECTION_NAME to vectordb dir
+* skip ingestion .pot files
+
+### Added
+* Added initial cuda11.8 support (#16)
+* Introduce /deleteSourcesByProviderForAllUsers and fixes
+* add support for scoped context in query
+* add integration test
+* use /init and persistent storage
+
+
 ## 1.1.1 – 2024-02-14
 ### Fixed
 * drop `.run/`
