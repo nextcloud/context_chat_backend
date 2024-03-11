@@ -1,0 +1,14 @@
+FROM python:3.11-bookworm
+
+RUN apt update && apt install -y --no-install-recommends pandoc git
+
+WORKDIR /app
+
+COPY requirements.cpu.txt .
+RUN python3 -m pip install --no-cache-dir --no-deps -r requirements.cpu.txt
+
+COPY context_chat_backend context_chat_backend
+COPY main.py .
+COPY config.cpu.yaml config.yaml
+
+ENTRYPOINT ["python3", "main.py"]
