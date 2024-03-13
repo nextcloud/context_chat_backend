@@ -1,0 +1,39 @@
+name: Docker build and push
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - '**'
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{github.actor}}
+          password: ${{secrets.GITHUB_TOKEN}}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract app's version from info.xml
+        id: getversion
+        uses: mavrosxristoforos/get-xml-info@1.0
+        with:
+          xml-file: 'appinfo/info.xml'
+          xpath: '/info/version'
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ghcr.io/nextcloud/context_chat_backend:latest,ghcr.io/nextcloud/context_chat_backend:${{ steps.getversion.outputs.info }}
