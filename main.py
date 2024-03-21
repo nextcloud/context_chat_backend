@@ -3,6 +3,7 @@ from os import getenv
 
 import uvicorn
 
+from context_chat_backend import app_config
 from context_chat_backend.utils import to_int
 
 if __name__ == '__main__':
@@ -12,12 +13,12 @@ if __name__ == '__main__':
 		port=to_int(getenv('APP_PORT'), 9000),
 		http='h11',
 		interface='asgi3',
-		log_level=('warning', 'trace')[getenv('DEBUG', '0') == '1'],
-		use_colors=bool(getenv('USE_COLORS', '1') == '1' and getenv('CI', 'false') == 'false'),
+		log_level=('warning', 'trace')[app_config['debug']],
+		use_colors=bool(app_config['use_colors'] and getenv('CI', 'false') == 'false'),
 		# limit_concurrency=10,
 		# backlog=20,
 		timeout_keep_alive=120,
 		h11_max_incomplete_event_size=5 * 1024 * 1024,  # 5MiB
 		# todo: on-demand instantiation of the resources for multi-worker mode
-		workers=to_int(getenv('UVICORN_WORKERS'), 1),
+		workers=app_config['uvicorn_workers'],
 	)

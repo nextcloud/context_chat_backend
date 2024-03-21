@@ -1,10 +1,12 @@
-from os import getenv
+from os import environ
 from typing import Annotated, Any
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile
 from langchain.llms.base import LLM
 from pydantic import BaseModel, FieldValidationInfo, field_validator
+
+from context_chat_backend.config_parser import get_config
 
 from .chain import ScopeType, embed_sources, process_query
 from .download import download_all_models
@@ -14,12 +16,13 @@ from .vectordb import BaseVectorDB
 
 load_dotenv()
 
-app = FastAPI(debug=getenv('DEBUG', '0') == '1')
+app_config = get_config(environ['CC_CONFIG_PATH'])
+app = FastAPI(debug=app_config['debug'])
 
 
 # middlewares
 
-if getenv('DISABLE_AAA', '0') == '0':
+if not app_config['disable_aaa']:
 	app.add_middleware(AppAPIAuthMiddleware)
 
 
@@ -109,7 +112,7 @@ def _(bg_tasks: BackgroundTasks):
 		bg_tasks.add_task(download_all_models, app)
 		return JSONResponse(content={}, status_code=200)
 
-	update_progress(100)
+	update_progress(app, 100)
 	print('App already initialised', flush=True)
 	return JSONResponse(content={}, status_code=200)
 

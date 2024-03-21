@@ -17,10 +17,7 @@ from .utils import update_progress
 load_dotenv()
 
 _MODELS_DIR = ''
-_BASE_URL = os.getenv(
-	'DOWNLOAD_URI',
-	'https://download.nextcloud.com/server/apps/context_chat_backend'
-).removesuffix('/') + '/'
+_BASE_URL = ''
 _DEFAULT_EXT = '.tar.gz'
 _KNOWN_EXTENSIONS = (
 	'gguf',
@@ -216,6 +213,14 @@ def _extract_n_save(model_name: str, filepath: str) -> bool:
 		raise OSError(f'Error: File move into `{_MODELS_DIR}` failed') from e
 
 
+def _global_delayed_init(config: TConfig):
+	global _MODELS_DIR
+	global _BASE_URL
+
+	_MODELS_DIR = os.getenv('MODEL_DIR', 'persistent_storage/model_files')
+	_BASE_URL = config['model_download_uri'].removesuffix('/') + '/'
+
+
 def download_all_models(app: FastAPI):
 	'''
 	Downloads all models specified in the config.yaml file
@@ -226,9 +231,10 @@ def download_all_models(app: FastAPI):
 	app: FastAPI object
 	'''
 	config: TConfig = app.extra['CONFIG']
+	_global_delayed_init(config)
 
-	if os.getenv('DISABLE_CUSTOM_DOWNLOAD_URI', '0') == '1':
-		update_progress(100)
+	if config['disable_custom_model_download']:
+		update_progress(app, 100)
 
 	progress = 0
 	for model_type in ('embedding', 'llm'):
@@ -239,19 +245,16 @@ def download_all_models(app: FastAPI):
 		if not _download_model(model_name):
 			raise Exception(f'Error: Model download failed for {model_name}')
 
-		update_progress(progress := progress + 50)
+		update_progress(app, progress := progress + 50)
 
 	_set_app_config(app, config)
 
 
 def model_init(app: FastAPI) -> bool:
-	# the env var is set in the __init__.py file
-	global _MODELS_DIR
-	_MODELS_DIR = os.getenv('MODEL_DIR', 'persistent_storage/model_files')
-
 	config: TConfig = app.extra['CONFIG']
+	_global_delayed_init(config)
 
-	if os.getenv('DISABLE_CUSTOM_DOWNLOAD_URI', '0') == '1':
+	if config['disable_custom_model_download']:
 		_set_app_config(app, config)
 		return True
 

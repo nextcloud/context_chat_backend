@@ -1,15 +1,15 @@
 import os
 
 from dotenv import load_dotenv
+from ruamel.yaml import dump
 
 from .config_parser import get_config
-from .controller import app
 from .download import model_init
 from .utils import to_int
 
 load_dotenv()
 
-__all__ = ['app', 'to_int']
+__all__ = ['app', 'app_config', 'to_int']
 
 
 def _setup_env_vars():
@@ -38,6 +38,10 @@ def _setup_env_vars():
 
 _setup_env_vars()
 
-app.extra['CONFIG'] = get_config(os.environ['CC_CONFIG_PATH'])
+from .controller import app  # noqa: E402
+
+app_config = get_config(os.environ['CC_CONFIG_PATH'])
+app.extra['CONFIG'] = app_config
 app.extra['ENABLED'] = model_init(app)
-print('App', 'enabled' if app.extra['ENABLED'] else 'disabled', 'at startup', flush=True)
+print('\n\nApp', 'enabled' if app.extra['ENABLED'] else 'disabled', 'at startup', flush=True)
+print('App config:\n' + dump(app_config), flush=True)

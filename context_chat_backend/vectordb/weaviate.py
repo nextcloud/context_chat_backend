@@ -12,11 +12,6 @@ from .base import BaseVectorDB, MetadataFilter, TSearchDict
 
 load_dotenv()
 
-# WEAVIATE_API_KEY is automatically used if set
-if value_of(getenv('WEAVIATE_URL')) is None:
-	raise Exception('Error: environment variable WEAVIATE_URL is not set')
-
-
 class_schema = {
 	'properties': [
 		{
@@ -71,10 +66,10 @@ class VectorDB(BaseVectorDB):
 	def __init__(self, embedding: Embeddings | None = None, **kwargs):
 		try:
 			client = Client(
-				**({
-					'auth_client_secret': AuthApiKey(getenv('WEAVIATE_APIKEY', '')),
-				} if value_of(getenv('WEAVIATE_APIKEY')) is not None else {}),
 				**{
+					**({
+						'auth_client_secret': AuthApiKey(getenv('WEAVIATE_APIKEY', '')),
+					} if value_of(getenv('WEAVIATE_APIKEY')) is not None else {}),
 					'url': getenv('WEAVIATE_URL'),
 					'timeout_config': (1, 20),
 					**kwargs,

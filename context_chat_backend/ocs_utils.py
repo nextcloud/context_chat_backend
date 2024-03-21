@@ -91,6 +91,7 @@ def ocs_call(
 	path: str,
 	params: dict | None = None,
 	json_data: dict | list | None = None,
+	verify_ssl: bool = True,
 	**kwargs,
 ):
 	'''
@@ -125,8 +126,6 @@ def ocs_call(
 		data_bytes = json.dumps(json_data).encode('utf-8')
 
 	_sign_request(headers, kwargs.get('username', ''))
-
-	verify_ssl = getenv('HTTPX_VERIFY_SSL', '1') == '1'
 
 	with httpx.Client(verify=verify_ssl) as client:
 		ret = client.request(
