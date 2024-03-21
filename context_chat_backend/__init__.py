@@ -26,15 +26,18 @@ def _setup_env_vars():
 	if not os.path.exists(model_dir):
 		os.makedirs(model_dir, 0o750, True)
 
+	config_path = os.path.join(persistent_storage, 'config.yaml')
+
 	os.environ['APP_PERSISTENT_STORAGE'] = persistent_storage
 	os.environ['VECTORDB_DIR'] = vector_db_dir
 	os.environ['MODEL_DIR'] = model_dir
 	os.environ['SENTENCE_TRANSFORMERS_HOME'] = os.getenv('SENTENCE_TRANSFORMERS_HOME', model_dir)
 	os.environ['TRANSFORMERS_CACHE'] = os.getenv('TRANSFORMERS_CACHE', model_dir)
+	os.environ['CC_CONFIG_PATH'] = os.getenv('CC_CONFIG_PATH', config_path)
 
 
 _setup_env_vars()
 
-app.extra['CONFIG'] = get_config()
+app.extra['CONFIG'] = get_config(os.environ['CC_CONFIG_PATH'])
 app.extra['ENABLED'] = model_init(app)
 print('App', 'enabled' if app.extra['ENABLED'] else 'disabled', 'at startup', flush=True)
