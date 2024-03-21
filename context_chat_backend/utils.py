@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from functools import wraps
 from os import getenv
-from typing import Any, TypeVar
+from typing import Any, TypeGuard, TypeVar
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse as FastAPIJSONResponse
@@ -11,14 +11,15 @@ from .ocs_utils import ocs_call
 T = TypeVar('T')
 
 
+def not_none(value: T | None) -> TypeGuard[T]:
+	return value is not None
+
+
 def value_of(value: T, default: T | None = None) -> T | None:
 	if value is None:
 		return default
 
 	if isinstance(value, str) and value.strip() == '':
-		return default
-
-	if isinstance(value, list) and len(value) == 0:
 		return default
 
 	return value

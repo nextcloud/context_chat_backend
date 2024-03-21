@@ -36,7 +36,7 @@ class_schema = {
 		},
 		{
 			'dataType': ['text'],
-			'description': 'The source of the text (for files: `file: fileId`)',
+			'description': 'The source of the text (for files: `files__default: fileId`)',
 			'name': 'source',
 		},
 		{

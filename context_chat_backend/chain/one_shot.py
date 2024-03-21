@@ -3,6 +3,7 @@ from logging import error as log_error
 
 from langchain.llms.base import LLM
 
+from ..utils import not_none
 from ..vectordb import BaseVectorDB
 
 _LLM_TEMPLATE = '''Answer based only on this context and do not add any imaginative details:
@@ -24,7 +25,8 @@ def process_query(
 	query: str,
 	use_context: bool = True,
 	ctx_limit: int = 5,
-	ctx_filter: dict | None = None,
+	scope_type: ScopeType | None = None,
+	scope_list: list[str] | None = None,
 	template: str | None = None,
 	end_separator: str = '',
 ) -> tuple[str, list[str]]:
@@ -35,9 +37,20 @@ def process_query(
 	if user_client is None:
 		return llm.predict(query), []
 
-	if ctx_filter is not None:
-		context_docs = user_client.similarity_search(query, k=ctx_limit, filter=ctx_filter)
-	else:
+	context_docs = None
+	if not_none(scope_type) and not_none(scope_list) and len(scope_list) > 0:
+		ctx_filter = vectordb.get_metadata_filter([{
+			'metadata_key': scope_type.value,
+			'values': scope_list,
+		}])
+
+		if ctx_filter is not None:
+			context_docs = user_client.similarity_search(query, k=ctx_limit, filter=ctx_filter)
+		else:
+			log_error(f'Error: could not get filter for \nscope type: {scope_type}\n\
+scope list: {scope_list}\n\nproceeding with an unscoped query')
+
+	if context_docs is None:
 		context_docs = user_client.similarity_search(query, k=ctx_limit)
 
 	context_text = '\n\n'.join(f'{d.metadata.get("title")}\n{d.page_content}' for d in context_docs)
@@ -47,36 +60,3 @@ def process_query(
 	unique_sources: list[str] = list({source for d in context_docs if (source := d.metadata.get('source'))})
 
 	return (output, unique_sources)
-
-
-def process_scoped_query(
-	user_id: str,
-	vectordb: BaseVectorDB,
-	llm: LLM,
-	query: str,
-	scope_type: ScopeType,
-	scope_list: list[str],
-	ctx_limit: int = 5,
-	template: str | None = None,
-	end_separator: str = '',
-) -> tuple[str, list[str]]:
-	ctx_filter = vectordb.get_metadata_filter([{
-		'metadata_key': scope_type.value,
-		'values': scope_list,
-	}])
-
-	if ctx_filter is None:
-		log_error(f'Error: could not get filter for (\nscope type: {scope_type}\n\
-scope list: {scope_list}\n\nproceeding with an unscoped query')
-
-	return process_query(
-		user_id=user_id,
-		vectordb=vectordb,
-		llm=llm,
-		query=query,
-		use_context=True,
-		ctx_limit=ctx_limit,
-		ctx_filter=ctx_filter,
-		template=template,
-		end_separator=end_separator,
-	)
