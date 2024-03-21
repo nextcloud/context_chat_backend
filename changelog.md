@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 2.0.0 - 2024-03-21
+### Changed
+- use ubuntu-22.04 to use gh runners
+- migrate useful env vars to config(.cpu).yaml
+- move config(.cpu)?.yaml to persistent_storage
+
+### Fixed
+- modifications to scoped context chat
+- fix: location of config.yaml in the dockerfiles
+- pre-commit autoupdate
+
+
 ## 1.2.0 - 2024-03-11
 ### Fixed
 * fix: convert getenv's output to str
