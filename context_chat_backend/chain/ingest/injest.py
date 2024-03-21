@@ -160,7 +160,7 @@ def embed_sources(
 	# either not a file or a file that is allowed
 	sources_filtered = [
 		source for source in sources
-		if (source.filename is not None and not source.filename.startswith('file: '))
+		if (source.filename is not None and not source.filename.startswith('files__default: '))
 		or _allowed_file(source)
 	]
 

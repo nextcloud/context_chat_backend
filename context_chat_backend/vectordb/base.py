@@ -146,8 +146,8 @@ class BaseVectorDB(ABC):
 		# weaviate maybe because of the way weaviate wrapper is implemented (langchain's api does not take
 		# class name as input, which will be required in future versions of weaviate)
 		if res is None:
-			print('Deletion query returned "None". This can happen in Weaviate even if the deletion was \
-successful, therefore not considered an error for now.')
+			print('Deletion query returned "None". This can happen even if the deletion was \
+successful, therefore not considered an error.')
 			return True
 
 		return res
@@ -182,7 +182,7 @@ successful, therefore not considered an error for now.')
 		ids = [
 			obj.get('id')
 			for obj in objs.values()
-			if value_of(obj.get('id') is not None)
+			if value_of(obj.get('id')) is not None
 		]
 
 		return self.delete_by_ids(user_id, ids)

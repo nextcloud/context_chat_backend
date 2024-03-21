@@ -6,7 +6,7 @@ from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile
 from langchain.llms.base import LLM
 from pydantic import BaseModel, FieldValidationInfo, field_validator
 
-from .chain import ScopeType, embed_sources, process_query, process_scoped_query
+from .chain import ScopeType, embed_sources, process_query
 from .download import download_all_models
 from .ocs_utils import AppAPIAuthMiddleware
 from .utils import JSONResponse, enabled_guard, update_progress, value_of
@@ -19,7 +19,7 @@ app = FastAPI(debug=getenv('DEBUG', '0') == '1')
 
 # middlewares
 
-if value_of(getenv('DISABLE_AAA', '0')) == '0':
+if getenv('DISABLE_AAA', '0') == '0':
 	app.add_middleware(AppAPIAuthMiddleware)
 
 
@@ -200,54 +200,15 @@ def _(sources: list[UploadFile]):
 	return JSONResponse('All sources loaded')
 
 
-@app.get('/query')
-@enabled_guard(app)
-def _(userId: str, query: str, useContext: bool = True, ctxLimit: int = 5):
-	llm: LLM | None = app.extra.get('LLM_MODEL')
-	if llm is None:
-		return JSONResponse('Error: LLM not initialised', 500)
-
-	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
-	if db is None:
-		return JSONResponse('Error: VectorDB not initialised', 500)
-
-	if value_of(userId) is None:
-		return JSONResponse('Empty User ID', 400)
-
-	if value_of(query) is None:
-		return JSONResponse('Empty query', 400)
-
-	if ctxLimit < 1:
-		return JSONResponse('Invalid context chunk limit', 400)
-
-	template = app.extra.get('LLM_TEMPLATE')
-	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
-
-	(output, sources) = process_query(
-		user_id=userId,
-		vectordb=db,
-		llm=llm,
-		query=query,
-		use_context=useContext,
-		ctx_limit=ctxLimit,
-		template=template,
-		end_separator=end_separator,
-	)
-
-	return JSONResponse({
-		'output': output,
-		'sources': sources,
-	})
-
-
-class ScopedQuery(BaseModel):
+class Query(BaseModel):
 	userId: str
 	query: str
-	scopeType: ScopeType
-	scopeList: list[str]
+	useContext: bool = True
+	scopeType: ScopeType | None = None
+	scopeList: list[str] | None = None
 	ctxLimit: int = 5
 
-	@field_validator('userId', 'query', 'scopeList', 'ctxLimit')
+	@field_validator('userId', 'query', 'ctxLimit')
 	@classmethod
 	def check_empty_values(cls, value: Any, info: FieldValidationInfo):
 		if value_of(value) is None:
@@ -263,9 +224,12 @@ class ScopedQuery(BaseModel):
 
 		return value
 
-@app.post('/scopedQuery')
+
+@app.post('/query')
 @enabled_guard(app)
-def _(scopedQuery: ScopedQuery):
+def _(query: Query):
+	print('query:', query, flush=True)
+
 	llm: LLM | None = app.extra.get('LLM_MODEL')
 	if llm is None:
 		return JSONResponse('Error: LLM not initialised', 500)
@@ -277,16 +241,16 @@ def _(scopedQuery: ScopedQuery):
 	template = app.extra.get('LLM_TEMPLATE')
 	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
 
-	(output, sources) = process_scoped_query(
-		user_id=scopedQuery.userId,
+	(output, sources) = process_query(
+		user_id=query.userId,
 		vectordb=db,
 		llm=llm,
-		query=scopedQuery.query,
-		ctx_limit=scopedQuery.ctxLimit,
+		query=query.query,
+		ctx_limit=query.ctxLimit,
 		template=template,
 		end_separator=end_separator,
-		scope_type=scopedQuery.scopeType,
-		scope_list=scopedQuery.scopeList,
+		scope_type=query.scopeType,
+		scope_list=query.scopeList,
 	)
 
 	return JSONResponse({
