@@ -147,7 +147,7 @@ jobs:
           pip install --upgrade pip setuptools wheel
           CMAKE_ARGS="-DLLAMA_OPENBLAS=on" pip install llama-cpp-python
           cp example.env .env
-          cp config.cpu.yaml config.yaml
+          cp persistent_storage/config.cpu.yaml persistent_storage/config.yaml
           echo "NEXTCLOUD_URL=http://localhost:8080" >> .env
           ./main.py &> backend_logs &
 

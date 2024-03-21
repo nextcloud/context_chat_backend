@@ -28,7 +28,7 @@ def _first_in_list(
 	return None
 
 
-def get_config(file_path: str = 'config.yaml') -> TConfig:
+def get_config(file_path: str) -> TConfig:
 	'''
 	Get the config from the given file path (relative to the root directory).
 	'''
