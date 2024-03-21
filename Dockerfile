@@ -28,6 +28,5 @@ RUN CMAKE_ARGS="-DLLAMA_CUBLAS=on -DLLAMA_OPENBLAS=on" python3 -m pip install ll
 # Copy application files
 COPY context_chat_backend context_chat_backend
 COPY main.py .
-COPY config.yaml .
 
 ENTRYPOINT ["python3", "main.py"]

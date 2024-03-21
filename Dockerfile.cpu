@@ -8,7 +8,7 @@ COPY requirements.cpu.txt .
 RUN python3 -m pip install --no-cache-dir --no-deps -r requirements.cpu.txt
 
 COPY context_chat_backend context_chat_backend
+COPY context_chat_backend/persistent_storage/config.cpu.yaml context_chat_backend/persistent_storage/config.yaml
 COPY main.py .
-COPY config.cpu.yaml config.yaml
 
 ENTRYPOINT ["python3", "main.py"]
