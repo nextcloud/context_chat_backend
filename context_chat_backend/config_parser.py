@@ -1,4 +1,3 @@
-from pprint import pprint
 from typing import TypedDict
 
 from ruamel.yaml import YAML
@@ -8,6 +7,16 @@ from .vectordb import vector_dbs
 
 
 class TConfig(TypedDict):
+	debug: bool
+	disable_aaa: bool
+	httpx_verify_ssl: bool
+	use_colors: bool
+	uvicorn_workers: int
+
+	# model files download configuration
+	disable_custom_model_download: bool
+	model_download_uri: str
+
 	vectordb: tuple[str, dict]
 	embedding: tuple[str, dict]
 	llm: tuple[str, dict]
@@ -58,11 +67,18 @@ def get_config(file_path: str) -> TConfig:
 		)
 
 	selected_config: TConfig = {
+		'debug': config.get('debug', False),
+		'disable_aaa': config.get('disable_aaa', False),
+		'httpx_verify_ssl': config.get('httpx_verify_ssl', True),
+		'use_colors': config.get('use_colors', True),
+		'uvicorn_workers': config.get('uvicorn_workers', 1),
+
+		'disable_custom_model_download': config.get('disable_custom_model_download', False),
+		'model_download_uri': config.get('model_download_uri', 'https://download.nextcloud.com/server/apps/context_chat_backend'),
+
 		'vectordb': vectordb,
 		'embedding': embedding,
 		'llm': llm,
 	}
-
-	pprint(f'Selected config: {selected_config}')
 
 	return selected_config

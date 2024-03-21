@@ -66,7 +66,8 @@ def enabled_guard(app: FastAPI):
 		'''
 		@wraps(func)
 		def wrapper(*args, **kwargs):
-			if getenv('DISABLE_AAA', '0') == '0' and not app.extra.get('ENABLED', False):
+			disable_aaa = app.extra['CONFIG']['disable_aaa']
+			if not disable_aaa and not app.extra.get('ENABLED', False):
 				return JSONResponse('Context Chat is disabled, enable it from AppAPI to use it.', 503)
 
 			return func(*args, **kwargs)
@@ -76,9 +77,10 @@ def enabled_guard(app: FastAPI):
 	return decorator
 
 
-def update_progress(progress: int):
+def update_progress(app: FastAPI, progress: int):
 	ocs_call(
 		method='PUT',
 		path=f'/ocs/v1.php/apps/app_api/apps/status/{getenv("APP_ID")}',
 		json_data={ 'progress': min(100, progress) },
+		verify_ssl=app.extra['CONFIG']['httpx_verify_ssl'],
 	)
