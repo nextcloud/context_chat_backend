@@ -1,7 +1,8 @@
 import os
+import shutil
+from json import dumps
 
 from dotenv import load_dotenv
-from ruamel.yaml import dump
 
 from .config_parser import get_config
 from .download import model_init
@@ -27,6 +28,11 @@ def _setup_env_vars():
 		os.makedirs(model_dir, 0o750, True)
 
 	config_path = os.path.join(persistent_storage, 'config.yaml')
+	if not os.path.exists(config_path):
+		if not os.path.exists('config.yaml'):
+			raise AssertionError(f'Error: sample config file (/config.yaml) and the provided config file ({config_path}) do not exist')  # noqa: E501
+
+		shutil.move('config.yaml', config_path)
 
 	os.environ['APP_PERSISTENT_STORAGE'] = persistent_storage
 	os.environ['VECTORDB_DIR'] = vector_db_dir
@@ -38,10 +44,12 @@ def _setup_env_vars():
 
 _setup_env_vars()
 
+app_config = get_config(os.environ['CC_CONFIG_PATH'])
+print('App config:\n' + dumps(app_config, indent=2), flush=True)
+
 from .controller import app  # noqa: E402
 
-app_config = get_config(os.environ['CC_CONFIG_PATH'])
 app.extra['CONFIG'] = app_config
 app.extra['ENABLED'] = model_init(app)
+
 print('\n\nApp', 'enabled' if app.extra['ENABLED'] else 'disabled', 'at startup', flush=True)
-print('App config:\n' + dump(app_config), flush=True)
