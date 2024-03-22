@@ -1,16 +1,54 @@
+import re
 from importlib import import_module
 
 from .base import BaseVectorDB, MetadataFilter
 
 vector_dbs = ['weaviate', 'chroma']
 
-__all__ = ['get_vector_db', 'vector_dbs', 'BaseVectorDB', 'COLLECTION_NAME', 'MetadataFilter']
+__all__ = [
+	'BaseVectorDB',
+	'MetadataFilter',
+	'get_collection_name',
+	'get_user_id_from_collection',
+	'get_vector_db',
+	'vector_dbs',
+]
 
 
+# transitory cache for user_id to collection name
+user_id_cache = {}
+
+re_user_id = re.compile(r'^[a-zA-Z0-9_.\-@ ]{1,56}$')
 # class name/index name is capitalized (user1 => User1) maybe because it is a class name,
 # so the solution is to use Vector_user1 instead of user1
-COLLECTION_NAME = lambda user_id: f'Vector_{user_id}'
-USER_ID_FROM_COLLECTION = lambda collection: collection.split('_')[-1]
+def get_collection_name(user_id: str) -> str:
+	if user_id in user_id_cache:
+		return user_id_cache[user_id]
+
+	if not re_user_id.match(user_id):
+		raise AssertionError('Error: invalid user_id format, should consist of alphanumeric characters, hyphen, underscore, dot, and space only. Length should not exceed 56 characters.')  # noqa: E501
+
+	# should not end in a special character
+	if user_id[-1] in '_.-@ ':
+		raise AssertionError('Error: user_id should not end in a special character.')
+
+	# replace space with double underscore
+	user_id = user_id.replace(' ', '__')
+	# replace consecutive dots with .n. (n is the number of dots)
+	user_id = re.sub(r'\.{2,}', lambda m: f'.{len(m.group())}.', user_id)
+
+	# recheck length constraints
+	if len(user_id) > 56:
+		raise AssertionError(f'Error: length of cleaned up user_id should not exceed 56 characters, processed username: {user_id}.')  # noqa: E501
+
+	collection_name = f'Vector_{user_id}'
+	user_id_cache[user_id] = collection_name
+
+	return collection_name
+
+
+def get_user_id_from_collection(collection_name: str) -> str:
+	return collection_name[7:]
 
 
 def get_vector_db(db_name: str) -> BaseVectorDB:

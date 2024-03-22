@@ -7,7 +7,7 @@ from langchain.vectorstores import VectorStore, Weaviate
 from weaviate import AuthApiKey, Client
 
 from ..utils import value_of
-from . import COLLECTION_NAME, USER_ID_FROM_COLLECTION
+from . import get_collection_name, get_user_id_from_collection
 from .base import BaseVectorDB, MetadataFilter, TSearchDict
 
 load_dotenv()
@@ -89,7 +89,7 @@ class VectorDB(BaseVectorDB):
 			raise Exception('Error: Weaviate client not initialised')
 
 		return [
-			USER_ID_FROM_COLLECTION(klass.get('class', ''))
+			get_user_id_from_collection(klass['class'])
 			for klass in self.client.schema.get().get('classes', [])
 		]
 
@@ -97,11 +97,11 @@ class VectorDB(BaseVectorDB):
 		if not self.client:
 			raise Exception('Error: Weaviate client not initialised')
 
-		if self.client.schema.exists(COLLECTION_NAME(user_id)):
+		if self.client.schema.exists(get_collection_name(user_id)):
 			return
 
 		self.client.schema.create_class({
-			'class': COLLECTION_NAME(user_id),
+			'class': get_collection_name(user_id),
 			**class_schema,
 		})
 
@@ -120,7 +120,7 @@ class VectorDB(BaseVectorDB):
 
 		weaviate_obj = Weaviate(
 			client=self.client,
-			index_name=COLLECTION_NAME(user_id),
+			index_name=get_collection_name(user_id),
 			text_key='text',
 			embedding=em,
 			by_text=False,
@@ -176,7 +176,7 @@ class VectorDB(BaseVectorDB):
 			return {}
 
 		results = self.client.query \
-			.get(COLLECTION_NAME(user_id), [metadata_key, 'modified']) \
+			.get(get_collection_name(user_id), [metadata_key, 'modified']) \
 			.with_additional('id') \
 			.with_where(data_filter) \
 			.do()
@@ -190,7 +190,7 @@ class VectorDB(BaseVectorDB):
 			dmeta[val] = True
 
 		try:
-			results = results['data']['Get'][COLLECTION_NAME(user_id)]
+			results = results['data']['Get'][get_collection_name(user_id)]
 			output = {}
 			for result in results:
 				# case sensitive matching

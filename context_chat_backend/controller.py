@@ -53,7 +53,7 @@ def _(query: str | None = None):
 def _():
 	from chromadb.api import ClientAPI
 
-	from .vectordb import COLLECTION_NAME
+	from .vectordb import get_collection_name
 
 	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
 	if db is None:
@@ -67,7 +67,7 @@ def _():
 	vectors = {}
 	for user_id in db.get_users():
 		db.setup_schema(user_id)
-		vectors[user_id] = client.get_collection(COLLECTION_NAME(user_id)).get()
+		vectors[user_id] = client.get_collection(get_collection_name(user_id)).get()
 
 	return JSONResponse(vectors)
 
@@ -95,6 +95,7 @@ def _(userId: str, sourceNames: str):
 
 @app.put('/enabled')
 def _(enabled: bool):
+	# todo: offload the resources
 	app.extra['ENABLED'] = enabled
 	print('App', 'enabled' if enabled else 'disabled', flush=True)
 	return JSONResponse(content={'error': ''}, status_code=200)
