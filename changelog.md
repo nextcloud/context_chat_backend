@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 2.0.1 - 2024-03-23
+### Fixed
+- user_id sanitisation for vectordb collection names
+- symlink config.yaml in the persistent dir
+- use requirements.cpu.txt in CI due to space constraints
+
+
 ## 2.0.0 - 2024-03-21
 ### Changed
 - use ubuntu-22.04 to use gh runners
