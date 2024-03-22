@@ -78,6 +78,9 @@ def enabled_guard(app: FastAPI):
 
 
 def update_progress(app: FastAPI, progress: int):
+	if app.extra['CONFIG']['disable_aaa']:
+		return
+
 	ocs_call(
 		method='PUT',
 		path=f'/ocs/v1.php/apps/app_api/apps/status/{getenv("APP_ID")}',
