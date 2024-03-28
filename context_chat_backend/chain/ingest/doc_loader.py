@@ -71,7 +71,12 @@ def _load_xlsx(file: BinaryIO) -> str:
 
 
 def _load_odt(file: BinaryIO) -> str:
-	return convert_text(str(file.read()), 'plain', 'odt').strip()
+	return convert_text(
+		str(file.read()),
+		'plain',
+		'odt',
+		extra_args=["+RTS", "-M8GB", "-RTS"],
+	).strip()
 
 
 def _load_email(file: BinaryIO, ext: str = 'eml') -> str | None:
