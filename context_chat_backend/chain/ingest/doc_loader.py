@@ -41,11 +41,11 @@ def _load_csv(file: BinaryIO) -> str:
 
 
 def _load_epub(file: BinaryIO) -> str:
-	return convert_text(str(file.read()), 'plain', 'epub', extra_args=["+RTS", "-M8GB", "-RTS"]).strip()
+	return convert_text(str(file.read()), 'plain', 'epub', extra_args=["+RTS", "-M4096m", "-RTS"]).strip()
 
 
 def _load_docx(file: BinaryIO) -> str:
-	return convert_text(str(file.read()), 'plain', 'docx', extra_args=["+RTS", "-M8GB", "-RTS"]).strip()
+	return convert_text(str(file.read()), 'plain', 'docx', extra_args=["+RTS", "-M4096m", "-RTS"]).strip()
 
 
 def _load_ppt_x(file: BinaryIO) -> str:
@@ -53,11 +53,11 @@ def _load_ppt_x(file: BinaryIO) -> str:
 
 
 def _load_rtf(file: BinaryIO) -> str:
-	return convert_text(str(file.read()), 'plain', 'rtf', extra_args=["+RTS", "-M8GB", "-RTS"]).strip()
+	return convert_text(str(file.read()), 'plain', 'rtf', extra_args=["+RTS", "-M4096m", "-RTS"]).strip()
 
 
 def _load_rst(file: BinaryIO) -> str:
-	return convert_text(str(file.read()), 'plain', 'rst', extra_args=["+RTS", "-M8GB", "-RTS"]).strip()
+	return convert_text(str(file.read()), 'plain', 'rst', extra_args=["+RTS", "-M4096m", "-RTS"]).strip()
 
 
 def _load_xml(file: BinaryIO) -> str:
@@ -71,7 +71,7 @@ def _load_xlsx(file: BinaryIO) -> str:
 
 
 def _load_odt(file: BinaryIO) -> str:
-	return convert_text(str(file.read()), 'plain', 'odt', extra_args=["+RTS", "-M8GB", "-RTS"]).strip()
+	return convert_text(str(file.read()), 'plain', 'odt', extra_args=["+RTS", "-M4096m", "-RTS"]).strip()
 
 
 def _load_email(file: BinaryIO, ext: str = 'eml') -> str | None:
@@ -96,7 +96,7 @@ def _load_email(file: BinaryIO, ext: str = 'eml') -> str | None:
 
 
 def _load_org(file: BinaryIO) -> str:
-	return convert_text(str(file.read()), 'plain', 'org', extra_args=["+RTS", "-M8GB", "-RTS"]).strip()
+	return convert_text(str(file.read()), 'plain', 'org', extra_args=["+RTS", "-M4096m", "-RTS"]).strip()
 
 
 # -- LOADER FUNCTION MAP -- #
