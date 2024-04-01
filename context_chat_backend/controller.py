@@ -255,6 +255,7 @@ def _(query: Query):
 		end_separator=end_separator,
 		scope_type=query.scopeType,
 		scope_list=query.scopeList,
+		use_context=query.useContext,
 	)
 
 	return JSONResponse({
