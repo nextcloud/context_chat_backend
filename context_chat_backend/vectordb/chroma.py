@@ -5,7 +5,7 @@ from chromadb import Client
 from chromadb.config import Settings
 from dotenv import load_dotenv
 from langchain.schema.embeddings import Embeddings
-from langchain.vectorstores import Chroma, VectorStore
+from langchain_community.vectorstores import Chroma, VectorStore
 
 from . import get_collection_name, get_user_id_from_collection
 from .base import BaseVectorDB, MetadataFilter, TSearchDict
@@ -20,7 +20,7 @@ class VectorDB(BaseVectorDB):
 				anonymized_telemetry=False,
 				**{
 					'is_persistent': True,
-					'persist_directory': getenv('VECTORDB_DIR', './persistent_storage/vector_db_data'),
+					'persist_directory': getenv('VECTORDB_DIR', 'persistent_storage/vector_db_data'),
 					**kwargs,
 				},
 			))

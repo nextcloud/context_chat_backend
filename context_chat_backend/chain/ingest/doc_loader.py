@@ -5,7 +5,7 @@ from logging import error as log_error
 from typing import BinaryIO
 
 from fastapi import UploadFile
-from langchain.document_loaders import (
+from langchain_community.document_loaders import (
 	UnstructuredEmailLoader,
 	UnstructuredPowerPointLoader,
 )

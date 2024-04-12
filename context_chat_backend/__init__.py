@@ -41,7 +41,7 @@ def _setup_env_vars():
 	os.environ['VECTORDB_DIR'] = vector_db_dir
 	os.environ['MODEL_DIR'] = model_dir
 	os.environ['SENTENCE_TRANSFORMERS_HOME'] = os.getenv('SENTENCE_TRANSFORMERS_HOME', model_dir)
-	os.environ['TRANSFORMERS_CACHE'] = os.getenv('TRANSFORMERS_CACHE', model_dir)
+	os.environ['HF_HOME'] = os.getenv('HF_HOME', model_dir)
 	os.environ['CC_CONFIG_PATH'] = os.getenv('CC_CONFIG_PATH', config_path)
 
 

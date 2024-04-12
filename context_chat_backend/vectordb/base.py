@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, TypedDict
 
 from langchain.schema.embeddings import Embeddings
-from langchain.vectorstores import VectorStore
+from langchain_community.vectorstores import VectorStore
 
 from ..utils import value_of
 

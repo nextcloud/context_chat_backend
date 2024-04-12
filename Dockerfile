@@ -7,13 +7,15 @@ RUN apt-get install -y software-properties-common
 RUN add-apt-repository -y ppa:deadsnakes/ppa
 RUN apt-get update
 RUN apt-get install -y python3.11 python3.11-venv python3-pip cuda-nvcc-11-8 cuda-toolkit-11-8 vim git
-RUN apt-get install -y pciutils
+RUN apt-get install -y --no-install-recommends pandoc pciutils
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
-RUN python3 -m pip install --upgrade pip setuptools wheel
-RUN apt-get install -y --no-install-recommends pandoc
 RUN apt-get -y clean
 RUN rm -rf /var/lib/apt/lists/*
+RUN ln -s /usr/local/cuda-11.8/compat/libcuda.so.1 /usr/lib/x86_64-linux-gnu/libcuda.so.1
 
+ENV NVIDIA_VISIBLE_DEVICES all
+ENV NVIDIA_DRIVER_CAPABILITIES compute,utility
+ENV CMAKE_ARGS "-DLLAMA_CUDA=on"
 ENV DEBIAN_FRONTEND=dialog
 
 # Set working directory
@@ -23,6 +25,7 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install requirements
+RUN python3 -m pip install --upgrade pip setuptools wheel
 RUN python3 -m pip install --no-cache-dir --no-deps -r requirements.txt
 
 # Copy application files

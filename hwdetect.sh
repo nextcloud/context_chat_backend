@@ -2,16 +2,8 @@
 
 set -e
 
-if ([ -f hwdetected ] && [ ! "$1" = "config" ]); then
-	echo "Hardware detection already done. Remove \"hwdetected\" file to run again."
-	exit 0
-fi
-
 # if argument is provided, use it as the accelerator
-if [ "$1" = "cpu" ] || [ "$1" = "cuda" ]; then
-	echo "Using provided hardware: $1"
-	accel="$1"
-elif [ -z "$2" ]; then
+if [ -z "$2" ]; then
 	echo "Detecting hardware..."
 
 	lspci_out=$(lspci)
@@ -51,25 +43,3 @@ if [ "$1" = "config" ]; then
 
 	exit 0
 fi
-
-if [ "$accel" = "cuda" ]; then
-	torch_variant="cu118"
-	cmake_args="-DLLAMA_CUBLAS=on -DLLAMA_BLAS=on -DLLAMA_BLAS_VENDOR=OpenBLAS"
-else
-	torch_variant="cpu"
-	cmake_args="-DLLAMA_BLAS=on -DLLAMA_BLAS_VENDOR=OpenBLAS"
-fi
-
-python3 -m pip install --no-cache-dir --force-reinstall "torch==2.2.2+$torch_variant" "torchvision==0.17.2+$torch_variant" -f https://download.pytorch.org/whl/torch_stable.html
-if [ $? -ne 0 ]; then
-	echo "Failed to install torch"
-	exit 1
-fi
-
-CMAKE_ARGS="$cmake_args" python3 -m pip install --no-cache-dir --force-reinstall llama-cpp-python==0.2.57
-if [ $? -ne 0 ]; then
-	echo "Failed to install llama-cpp-python"
-	exit 1
-fi
-
-touch hwdetected
