@@ -1,17 +1,19 @@
-# Context Chat
+# Nextcloud Assistant Context Chat Backend
+
 > [!NOTE]
 > This is a beta software. Expect breaking changes.
-
-> [!INFO]
-> A fully working manually example with cuda 11.8 is at the end of this readme
+>
+> Be mindful to install the backend before the Context Chat php app (if you're seeing a lot of 503 errors in the container logs, this is the reason. Context chat php app would start to send all the user-accessible files to the backend for indexing in the background. It is not an issue since those files would be tried again in the next background job run but something to keep in mind.)
+>
+> A fully working GPU Example with cuda 11.8 is at the end of this readme
 
 ## Simple Install
-1. Install three mandatory apps for this app to work as desired in your Nextcloud install from the "Apps" page:
-- AppAPI (>= v2.2.0): https://apps.nextcloud.com/apps/app_api
-- Context Chat (>= 1.1.0): https://apps.nextcloud.com/apps/context_chat
-- Assistant: https://apps.nextcloud.com/apps/assistant (The OCS API or the `occ` commands can also be used to interact with this app but it recommended to do that through a Text Processing OCP API consumer like the Assitant app.)
-2. Install this backend app (Context Chat Backend: https://apps.nextcloud.com/apps/context_chat_backend) from the "External Apps" page
-3. Start using Context Chat from the Assistant UI
+
+Install the given apps for Context Chat to work as desired **in the given order**:
+- `AppAPI` (>= v2.2.0) from the Apps page (https://apps.nextcloud.com/apps/app_api)
+- `Context Chat Backend` (same major and minor version as Context Chat app below) from the External Apps page (https://apps.nextcloud.com/apps/context_chat_backend)
+- `Context Chat` (same major and minor version as the backend) from the Apps page (https://apps.nextcloud.com/apps/context_chat)
+- `Assistant` from the Apps page (https://apps.nextcloud.com/apps/assistant). The OCS API or the `occ` commands can also be used to interact with this app but it recommended to do that through a Text Processing OCP API consumer like the Assitant app, which is also the officially supported universal UI for all the AI providers.
 
 > [!NOTE]
 > See [AppAPI's deploy daemon configuration](#configure-the-appapis-deploy-daemon)
@@ -22,84 +24,24 @@
 
 ## Complex Install (without docker)
 
-1.  `python -m venv .venv`
-2.  `. .venv/bin/activate`
-3. Install requirements
-
-    3.1 For using CPU:
-    
-    `pip install --no-deps -r requirements.cpu.txt`
-    
-    3.2 Using GPU with CUDA:
-    
-    `pip install --no-deps -r requirements.txt`
-4. Install pandoc from your desired package manager (`# apt install pandoc` for Debian-based systems)
-5. Copy example.env to .env and fill in the variables, when using `CUDA` then you need to uncomment and adjust the two NVDIA_* related envvars in your .env file
-6. Configure `config.cpu.yaml`  *(or **config.yaml** using **gpu** and replace config.cpu.yaml with it)* for the model name, model type and its parameters (which also includes model file's path and model id as per requirements, see example config)
-7.  `./main.py`
+1. `python -m venv .venv`
+2. `. .venv/bin/activate`
+3. Install requirements `pip install --no-deps -r requirements.txt`
+4. Copy example.env to .env and fill in the variables, when using `CUDA` then you need to uncomment and adjust the two NVDIA_* related envvars in your .env file
+5. Ensure the config file at `persistent_storage/config.yaml` points to the correct config file (cpu vs gpu). If you're unsure, delete it. It will be recreated upon launching the application. The default is to point to the cpu config.
+6. Configure `persistent_storage/config.yaml` for the model name, model type and its parameters (which also includes model file's path and model id as per requirements, see example config)
+7. `./main.py`
 8. [Follow the below steps to register the app in the app ecosystem](#register-as-an-ex-app)
 
 ## Complex Install (with docker)
 1. Build the image
     *(this is a good place to edit the example.env file before building the container)*
+    `docker build -t context_chat_backend . -f Dockerfile`
 
-    1.1 **CPU:**
-    
-    `docker build -t context_chat_backend_dev . -f Dockerfile.cpu`
-    
-    1.2 **GPU:**
-    
-    `docker build -t context_chat_backend_dev . -f Dockerfile`
-
-2.  `docker run --add-host=host.docker.internal:host-gateway -p 10034:10034 context_chat_backend_dev`
-3. Volumes can be mounted for `persistent_storage/model_files` and `persistent_storage/vector_db_files` if you wish with `-v $(pwd)/persistent_storage/model_files:/app/model_files` and similar for vector_db_files
-4. If your Nextcloud is running inside a docker container, ensure you have mounted the docker socket inside your container and has the correct permissions for the web server user to have access to it or add the web server to the docker group:
-- for docker compose
-```
-volumes:
-- /var/run/docker.sock:/tmp/docker.sock:ro
-```
-- for docker container run command
-```
--v /var/run/docker.sock:/var/run/docker.sock:ro
-```
+2. `docker run -p 10034:10034 context_chat_backend` (Use `--add-host=host.docker.internal:host-gateway` if your nextcloud server runs locally. Adjust `NEXTCLOUD_URL` env var accordingly.)
+3. A volume can be mounted for `persistent_storage` if you wish with `-v $(pwd)/persistent_storage:/app/persistent_storage` (In this case, ensure the config file at `$(pwd)/persistent_storage/config.yaml` points to the correct config or just remove it if you're unsure. The default is to point to the cpu config.)
+4. [Refer to AppAPI's deploy daemon guide](#configure-the-appapis-deploy-daemon)
 5. [Follow the below steps to register the app in the app ecosystem](#register-as-an-ex-app)
-
-## Manual Install (without docker)
-1.  `python -m venv .venv`
-2.  `. .venv/bin/activate`
-3. Install requirements
-    3.1 **CPU:**
-
-    `pip install --no-deps -r requirements.cpu.txt`
-    
-    3.2 **GPU:**
-    
-    `pip install --no-deps -r requirements.txt`
-
-4. Install pandoc from your desired package manager (`# apt install pandoc` for Debian-based systems)
-5. Copy example.env to .env and fill in the variables
-6. Configure `config.yaml`  *(or **config.yaml** using **gpu** and replace config.yaml with it)* for the model name, model type and its parameters (which also includes model file's path and model id as per requirements, see example config)
-7.  `./main.py`
-8. [Follow the below steps to register the app in the app ecosystem](#register-as-an-ex-app)
-
-## Manual Install (with docker)
-1. Build the image
-    *(this is a good place to edit the example.env file before building the container)*
-
-    1.1 **CPU:**
-    
-    `docker build -t context_chat_backend_dev . -f Dockerfile.cpu`
-    
-    1.2 **GPU:**
-    
-    `docker build -t context_chat_backend_dev . -f Dockerfile`
-    
-2.  `docker run --add-host=host.docker.internal:host-gateway -p10034:10034 context_chat_backend_dev`
-3. Volumes can be mounted for `model_files` and `vector_db_files` if you wish with `-v $(pwd)/model_files:/app/model_files` and similar for vector_db_files
-4. If your Nextcloud is running inside a docker container, there are two ways to configure the deploy daemon
-5. [Follow the below steps to register the app in the app ecosystem](#register-as-an-ex-app)
-(For a dev setup, mount the `context_chat_backend/` folder as a volume and set the uvicorn to reload on change)
 
 ## Register as an Ex-App
 **1. Create a manual deploy daemon:**

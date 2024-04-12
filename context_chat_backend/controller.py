@@ -9,7 +9,7 @@ from pydantic import BaseModel, FieldValidationInfo, field_validator
 from context_chat_backend.config_parser import get_config
 
 from .chain import ScopeType, embed_sources, process_query
-from .download import download_all_models
+from .download import background_init
 from .ocs_utils import AppAPIAuthMiddleware
 from .utils import JSONResponse, enabled_guard, update_progress, value_of
 from .vectordb import BaseVectorDB
@@ -110,7 +110,7 @@ def _():
 @app.post('/init')
 def _(bg_tasks: BackgroundTasks):
 	if not app.extra.get('ENABLED', False):
-		bg_tasks.add_task(download_all_models, app)
+		bg_tasks.add_task(background_init, app)
 		return JSONResponse(content={}, status_code=200)
 
 	update_progress(app, 100)

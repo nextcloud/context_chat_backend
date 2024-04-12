@@ -1,2 +1,5 @@
+-r requirements.txt
+
 pyright
 ruff
+pre-commit

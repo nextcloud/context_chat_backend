@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from functools import wraps
+from logging import error as log_error
 from os import getenv
 from typing import Any, TypeGuard, TypeVar
 
@@ -81,9 +82,12 @@ def update_progress(app: FastAPI, progress: int):
 	if app.extra['CONFIG']['disable_aaa']:
 		return
 
-	ocs_call(
-		method='PUT',
-		path=f'/ocs/v1.php/apps/app_api/apps/status/{getenv("APP_ID")}',
-		json_data={ 'progress': min(100, progress) },
-		verify_ssl=app.extra['CONFIG']['httpx_verify_ssl'],
-	)
+	try:
+		ocs_call(
+			method='PUT',
+			path=f'/ocs/v1.php/apps/app_api/apps/status/{getenv("APP_ID")}',
+			json_data={ 'progress': min(100, progress) },
+			verify_ssl=app.extra['CONFIG']['httpx_verify_ssl'],
+		)
+	except Exception as e:
+		log_error(f'Error: Failed to update progress: {e}')
