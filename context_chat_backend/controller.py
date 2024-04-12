@@ -243,6 +243,7 @@ def _(query: Query):
 		return JSONResponse('Error: VectorDB not initialised', 500)
 
 	template = app.extra.get('LLM_TEMPLATE')
+	no_ctx_template = app.extra['LLM_NO_CTX_TEMPLATE']
 	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
 
 	(output, sources) = process_query(
@@ -252,6 +253,7 @@ def _(query: Query):
 		query=query.query,
 		ctx_limit=query.ctxLimit,
 		template=template,
+		no_ctx_template=no_ctx_template,
 		end_separator=end_separator,
 		scope_type=query.scopeType,
 		scope_list=query.scopeList,
