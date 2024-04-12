@@ -2,7 +2,7 @@
 
 set -e
 
-if [ -f hwdetected ]; then
+if ([ -f hwdetected ] && [ ! "$1" = "config" ]); then
 	echo "Hardware detection already done. Remove \"hwdetected\" file to run again."
 	exit 0
 fi

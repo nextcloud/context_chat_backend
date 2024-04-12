@@ -1,5 +1,9 @@
 # Nextcloud Assistant Context Chat Backend
 
+> [!IMPORTANT]
+> v2.1.0 introduces repair steps. These run on app startup, even before hardware detection.  
+> See the [Repair section](#repair) and the [Configuration section](#configuration) for more info.
+
 > [!NOTE]
 > This is a beta software. Expect breaking changes.
 >
@@ -81,6 +85,26 @@ volumes:
 ```
 -v /var/run/docker.sock:/var/run/docker.sock:ro
 ```
+
+## Configuration
+Configuration resides inside the persistent storage as `config.yaml`. The location is `$APP_PERSISTENT_STORAGE`. Containers made by AppAPI would have the value `/nc_app_context_chat_backend_data`.
+
+This is a file copied from one of the two configurations (config.cpu.yaml or config.gpu.conf) during app startup if `config.yaml` is not already present to the persistent storage. See [Repair section](#repair) on details on the repair step that removes the config if you have a custom config.
+
+## Repair
+v2.1.0 introduces repair steps. These run on app startup, even before hardware detection.
+
+`repair2001_date20240412153300.py` removes the existing config.yaml in the persistent storage for the
+hardware detection to run and place a suitable config (based on accelerator detected) in its place.  
+To skip this step (or steps in the future), populate the `repair.info` file with the repair file name(s).  
+Use the below command inside the container or add the repair filename manually in the repair.info file inside the docker container at `/nc_app_context_chat_backend_data`
+
+`echo repair2001_date20240412153300.py > "$APP_PERSISTENT_STORAGE/repair.info"`
+
+#### How to generate a repair step file
+`APP_VERSION` should at least be incremented at the minor level (MAJOR.MINOR.PATCH)
+
+`APP_VERSION="2.1.0" ./genrepair.sh`
 
 ## A fully working GPU Example with cuda 11.8
 **1. Build the image**
