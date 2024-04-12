@@ -22,7 +22,10 @@ def init_model(model_type: str, model_info: tuple[str, dict]):
 	if model_name not in available_models:
 		raise AssertionError(f'Error: {model_type}_model should be one of {available_models}')
 
-	model = load_model(model_type, model_info)
+	try:
+		model = load_model(model_type, model_info)
+	except Exception as e:
+		raise AssertionError(f'Error: {model_name} failed to load: {e}')
 
 	if model is None:
 		raise AssertionError(f'Error: {model_name} does not implement "{model_type}" type')

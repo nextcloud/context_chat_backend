@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+import subprocess
 import tarfile
 import zipfile
 from hashlib import file_digest
@@ -60,7 +61,7 @@ def _get_model_name_or_path(config: TConfig, model_type: str) -> str | None:
 	return None
 
 
-def _set_app_config(app: FastAPI, config: TConfig):
+def _set_app_config(app: FastAPI, config: TConfig) -> bool:
 	'''
 	Sets the app config as an extra attribute to the app object.
 
@@ -70,35 +71,48 @@ def _set_app_config(app: FastAPI, config: TConfig):
 		The FastAPI app object
 	config: dict
 		A dictionary containing the services to be deployed.
+
+	Returns
+	-------
+	bool
+		True if the app config is set successfully, False otherwise.
 	'''
-	if config.get('embedding'):
-		from .models import init_model
+	try:
+		if config.get('embedding'):
+			from .models import init_model
 
-		model = init_model('embedding', config['embedding'])
-		app.extra['EMBEDDING_MODEL'] = model
+			model = init_model('embedding', config['embedding'])
+			app.extra['EMBEDDING_MODEL'] = model
 
-	if config.get('vectordb') and config.get('embedding'):
-		from langchain.schema.embeddings import Embeddings
+		if config.get('vectordb') and config.get('embedding'):
+			from langchain.schema.embeddings import Embeddings
 
-		from .vectordb import get_vector_db
+			from .vectordb import get_vector_db
 
-		client_klass = get_vector_db(config['vectordb'][0])
+			client_klass = get_vector_db(config['vectordb'][0])
 
-		em: Embeddings | None = app.extra.get('EMBEDDING_MODEL')
-		if em is not None:
-			app.extra['VECTOR_DB'] = client_klass(em, **config['vectordb'][1])  # type: ignore
-		else:
-			app.extra['VECTOR_DB'] = client_klass(**config.get('vectordb')[1])  # type: ignore
+			em: Embeddings | None = app.extra.get('EMBEDDING_MODEL')
+			if em is not None:
+				app.extra['VECTOR_DB'] = client_klass(em, **config['vectordb'][1])  # type: ignore
+			else:
+				app.extra['VECTOR_DB'] = client_klass(**config.get('vectordb')[1])  # type: ignore
 
-	if config.get('llm'):
-		from .models import init_model
+		if config.get('llm'):
+			from .models import init_model
 
-		llm_name, llm_config = config['llm']
-		app.extra['LLM_TEMPLATE'] = llm_config.pop('template', '')
-		app.extra['LLM_END_SEPARATOR'] = llm_config.pop('end_separator', '')
+			llm_name, llm_config = config['llm']
+			app.extra['LLM_TEMPLATE'] = llm_config.pop('template', '')
+			app.extra['LLM_NO_CTX_TEMPLATE'] = llm_config.pop('no_ctx_template', '')
+			app.extra['LLM_END_SEPARATOR'] = llm_config.pop('end_separator', '')
 
-		model = init_model('llm', (llm_name, llm_config))
-		app.extra['LLM_MODEL'] = model
+			model = init_model('llm', (llm_name, llm_config))
+			app.extra['LLM_MODEL'] = model
+
+	except AssertionError as e:
+		log_error(e)
+		return False
+
+	return True
 
 
 def _model_exists(model_name_or_path: str) -> bool:
@@ -221,9 +235,9 @@ def _global_delayed_init(config: TConfig):
 	_BASE_URL = config['model_download_uri'].removesuffix('/') + '/'
 
 
-def download_all_models(app: FastAPI):
+def background_init(app: FastAPI):
 	'''
-	Downloads all models specified in the config.yaml file
+	Initiates the hardware detection and model download in the background
 	and sets the required keys in the app object.
 
 	Args
@@ -233,9 +247,13 @@ def download_all_models(app: FastAPI):
 	config: TConfig = app.extra['CONFIG']
 	_global_delayed_init(config)
 
+	if not os.path.exists('hwdetected'):
+		subprocess.run('./hwdetect.sh', check=True, shell=True)  # noqa: S602
+
 	if config['disable_custom_model_download']:
 		update_progress(app, 100)
 
+	print('Downloading models. This may take a while...', flush=True)
 	progress = 0
 	for model_type in ('embedding', 'llm'):
 		model_name = _get_model_name_or_path(config, model_type)
@@ -247,16 +265,20 @@ def download_all_models(app: FastAPI):
 
 		update_progress(app, progress := progress + 50)
 
-	_set_app_config(app, config)
+	if _set_app_config(app, config) is False:
+		raise Exception('Error: Model initialization failed')
 
 
 def model_init(app: FastAPI) -> bool:
 	config: TConfig = app.extra['CONFIG']
 	_global_delayed_init(config)
 
+	# hw detection (+ torch/llama-cpp installation check)
+	if not os.path.exists('hwdetected'):
+		return False
+
 	if config['disable_custom_model_download']:
-		_set_app_config(app, config)
-		return True
+		return _set_app_config(app, config)
 
 	for model_type in ('embedding', 'llm'):
 		model_name = _get_model_name_or_path(app.extra['CONFIG'], model_type)
@@ -266,6 +288,4 @@ def model_init(app: FastAPI) -> bool:
 		if not _model_exists(model_name):
 			return False
 
-	_set_app_config(app, config)
-
-	return True
+	return _set_app_config(app, config)
