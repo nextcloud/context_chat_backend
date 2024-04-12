@@ -4,7 +4,7 @@ from langchain.llms.ctransformers import CTransformers
 
 
 def get_model_for(model_type: str, model_config: dict):
-	model_dir = getenv('MODEL_DIR', './persistent_storage/model_files')
+	model_dir = getenv('MODEL_DIR', 'persistent_storage/model_files')
 	if str(model_config.get('model')).startswith('/'):
 		model_dir = ''
 

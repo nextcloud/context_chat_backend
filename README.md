@@ -1,7 +1,7 @@
 # Nextcloud Assistant Context Chat Backend
 
 > [!IMPORTANT]
-> v2.1.0 introduces repair steps. These run on app startup, even before hardware detection.  
+> v2.1.0 introduces repair steps. These run on app startup.
 > See the [Repair section](#repair) and the [Configuration section](#configuration) for more info.
 
 > [!NOTE]
@@ -21,21 +21,19 @@ Install the given apps for Context Chat to work as desired **in the given order*
 
 > [!NOTE]
 > See [AppAPI's deploy daemon configuration](#configure-the-appapis-deploy-daemon)
-> For GPU Support:
-> Ensure docker is installed and the Nextcloud's web server user has access to `/var/run/docker.sock`, the docker socket.
-> Mount the docker.sock in the Nextcloud container if you happen to use a containerized install of Nextcloud and ensure correct permissions for the web server user to access it.
-> See 4th point in [Complex Install (with docker)](#complex-install-with-docker) on how to do this
+> For GPU Support: enable gpu support in the Deploy Daemon's configuration (Admin settings -> AppAPI)
 
 ## Complex Install (without docker)
 
 1. `python -m venv .venv`
 2. `. .venv/bin/activate`
-3. Install requirements `pip install --no-deps -r requirements.txt`
-4. Copy example.env to .env and fill in the variables, when using `CUDA` then you need to uncomment and adjust the two NVDIA_* related envvars in your .env file
-5. Ensure the config file at `persistent_storage/config.yaml` points to the correct config file (cpu vs gpu). If you're unsure, delete it. It will be recreated upon launching the application. The default is to point to the cpu config.
-6. Configure `persistent_storage/config.yaml` for the model name, model type and its parameters (which also includes model file's path and model id as per requirements, see example config)
-7. `./main.py`
-8. [Follow the below steps to register the app in the app ecosystem](#register-as-an-ex-app)
+3. `pip install --upgrade pip setuptools wheel`
+4. Install requirements `pip install --no-deps -r requirements.txt`
+5. Copy example.env to .env and fill in the variables
+6. Ensure the config file at `persistent_storage/config.yaml` points to the correct config file (cpu vs gpu). If you're unsure, delete it. It will be recreated upon launching the application. The default is to point to the gpu config.
+7. Configure `persistent_storage/config.yaml` for the model name, model type and its parameters (which also includes model file's path and model id as per requirements, see example config)
+8. `./main.py`
+9. [Follow the below steps to register the app in the app ecosystem](#register-as-an-ex-app)
 
 ## Complex Install (with docker)
 1. Build the image
@@ -43,7 +41,7 @@ Install the given apps for Context Chat to work as desired **in the given order*
     `docker build -t context_chat_backend . -f Dockerfile`
 
 2. `docker run -p 10034:10034 context_chat_backend` (Use `--add-host=host.docker.internal:host-gateway` if your nextcloud server runs locally. Adjust `NEXTCLOUD_URL` env var accordingly.)
-3. A volume can be mounted for `persistent_storage` if you wish with `-v $(pwd)/persistent_storage:/app/persistent_storage` (In this case, ensure the config file at `$(pwd)/persistent_storage/config.yaml` points to the correct config or just remove it if you're unsure. The default is to point to the cpu config.)
+3. A volume can be mounted for `persistent_storage` if you wish with `-v $(pwd)/persistent_storage:/app/persistent_storage` (In this case, ensure the config file at `$(pwd)/persistent_storage/config.yaml` points to the correct config or just remove it if you're unsure. The default is to point to the gpu config.)
 4. [Refer to AppAPI's deploy daemon guide](#configure-the-appapis-deploy-daemon)
 5. [Follow the below steps to register the app in the app ecosystem](#register-as-an-ex-app)
 
@@ -92,7 +90,7 @@ Configuration resides inside the persistent storage as `config.yaml`. The locati
 This is a file copied from one of the two configurations (config.cpu.yaml or config.gpu.conf) during app startup if `config.yaml` is not already present to the persistent storage. See [Repair section](#repair) on details on the repair step that removes the config if you have a custom config.
 
 ## Repair
-v2.1.0 introduces repair steps. These run on app startup, even before hardware detection.
+v2.1.0 introduces repair steps. These run on app startup.
 
 `repair2001_date20240412153300.py` removes the existing config.yaml in the persistent storage for the
 hardware detection to run and place a suitable config (based on accelerator detected) in its place.  
@@ -139,7 +137,6 @@ docker build --no-cache -f Dockerfile -t context_chat_backend_dev:11.8 .
 ```
 Hint:
 Adjust the example.env to your needs so that it fits your environment
-When using `CUDA` then you need to uncomment and adjust the two NVDIA_* related envvars in your example.env file
 ```
 
 ```
@@ -150,7 +147,7 @@ docker run \
     --env-file example.env \
     -p 10034:10034 \
     -e CUDA_VISIBLE_DEVICES=0 \
-    -v ./persistent_storage:/app/persistent_storage \
+    -v persistent_storage:/app/persistent_storage \
     --gpus=all \
     context_chat_backend_dev:11.8
 ```
@@ -169,7 +166,7 @@ docker run \
 	
 	Mounts the Docker socket file from the host into the container. This is done to allow the Docker client running inside the container to communicate with the Docker daemon on the host, essentially controlling Docker and GPU from within the container.
 
-	`-v ./persistent_storage:/app/persistent_storage`
+	`-v persistent_storage:/app/persistent_storage`
 	
 	Mounts the persistent storage into the docker instance to keep downloaded models stored for the future.
 

@@ -1,8 +1,19 @@
-from langchain.embeddings import HuggingFaceEmbeddings
+from os import getenv, path
+
 from langchain.llms import HuggingFacePipeline
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 
 def get_model_for(model_type: str, model_config: dict):
+	if model_config.get('model_path') is not None:
+		model_dir = getenv('MODEL_DIR', 'persistent_storage/model_files')
+		if str(model_config.get('model_path')).startswith('/'):
+			model_dir = ''
+
+		model_path = path.join(model_dir, model_config.get('model_path', ''))
+	else:
+		model_path = model_config.get('model_id', '')
+
 	if model_config is None:
 		return None
 
@@ -10,6 +21,6 @@ def get_model_for(model_type: str, model_config: dict):
 		return HuggingFaceEmbeddings(**model_config)
 
 	if model_type == 'llm':
-		return HuggingFacePipeline.from_model_id(**model_config)
+		return HuggingFacePipeline.from_model_id(**{ **model_config, 'model_id': model_path })
 
 	return None

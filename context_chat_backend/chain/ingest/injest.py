@@ -164,4 +164,5 @@ def embed_sources(
 		or _allowed_file(source)
 	]
 
+	print('Embedding sources:', [source.filename for source in sources_filtered], flush=True)
 	return _process_sources(vectordb, sources_filtered)

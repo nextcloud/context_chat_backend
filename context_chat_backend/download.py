@@ -1,7 +1,6 @@
 import os
 import re
 import shutil
-import subprocess
 import tarfile
 import zipfile
 from hashlib import file_digest
@@ -247,9 +246,6 @@ def background_init(app: FastAPI):
 	config: TConfig = app.extra['CONFIG']
 	_global_delayed_init(config)
 
-	if not os.path.exists('hwdetected'):
-		subprocess.run('./hwdetect.sh', check=True, shell=True)  # noqa: S602
-
 	if config['disable_custom_model_download']:
 		update_progress(app, 100)
 
@@ -272,10 +268,6 @@ def background_init(app: FastAPI):
 def model_init(app: FastAPI) -> bool:
 	config: TConfig = app.extra['CONFIG']
 	_global_delayed_init(config)
-
-	# hw detection (+ torch/llama-cpp installation check)
-	if not os.path.exists('hwdetected'):
-		return False
 
 	if config['disable_custom_model_download']:
 		return _set_app_config(app, config)
