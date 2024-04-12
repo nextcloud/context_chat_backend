@@ -6,11 +6,19 @@ from dotenv import load_dotenv
 
 from .config_parser import get_config
 from .download import model_init
+from .repair import runner
 from .utils import to_int
 
 load_dotenv()
 
 __all__ = ['app', 'app_config', 'to_int']
+
+
+def _repair_run():
+	'''
+	Runs the repair script.
+	'''
+	runner.main()
 
 
 def _setup_env_vars():
@@ -38,6 +46,7 @@ def _setup_env_vars():
 
 
 _setup_env_vars()
+_repair_run()
 
 # move the correct config file to the persistent storage
 subprocess.run(['./hwdetect.sh', 'config'], check=True, shell=False)  # noqa: S603

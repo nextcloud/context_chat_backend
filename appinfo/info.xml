@@ -7,12 +7,14 @@
 	<![CDATA[This is the Python backend for Context Chat.  
 Context Chat is useful for people who want to ask questions from a large language model but using their documents as context.
 
-Three mandatory apps are required for this app to work (can be installed from the Apps page):
-- AppAPI: https://apps.nextcloud.com/apps/app_api
-- Context Chat: https://apps.nextcloud.com/apps/context_chat
-- Assistant: https://apps.nextcloud.com/apps/assistant (The OCS API or the `occ` commands can also be used to interact with this app but it recommended to do that through a Text Processing OCP API consumer like the Assitant app.)
+IMPORTANT:
+v2.1.0 introduces repair steps and the first repair step introduced removes the config.yaml file that resides inside the persistent storage. If you have a custom config.yaml file inside the persistent storage, please back it up before upgrading to v2.1.0 or mark the repair step as completed (see the readme on github). The repair step will remove the file and you will have to reconfigure the backend after the upgrade.
 
-This app then should be installed from the "External Apps" page.
+Install the given apps for Context Chat to work as desired **in the given order**:
+- `AppAPI` (>= v2.2.0) from the Apps page (https://apps.nextcloud.com/apps/app_api)
+- `Context Chat Backend` (same major and minor version as Context Chat app below) from the External Apps page (https://apps.nextcloud.com/apps/context_chat_backend)
+- `Context Chat` (same major and minor version as the backend) from the Apps page (https://apps.nextcloud.com/apps/context_chat)
+- `Assistant` from the Apps page (https://apps.nextcloud.com/apps/assistant). The OCS API or the `occ` commands can also be used to interact with this app but it recommended to do that through a Text Processing OCP API consumer like the Assitant app, which is also the officially supported universal UI for all the AI providers.
 ]]></description>
 	<version>2.0.1</version>
 	<licence>agpl</licence>
