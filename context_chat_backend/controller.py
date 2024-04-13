@@ -210,7 +210,7 @@ class Query(BaseModel):
 	useContext: bool = True
 	scopeType: ScopeType | None = None
 	scopeList: list[str] | None = None
-	ctxLimit: int = 5
+	ctxLimit: int = 10
 
 	@field_validator('userId', 'query', 'ctxLimit')
 	@classmethod
@@ -245,20 +245,25 @@ def _(query: Query):
 	template = app.extra.get('LLM_TEMPLATE')
 	no_ctx_template = app.extra['LLM_NO_CTX_TEMPLATE']
 	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
+	llm_config = app.extra.get('CONFIG')
 
-	(output, sources) = process_query(
-		user_id=query.userId,
-		vectordb=db,
-		llm=llm,
-		query=query.query,
-		ctx_limit=query.ctxLimit,
-		template=template,
-		no_ctx_template=no_ctx_template,
-		end_separator=end_separator,
-		scope_type=query.scopeType,
-		scope_list=query.scopeList,
-		use_context=query.useContext,
-	)
+	try:
+		(output, sources) = process_query(
+			user_id=query.userId,
+			vectordb=db,
+			llm=llm,
+			llm_config=llm_config,
+			query=query.query,
+			ctx_limit=query.ctxLimit,
+			template=template,
+			no_ctx_template=no_ctx_template,
+			end_separator=end_separator,
+			scope_type=query.scopeType,
+			scope_list=query.scopeList,
+			use_context=query.useContext,
+		)
+	except ValueError as e:
+		return JSONResponse(str(e), 400)
 
 	return JSONResponse({
 		'output': output,
