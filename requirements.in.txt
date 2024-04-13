@@ -8,7 +8,6 @@ msg-parser
 odfpy
 openpyxl
 pandas
-pypandoc
 pypdf
 python-docx
 python-dotenv
