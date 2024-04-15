@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 2.1.0 - 2024-04-15
+### Changed
+- no context generation is now a chat completion
+- filter sources before document decode
+
+### Fixed
+- set the memory limit for pandoc to 4GB (#29)
+- adjustments for changes in AppAPI in last two months (#26)
+- pass useContext to the query function
+- prune context/query to fit the context window
+- pandoc hangs
+
+### Added
+- accelerator detection on container boot
+- repair steps
+- increase context length to 16384
+
+
 ## 2.0.1 - 2024-03-23
 ### Fixed
 - user_id sanitisation for vectordb collection names
