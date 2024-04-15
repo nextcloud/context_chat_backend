@@ -4,7 +4,7 @@ from logging import error as log_error
 from fastapi.datastructures import UploadFile
 from langchain.schema import Document
 
-from ...utils import to_int
+from ...utils import not_none, to_int
 from ...vectordb import BaseVectorDB
 from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
@@ -15,23 +15,23 @@ def _allowed_file(file: UploadFile) -> bool:
 	return file.headers.get('type', default='') in SUPPORTED_MIMETYPES
 
 
-def _filter_documents(
+def _filter_sources(
 	user_id: str,
 	vectordb: BaseVectorDB,
-	documents: list[Document]
+	sources: list[UploadFile]
 ) -> list[Document]:
 	'''
-	Returns a filtered list of documents that are not already in the vectordb
+	Returns a filtered list of sources that are not already in the vectordb
 	or have been modified since they were last added.
 	It also deletes the old documents to prevent duplicates.
 	'''
 	to_delete = {}
 
 	input_sources = {}
-	for meta in documents:
-		if meta.metadata.get('source') is None:
+	for source in sources:
+		if not not_none(source.filename) or not not_none(source.headers.get('modified')):
 			continue
-		input_sources[meta.metadata.get('source')] = meta.metadata.get('modified')
+		input_sources[source.filename] = source.headers.get('modified')
 
 	existing_objects = vectordb.get_objects_from_metadata(
 		user_id,
@@ -52,8 +52,8 @@ def _filter_documents(
 	new_sources.update(set(to_delete.keys()))
 
 	return [
-		doc for doc in documents
-		if doc.metadata.get('source') in new_sources
+		source for source in sources
+		if source.filename in new_sources
 	]
 
 
@@ -107,7 +107,13 @@ def _bucket_by_type(documents: list[Document]) -> dict[str, list[Document]]:
 
 
 def _process_sources(vectordb: BaseVectorDB, sources: list[UploadFile]) -> bool:
-	ddocuments: dict[str, list[Document]] = _sources_to_documents(sources)
+	filtered_sources = _filter_sources(sources[0].headers.get('userId'), vectordb, sources)
+
+	if len(filtered_sources) == 0:
+		# no new sources to embed
+		return True
+
+	ddocuments: dict[str, list[Document]] = _sources_to_documents(filtered_sources)
 
 	if len(ddocuments.keys()) == 0:
 		# document(s) were empty, not an error
@@ -117,12 +123,8 @@ def _process_sources(vectordb: BaseVectorDB, sources: list[UploadFile]) -> bool:
 
 	for user_id, documents in ddocuments.items():
 		split_documents: list[Document] = []
-		filtered_docs = _filter_documents(user_id, vectordb, documents)
 
-		if len(filtered_docs) == 0:
-			continue
-
-		type_bucketed_docs = _bucket_by_type(filtered_docs)
+		type_bucketed_docs = _bucket_by_type(documents)
 
 		for _type, _docs in type_bucketed_docs.items():
 			text_splitter = get_splitter_for(_type)
@@ -164,5 +166,9 @@ def embed_sources(
 		or _allowed_file(source)
 	]
 
-	print('Embedding sources:', [source.filename for source in sources_filtered], flush=True)
+	print(
+		'Embedding sources:\n' +
+		'\n'.join([f'{source.filename} ({source.headers.get("title", "")})' for source in sources_filtered]),
+		flush=True,
+	)
 	return _process_sources(vectordb, sources_filtered)
