@@ -36,6 +36,8 @@ def get_collection_name(user_id: str) -> str:
 	user_id = user_id.replace(' ', '__')
 	# replace consecutive dots with .n. (n is the number of dots)
 	user_id = re.sub(r'\.{2,}', lambda m: f'.{len(m.group())}.', user_id)
+	# replace @ with .at.
+	user_id = user_id.replace('@', '.at.')
 
 	# recheck length constraints
 	if len(user_id) > 56:
