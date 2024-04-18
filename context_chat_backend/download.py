@@ -248,6 +248,7 @@ def background_init(app: FastAPI):
 
 	if config['disable_custom_model_download']:
 		update_progress(app, 100)
+		return
 
 	print('Downloading models. This may take a while...', flush=True)
 	progress = 0
