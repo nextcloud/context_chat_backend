@@ -4,11 +4,10 @@ from typing import Annotated, Any
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile
 from langchain.llms.base import LLM
-from pydantic import BaseModel, FieldValidationInfo, field_validator
-
-from context_chat_backend.config_parser import get_config
+from pydantic import BaseModel, ValidationInfo, field_validator
 
 from .chain import ScopeType, embed_sources, process_query
+from .config_parser import get_config
 from .download import background_init
 from .ocs_utils import AppAPIAuthMiddleware
 from .utils import JSONResponse, enabled_guard, update_progress, value_of
@@ -214,7 +213,7 @@ class Query(BaseModel):
 
 	@field_validator('userId', 'query', 'ctxLimit')
 	@classmethod
-	def check_empty_values(cls, value: Any, info: FieldValidationInfo):
+	def check_empty_values(cls, value: Any, info: ValidationInfo):
 		if value_of(value) is None:
 			raise ValueError('Empty value for field', info.field_name)
 
@@ -245,7 +244,10 @@ def _(query: Query):
 	template = app.extra.get('LLM_TEMPLATE')
 	no_ctx_template = app.extra['LLM_NO_CTX_TEMPLATE']
 	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
+
 	llm_config = app.extra.get('CONFIG')
+	if llm_config is None:
+		return JSONResponse('Error: config not setup correctly', 500)
 
 	try:
 		(output, sources) = process_query(

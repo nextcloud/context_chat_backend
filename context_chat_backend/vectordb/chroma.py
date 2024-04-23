@@ -5,7 +5,8 @@ from chromadb import Client
 from chromadb.config import Settings
 from dotenv import load_dotenv
 from langchain.schema.embeddings import Embeddings
-from langchain_community.vectorstores import Chroma, VectorStore
+from langchain.vectorstores import VectorStore
+from langchain_community.vectorstores.chroma import Chroma
 
 from . import get_collection_name, get_user_id_from_collection
 from .base import BaseVectorDB, MetadataFilter, TSearchDict

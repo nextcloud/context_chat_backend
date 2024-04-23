@@ -7,10 +7,7 @@ from typing import BinaryIO
 import docx2txt
 from epub2txt import epub2txt
 from fastapi import UploadFile
-from langchain_community.document_loaders import (
-	UnstructuredEmailLoader,
-	UnstructuredPowerPointLoader,
-)
+from langchain_community.document_loaders.unstructured import UnstructuredFileLoader
 from odfdo import Document
 from pandas import read_csv, read_excel
 from pypdf import PdfReader
@@ -30,7 +27,7 @@ def _temp_file_wrapper(file: BinaryIO, loader: Callable, sep: str = '\n') -> str
 		os.remove(tmp.name)
 
 	if isinstance(docs, str) or isinstance(docs, bytes):
-		return docs.decode('utf-8') if isinstance(docs, bytes) else docs
+		return docs.decode('utf-8') if isinstance(docs, bytes) else docs  # pyright: ignore[reportReturnType]
 
 	return sep.join(d.page_content for d in docs)
 
@@ -59,7 +56,7 @@ def _load_odt(file: BinaryIO) -> str:
 
 
 def _load_ppt_x(file: BinaryIO) -> str:
-	return _temp_file_wrapper(file, lambda fp: UnstructuredPowerPointLoader(fp).load()).strip()
+	return _temp_file_wrapper(file, lambda fp: UnstructuredFileLoader(fp).load()).strip()
 
 
 def _load_rtf(file: BinaryIO) -> str:
@@ -93,7 +90,7 @@ def _load_email(file: BinaryIO, ext: str = 'eml') -> str | None:
 
 	return _temp_file_wrapper(
 		file,
-		lambda fp: UnstructuredEmailLoader(fp, process_attachments=False).load(),
+		lambda fp: UnstructuredFileLoader(fp, process_attachments=False).load(),
 	).strip()
 
 
