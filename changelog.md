@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 2.1.1 - 2024-04-23
+### Changed
+- use 8192 as context length
+
+### Fixed
+- replace @ with .at. in collection name
+- replace pandoc completely due to random memory hogs with other python packages
+- types fixes and langchain import updates
+
+
 ## 2.1.0 - 2024-04-15
 ### Changed
 - no context generation is now a chat completion
