@@ -19,7 +19,7 @@ def _filter_sources(
 	user_id: str,
 	vectordb: BaseVectorDB,
 	sources: list[UploadFile]
-) -> list[Document]:
+) -> list[UploadFile]:
 	'''
 	Returns a filtered list of sources that are not already in the vectordb
 	or have been modified since they were last added.
@@ -107,7 +107,7 @@ def _bucket_by_type(documents: list[Document]) -> dict[str, list[Document]]:
 
 
 def _process_sources(vectordb: BaseVectorDB, sources: list[UploadFile]) -> bool:
-	filtered_sources = _filter_sources(sources[0].headers.get('userId'), vectordb, sources)
+	filtered_sources = _filter_sources(sources[0].headers['userId'], vectordb, sources)
 
 	if len(filtered_sources) == 0:
 		# no new sources to embed

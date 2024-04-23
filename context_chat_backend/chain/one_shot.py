@@ -16,6 +16,7 @@ def process_query(
 	user_id: str,
 	vectordb: BaseVectorDB,
 	llm: LLM,
+	llm_config: TConfig,
 	query: str,
 	use_context: bool = True,
 	ctx_limit: int = 10,
@@ -24,7 +25,6 @@ def process_query(
 	template: str | None = None,
 	no_ctx_template: str | None = None,
 	end_separator: str = '',
-	llm_config: TConfig | None = None,
 ) -> tuple[str, list[str]]:
 	"""
 	Raises
@@ -35,7 +35,7 @@ def process_query(
 	if not use_context:
 		stop = [end_separator] if end_separator else None
 		return llm.invoke(
-			(query, get_pruned_query(llm, llm_config, query, no_ctx_template, []))[no_ctx_template is not None],
+			(query, get_pruned_query(llm, llm_config, query, no_ctx_template, []))[no_ctx_template is not None],  # pyright: ignore[reportArgumentType]
 			stop=stop,
 		), []
 
@@ -43,7 +43,7 @@ def process_query(
 	if context_docs is None:
 		stop = [end_separator] if end_separator else None
 		return llm.invoke(
-			(query, get_pruned_query(llm, llm_config, query, no_ctx_template, []))[no_ctx_template is not None],
+			(query, get_pruned_query(llm, llm_config, query, no_ctx_template, []))[no_ctx_template is not None],  # pyright: ignore[reportArgumentType]
 			stop=stop,
 		), []
 

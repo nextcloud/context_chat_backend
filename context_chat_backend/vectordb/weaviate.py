@@ -3,7 +3,8 @@ from os import getenv
 
 from dotenv import load_dotenv
 from langchain.schema.embeddings import Embeddings
-from langchain_community.vectorstores import VectorStore, Weaviate
+from langchain.vectorstores import VectorStore
+from langchain_community.vectorstores.weaviate import Weaviate
 from weaviate import AuthApiKey, Client
 
 from ..utils import value_of
