@@ -1,27 +1,20 @@
 import re
-import subprocess
 import tempfile
 from collections.abc import Callable
 from logging import error as log_error
 from typing import BinaryIO
 
+import docx2txt
+from epub2txt import epub2txt
 from fastapi import UploadFile
 from langchain_community.document_loaders import (
 	UnstructuredEmailLoader,
 	UnstructuredPowerPointLoader,
 )
+from odfdo import Document
 from pandas import read_csv, read_excel
 from pypdf import PdfReader
-
-
-def _pandoc_convert(file: BinaryIO, from_format: str, to_format: str) -> str:
-	return _temp_file_wrapper(
-		file,
-		lambda fp: subprocess.run(
-			['/usr/bin/pandoc', '-f', from_format, '-t', to_format, "+RTS", "-M4096m", "-RTS", fp],  # noqa: S603
-			capture_output=True,
-		).stdout,
-	)
+from striprtf import striprtf
 
 
 def _temp_file_wrapper(file: BinaryIO, loader: Callable, sep: str = '\n') -> str:
@@ -54,11 +47,15 @@ def _load_csv(file: BinaryIO) -> str:
 
 
 def _load_epub(file: BinaryIO) -> str:
-	return _pandoc_convert(file, 'epub', 'plain').strip()
+	return _temp_file_wrapper(file, epub2txt).strip()
 
 
 def _load_docx(file: BinaryIO) -> str:
-	return _pandoc_convert(file, 'docx', 'plain').strip()
+	return docx2txt.process(file).strip()
+
+
+def _load_odt(file: BinaryIO) -> str:
+	return _temp_file_wrapper(file, lambda fp: Document(fp).get_formatted_text()).strip()
 
 
 def _load_ppt_x(file: BinaryIO) -> str:
@@ -66,11 +63,7 @@ def _load_ppt_x(file: BinaryIO) -> str:
 
 
 def _load_rtf(file: BinaryIO) -> str:
-	return _pandoc_convert(file, 'rtf', 'plain').strip()
-
-
-def _load_rst(file: BinaryIO) -> str:
-	return _pandoc_convert(file, 'rst', 'plain').strip()
+	return striprtf.rtf_to_text(file.read().decode('utf-8')).strip()
 
 
 def _load_xml(file: BinaryIO) -> str:
@@ -81,10 +74,6 @@ def _load_xml(file: BinaryIO) -> str:
 
 def _load_xlsx(file: BinaryIO) -> str:
 	return read_excel(file).to_string(header=False, na_rep='')
-
-
-def _load_odt(file: BinaryIO) -> str:
-	return _pandoc_convert(file, 'odt', 'plain').strip()
 
 
 def _load_email(file: BinaryIO, ext: str = 'eml') -> str | None:
@@ -108,10 +97,6 @@ def _load_email(file: BinaryIO, ext: str = 'eml') -> str | None:
 	).strip()
 
 
-def _load_org(file: BinaryIO) -> str:
-	return _pandoc_convert(file, 'org', 'plain').strip()
-
-
 # -- LOADER FUNCTION MAP -- #
 
 _loader_map = {
@@ -126,11 +111,9 @@ _loader_map = {
 	'application/vnd.ms-excel.sheet.macroEnabled.12': _load_xlsx,
 	'application/vnd.oasis.opendocument.text': _load_odt,
 	'text/rtf': _load_rtf,
-	'text/x-rst': _load_rst,
 	'application/xml': _load_xml,
 	'message/rfc822': _load_email,
 	'application/vnd.ms-outlook': _load_email,
-	'text/org': _load_org,
 }
 
 

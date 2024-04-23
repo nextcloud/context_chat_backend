@@ -7,7 +7,7 @@ RUN apt-get install -y software-properties-common
 RUN add-apt-repository -y ppa:deadsnakes/ppa
 RUN apt-get update
 RUN apt-get install -y python3.11 python3.11-venv python3-pip cuda-nvcc-11-8 cuda-toolkit-11-8 vim git
-RUN apt-get install -y --no-install-recommends pandoc pciutils
+RUN apt-get install -y --no-install-recommends pciutils
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
 RUN apt-get -y clean
 RUN rm -rf /var/lib/apt/lists/*
