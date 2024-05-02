@@ -9,6 +9,8 @@
 >
 > Be mindful to install the backend before the Context Chat php app (if you're seeing a lot of 503 errors in the container logs, this is the reason. Context chat php app would start to send all the user-accessible files to the backend for indexing in the background. It is not an issue since those files would be tried again in the next background job run but something to keep in mind.)
 >
+> The HTTP request timeout is 50 minutes for all requests except deletion requests, which have 3 seconds timeout. The 50 minutes timeout can be changed with the `request_timeout` app config for the php app `context_chat` using the occ command (`occ config:app:set context_chat request_timeout --value=3000`, value is in seconds). The same also needs to be done for docker socket proxy (if you're using that). See [Slow responding ExApps](https://github.com/cloud-py-api/docker-socket-proxy?tab=readme-ov-file#slow-responding-exapps)
+>
 > A fully working GPU Example with cuda 11.8 is at the end of this readme
 
 ## Simple Install
