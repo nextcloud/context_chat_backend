@@ -92,6 +92,11 @@ def _(userId: str, sourceNames: str):
 	return JSONResponse({ 'sources': sources })
 
 
+@app.get('/enabled')
+def _():
+	return JSONResponse(content={'enabled': app.extra.get('ENABLED', False)}, status_code=200)
+
+
 @app.put('/enabled')
 def _(enabled: bool):
 	# todo: offload the resources
