@@ -10,6 +10,7 @@ class TConfig(TypedDict):
 	debug: bool
 	disable_aaa: bool
 	httpx_verify_ssl: bool
+	model_offload_timeout: int
 	use_colors: bool
 	uvicorn_workers: int
 
@@ -70,6 +71,7 @@ def get_config(file_path: str) -> TConfig:
 		'debug': config.get('debug', False),
 		'disable_aaa': config.get('disable_aaa', False),
 		'httpx_verify_ssl': config.get('httpx_verify_ssl', True),
+		'model_offload_timeout': config.get('model_offload_timeout', 15),
 		'use_colors': config.get('use_colors', True),
 		'uvicorn_workers': config.get('uvicorn_workers', 1),
 

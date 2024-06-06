@@ -1,4 +1,8 @@
-from .load_model import load_model
+from collections.abc import Callable
+from importlib import import_module
+
+from langchain.llms.base import LLM
+from langchain.schema.embeddings import Embeddings
 
 _embedding_models = ['llama', 'hugging_face', 'instructor']
 _llm_models = ['llama', 'hugging_face', 'ctransformer']
@@ -8,7 +12,26 @@ models = {
 	'llm': _llm_models,
 }
 
-__all__ = ['init_model', 'models']
+__all__ = ['init_model', 'load_model', 'models']
+
+
+def load_model(model_type: str, model_info: tuple[str, dict]) -> Embeddings | LLM | None:
+	model_name, model_config = model_info
+
+	try:
+		module = import_module(f'.{model_name}', 'context_chat_backend.models')
+	except Exception as e:
+		raise AssertionError(f'Error: could not load {model_name} model from context_chat_backend/models') from e
+
+	if module is None or not hasattr(module, 'get_model_for'):
+		raise AssertionError(f'Error: could not load {model_name} model')
+
+	get_model_for = module.get_model_for
+
+	if not isinstance(get_model_for, Callable):
+		raise AssertionError(f'Error: {model_name} does not have a valid loader function')
+
+	return get_model_for(model_type, model_config)
 
 
 def init_model(model_type: str, model_info: tuple[str, dict]):
@@ -25,9 +48,9 @@ def init_model(model_type: str, model_info: tuple[str, dict]):
 	try:
 		model = load_model(model_type, model_info)
 	except Exception as e:
-		raise AssertionError(f'Error: {model_name} failed to load: {e}')  # noqa: B904
+		raise AssertionError(f'Error: {model_name} failed to load') from e
 
-	if model is None:
-		raise AssertionError(f'Error: {model_name} does not implement "{model_type}" type')
+	if model_type == 'llm' and not isinstance(model, LLM):
+		raise AssertionError(f'Error: {model} does not implement "llm" type or has returned an invalid object')
 
 	return model

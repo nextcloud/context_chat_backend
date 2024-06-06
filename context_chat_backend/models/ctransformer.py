@@ -1,6 +1,6 @@
 from os import getenv, path
 
-from langchain.llms.ctransformers import CTransformers
+from langchain_community.llms.ctransformers import CTransformers
 
 
 def get_model_for(model_type: str, model_config: dict):

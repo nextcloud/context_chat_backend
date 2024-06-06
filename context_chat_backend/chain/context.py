@@ -4,7 +4,7 @@ from logging import error as log_error
 from langchain.schema import Document
 
 from ..utils import not_none
-from ..vectordb import BaseVectorDB
+from ..vectordb import BaseVectorDB, DbException
 
 
 class ScopeType(Enum):
@@ -20,8 +20,10 @@ def get_context_docs(
 	scope_type: ScopeType | None = None,
 	scope_list: list[str] | None = None,
 ) -> list[Document] | None:
-	user_client = vectordb.get_user_client(user_id)
-	if user_client is None:
+	try:
+		user_client = vectordb.get_user_client(user_id)
+	except DbException as e:
+		log_error(e)
 		return None
 
 	context_docs = None

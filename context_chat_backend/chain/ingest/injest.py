@@ -5,7 +5,7 @@ from fastapi.datastructures import UploadFile
 from langchain.schema import Document
 
 from ...utils import not_none, to_int
-from ...vectordb import BaseVectorDB
+from ...vectordb import BaseVectorDB, DbException
 from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
 from .mimetype_list import SUPPORTED_MIMETYPES
@@ -24,6 +24,10 @@ def _filter_sources(
 	Returns a filtered list of sources that are not already in the vectordb
 	or have been modified since they were last added.
 	It also deletes the old documents to prevent duplicates.
+
+	Raises
+	------
+	DbException
 	'''
 	to_delete = {}
 
@@ -38,6 +42,7 @@ def _filter_sources(
 		'source',
 		list(input_sources.keys())
 	)
+
 	for source, existing_meta in existing_objects.items():
 		# recently modified files are re-embedded
 		if to_int(input_sources.get(source)) > to_int(existing_meta.get('modified')):
@@ -107,7 +112,11 @@ def _bucket_by_type(documents: list[Document]) -> dict[str, list[Document]]:
 
 
 def _process_sources(vectordb: BaseVectorDB, sources: list[UploadFile]) -> bool:
-	filtered_sources = _filter_sources(sources[0].headers['userId'], vectordb, sources)
+	try:
+		filtered_sources = _filter_sources(sources[0].headers['userId'], vectordb, sources)
+	except DbException as e:
+		log_error(e)
+		return False
 
 	if len(filtered_sources) == 0:
 		# no new sources to embed
@@ -142,9 +151,10 @@ def _process_sources(vectordb: BaseVectorDB, sources: list[UploadFile]) -> bool:
 		if len(split_documents) == 0:
 			continue
 
-		user_client = vectordb.get_user_client(user_id)
-		if user_client is None:
-			log_error('Error: Weaviate client not initialised')
+		try:
+			user_client = vectordb.get_user_client(user_id)
+		except DbException as e:
+			log_error(e)
 			return False
 
 		doc_ids = user_client.add_documents(split_documents)

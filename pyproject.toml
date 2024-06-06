@@ -23,20 +23,22 @@ fix = true
 [tool.ruff.lint]
 select = ["A", "B", "C", "E", "F", "G", "I", "S", "PIE", "RET", "RUF", "UP" , "W"]
 ignore = [
-	"W191",  # Indentation contains tabs
-	"E201",  # Whitespace after opening bracket
-	"E202",  # Whitespace before closing bracket
-	"E731",  # Do not assign a lambda expression, use a def
-	"C901",  # Function is too complex
-	"G004",  # Logging statement uses f-string formatting
+	"W191",   # Indentation contains tabs
+	"E201",   # Whitespace after opening bracket
+	"E202",   # Whitespace before closing bracket
+	"E731",   # Do not assign a lambda expression, use a def
+	"C901",   # Function is too complex
+	"G004",   # Logging statement uses f-string formatting
+	"RUF012", # Mutable default argument
 ]
 # remove G004 after better logging solution is implemented
 fixable = [
 	"F401",   # Unused import
-	"RUF100"  # Unused noqa comments
+	"RUF100", # Unused noqa comments
 ]
 
 [tool.pyright]
 include = ["context_chat_backend/**/*.py", "main.py"]
+exclude = ["context_chat_backend/arq_worker.py"]
 pythonVersion = "3.11"
 pythonPlatform = "Linux"
