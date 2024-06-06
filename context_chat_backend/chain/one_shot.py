@@ -12,17 +12,14 @@ _LLM_TEMPLATE = '''Answer based only on this context and do not add any imaginat
 ''' # noqa: E501
 
 
+class QueryProcException(Exception):
+	...
+
+
 def process_query(
-	user_id: str,
-	vectordb: BaseVectorDB,
 	llm: LLM,
-	llm_config: TConfig,
+	app_config: TConfig,
 	query: str,
-	use_context: bool = True,
-	ctx_limit: int = 10,
-	scope_type: ScopeType | None = None,
-	scope_list: list[str] | None = None,
-	template: str | None = None,
 	no_ctx_template: str | None = None,
 	end_separator: str = '',
 ) -> tuple[str, list[str]]:
@@ -32,25 +29,39 @@ def process_query(
 	ValueError
 		If the context length is too small to fit the query
 	"""
-	if not use_context:
-		stop = [end_separator] if end_separator else None
-		return llm.invoke(
-			(query, get_pruned_query(llm, llm_config, query, no_ctx_template, []))[no_ctx_template is not None],  # pyright: ignore[reportArgumentType]
-			stop=stop,
-		), []
+	stop = [end_separator] if end_separator else None
+	return llm.invoke(
+		(query, get_pruned_query(llm, app_config, query, no_ctx_template, []))[no_ctx_template is not None],  # pyright: ignore[reportArgumentType]
+		stop=stop,
+	), []
 
+
+def process_context_query(
+	user_id: str,
+	vectordb: BaseVectorDB,
+	llm: LLM,
+	app_config: TConfig,
+	query: str,
+	ctx_limit: int = 10,
+	scope_type: ScopeType | None = None,
+	scope_list: list[str] | None = None,
+	template: str | None = None,
+	end_separator: str = '',
+) -> tuple[str, list[str]]:
+	"""
+	Raises
+	------
+	ValueError
+		If the context length is too small to fit the query
+	"""
 	context_docs = get_context_docs(user_id, query, vectordb, ctx_limit, scope_type, scope_list)
 	if context_docs is None:
-		stop = [end_separator] if end_separator else None
-		return llm.invoke(
-			(query, get_pruned_query(llm, llm_config, query, no_ctx_template, []))[no_ctx_template is not None],  # pyright: ignore[reportArgumentType]
-			stop=stop,
-		), []
+		raise QueryProcException('No documents retrieved, please index a few documents first to use context-aware mode')
 
 	context_chunks = get_context_chunks(context_docs)
 
 	output = llm.invoke(
-		get_pruned_query(llm, llm_config, query, template or _LLM_TEMPLATE, context_chunks),
+		get_pruned_query(llm, app_config, query, template or _LLM_TEMPLATE, context_chunks),
 		stop=[end_separator],
 	).strip()
 	unique_sources: list[str] = list({source for d in context_docs if (source := d.metadata.get('source'))})

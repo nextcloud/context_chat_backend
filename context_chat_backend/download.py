@@ -60,60 +60,6 @@ def _get_model_name_or_path(config: TConfig, model_type: str) -> str | None:
 	return None
 
 
-def _set_app_config(app: FastAPI, config: TConfig) -> bool:
-	'''
-	Sets the app config as an extra attribute to the app object.
-
-	Args
-	----
-	app: FastAPI
-		The FastAPI app object
-	config: dict
-		A dictionary containing the services to be deployed.
-
-	Returns
-	-------
-	bool
-		True if the app config is set successfully, False otherwise.
-	'''
-	try:
-		if config.get('embedding'):
-			from .models import init_model
-
-			model = init_model('embedding', config['embedding'])
-			app.extra['EMBEDDING_MODEL'] = model
-
-		if config.get('vectordb') and config.get('embedding'):
-			from langchain.schema.embeddings import Embeddings
-
-			from .vectordb import get_vector_db
-
-			client_klass = get_vector_db(config['vectordb'][0])
-
-			em: Embeddings | None = app.extra.get('EMBEDDING_MODEL')
-			if em is not None:
-				app.extra['VECTOR_DB'] = client_klass(em, **config['vectordb'][1])  # type: ignore
-			else:
-				app.extra['VECTOR_DB'] = client_klass(**config.get('vectordb')[1])  # type: ignore
-
-		if config.get('llm'):
-			from .models import init_model
-
-			llm_name, llm_config = config['llm']
-			app.extra['LLM_TEMPLATE'] = llm_config.pop('template', '')
-			app.extra['LLM_NO_CTX_TEMPLATE'] = llm_config.pop('no_ctx_template', '')
-			app.extra['LLM_END_SEPARATOR'] = llm_config.pop('end_separator', '')
-
-			model = init_model('llm', (llm_name, llm_config))
-			app.extra['LLM_MODEL'] = model
-
-	except AssertionError as e:
-		log_error(e)
-		return False
-
-	return True
-
-
 def _model_exists(model_name_or_path: str) -> bool:
 	if os.path.exists(model_name_or_path):
 		return True
@@ -262,16 +208,13 @@ def background_init(app: FastAPI):
 
 		update_progress(app, progress := progress + 50)
 
-	if _set_app_config(app, config) is False:
-		raise Exception('Error: Model initialization failed')
 
-
-def model_init(app: FastAPI) -> bool:
+def ensure_models(app: FastAPI) -> bool:
 	config: TConfig = app.extra['CONFIG']
 	_global_delayed_init(config)
 
 	if config['disable_custom_model_download']:
-		return _set_app_config(app, config)
+		return True
 
 	for model_type in ('embedding', 'llm'):
 		model_name = _get_model_name_or_path(app.extra['CONFIG'], model_type)
@@ -281,4 +224,4 @@ def model_init(app: FastAPI) -> bool:
 		if not _model_exists(model_name):
 			return False
 
-	return _set_app_config(app, config)
+	return True

@@ -1,3 +1,5 @@
+# todo: this list seems incomplete
+apscheduler
 chromadb
 ctransformers
 epub2txt
@@ -5,6 +7,7 @@ httpx
 InstructorEmbedding
 langchain
 llama-cpp-python
+fastapi
 msg-parser
 odfdo
 odfpy

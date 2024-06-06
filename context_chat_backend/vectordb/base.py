@@ -1,10 +1,15 @@
 from abc import ABC, abstractmethod
+from logging import error as log_error
 from typing import Any, TypedDict
 
 from langchain.schema.embeddings import Embeddings
 from langchain.schema.vectorstore import VectorStore
 
 from ..utils import value_of
+
+
+class DbException(Exception):
+	...
 
 
 class TSearchObject(TypedDict):
@@ -25,6 +30,11 @@ class BaseVectorDB(ABC):
 
 	@abstractmethod
 	def __init__(self, embedding: Embeddings | None = None, **kwargs):
+		'''
+		Raises
+		------
+		DbException
+		'''
 		self.embedding = embedding
 
 	@abstractmethod
@@ -36,6 +46,10 @@ class BaseVectorDB(ABC):
 		-------
 		list[str]
 			List of user IDs.
+
+		Raises
+		------
+		DbException
 		'''
 
 	@abstractmethod
@@ -43,7 +57,7 @@ class BaseVectorDB(ABC):
 			self,
 			user_id: str,
 			embedding: Embeddings | None = None  # Use this embedding if not None or use global embedding
-		) -> VectorStore | None:
+		) -> VectorStore:
 		'''
 		Creates and returns the langchain vectordb client object for the given user_id.
 
@@ -56,8 +70,12 @@ class BaseVectorDB(ABC):
 
 		Returns
 		-------
-		VectorStore | None
-			Client object for the VectorDB or None if error occurs.
+		VectorStore
+			Client object for the VectorDB
+
+		Raises
+		------
+		DbException
 		'''
 
 	@abstractmethod
@@ -73,6 +91,10 @@ class BaseVectorDB(ABC):
 		Returns
 		-------
 		None
+
+		Raises
+		------
+		DbException
 		'''
 
 	@abstractmethod
@@ -114,6 +136,10 @@ class BaseVectorDB(ABC):
 		Returns
 		-------
 		TSearchDict
+
+		Raises
+		------
+		DbException
 		'''
 
 	def delete_by_ids(self, user_id: str, ids: list[str]) -> bool:
@@ -136,8 +162,10 @@ class BaseVectorDB(ABC):
 		if len(ids) == 0:
 			return True
 
-		user_client = self.get_user_client(user_id)
-		if user_client is None:
+		try:
+			user_client = self.get_user_client(user_id)
+		except DbException as e:
+			log_error(e)
 			return False
 
 		res = user_client.delete(ids)
@@ -174,11 +202,12 @@ successful, therefore not considered an error.')
 		if len(values) == 0:
 			return True
 
-		user_client = self.get_user_client(user_id)
-		if user_client is None:
+		try:
+			objs = self.get_objects_from_metadata(user_id, metadata_key, values)
+		except DbException as e:
+			log_error(e)
 			return False
 
-		objs = self.get_objects_from_metadata(user_id, metadata_key, values)
 		ids = [
 			obj.get('id')
 			for obj in objs.values()
@@ -207,9 +236,13 @@ successful, therefore not considered an error.')
 		if len(values) == 0:
 			return True
 
-		success = True
+		try:
+			users = self.get_users()
+		except DbException as e:
+			log_error(e)
+			return False
 
-		users = self.get_users()
+		success = True
 		for user_id in users:
 			success &= self.delete(user_id, metadata_key, values)
 

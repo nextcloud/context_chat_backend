@@ -1,4 +1,3 @@
-from logging import error as log_error
 from os import getenv
 
 from dotenv import load_dotenv
@@ -9,7 +8,7 @@ from weaviate import AuthApiKey, Client
 
 from ..utils import value_of
 from . import get_collection_name, get_user_id_from_collection
-from .base import BaseVectorDB, MetadataFilter, TSearchDict
+from .base import BaseVectorDB, DbException, MetadataFilter, TSearchDict
 
 load_dotenv()
 
@@ -77,17 +76,17 @@ class VectorDB(BaseVectorDB):
 				},
 			)
 		except Exception as e:
-			raise Exception('Error: Weaviate connection error') from e
+			raise DbException('Error: Weaviate connection error') from e
 
 		if not client.is_ready():
-			raise Exception('Error: Weaviate connection error')
+			raise DbException('Error: Weaviate connection error')
 
 		self.client = client
 		self.embedding = embedding
 
 	def get_users(self) -> list[str]:
 		if not self.client:
-			raise Exception('Error: Weaviate client not initialised')
+			raise DbException('Error: Weaviate client not initialised')
 
 		return [
 			get_user_id_from_collection(klass['class'])
@@ -96,7 +95,7 @@ class VectorDB(BaseVectorDB):
 
 	def setup_schema(self, user_id: str) -> None:
 		if not self.client:
-			raise Exception('Error: Weaviate client not initialised')
+			raise DbException('Error: Weaviate client not initialised')
 
 		if self.client.schema.exists(get_collection_name(user_id)):
 			return
@@ -110,20 +109,14 @@ class VectorDB(BaseVectorDB):
 			self,
 			user_id: str,
 			embedding: Embeddings | None = None  # Use this embedding if not None or use global embedding
-		) -> VectorStore | None:
+		) -> VectorStore:
 		self.setup_schema(user_id)
-
-		em = None
-		if self.embedding is not None:
-			em = self.embedding
-		elif embedding is not None:
-			em = embedding
 
 		weaviate_obj = Weaviate(
 			client=self.client,
 			index_name=get_collection_name(user_id),
 			text_key='text',
-			embedding=em,
+			embedding=(self.embedding or embedding),
 			by_text=False,
 		)
 		weaviate_obj._query_attrs = ['text', 'start_index', 'source', 'title', 'type', 'modified']
@@ -134,21 +127,24 @@ class VectorDB(BaseVectorDB):
 		if len(filters) == 0:
 			return None
 
-		if len(filters) == 1:
-			return {
-				'path': filters[0]['metadata_key'],
-				'operator': 'ContainsAny',
-				'valueTextList': filters[0]['values'],
-			}
-
-		return {
-			'operator': 'Or',
-			'operands': [{
-					'path': f['metadata_key'],
+		try:
+			if len(filters) == 1:
+				return {
+					'path': filters[0]['metadata_key'],
 					'operator': 'ContainsAny',
-					'valueTextList': f['values'],
-				} for f in filters]
-		}
+					'valueTextList': filters[0]['values'],
+				}
+
+			return {
+				'operator': 'Or',
+				'operands': [{
+						'path': f['metadata_key'],
+						'operator': 'ContainsAny',
+						'valueTextList': f['values'],
+					} for f in filters]
+			}
+		except (KeyError, IndexError):
+			return None
 
 	def get_objects_from_metadata(
 		self,
@@ -159,22 +155,16 @@ class VectorDB(BaseVectorDB):
 		# NOTE: the limit of objects returned is not known, maybe it would be better to set one manually
 
 		if not self.client:
-			raise Exception('Error: Weaviate client not initialised')
+			raise DbException('Error: Weaviate client not initialised')
 
 		self.setup_schema(user_id)
 
-		try:
-			data_filter = self.get_metadata_filter([{
-				'metadata_key': metadata_key,
-				'values': values,
-			}])
-		except KeyError as e:
-			# todo: info instead of error
-			log_error(f'Error: Chromadb filter error: {e}')
-			return {}
-
+		data_filter = self.get_metadata_filter([{
+			'metadata_key': metadata_key,
+			'values': values,
+		}])
 		if data_filter is None:
-			return {}
+			raise DbException('Error: Weaviate metadata filter error')
 
 		results = self.client.query \
 			.get(get_collection_name(user_id), [metadata_key, 'modified']) \
@@ -183,8 +173,8 @@ class VectorDB(BaseVectorDB):
 			.do()
 
 		if results.get('errors') is not None:
-			log_error(f'Error: Weaviate query error: {results.get("errors")}')
-			return {}
+			# todo: exception handling
+			raise DbException(f'Error: Weaviate query error: {results.get("errors")}')
 
 		dmeta = {}
 		for val in values:
@@ -204,6 +194,6 @@ class VectorDB(BaseVectorDB):
 				}
 
 			return output
-		except Exception as e:
-			log_error(f'Error: Weaviate query error: {e}')
-			return {}
+		except (KeyError, IndexError) as e:
+			# todo: exception handling
+			raise DbException('Error: Weaviate metadata parsing error') from e

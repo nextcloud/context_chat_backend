@@ -1,7 +1,7 @@
 from os import getenv, path
 
 from langchain_community.embeddings.llamacpp import LlamaCppEmbeddings
-from langchain_community.llms import LlamaCpp
+from langchain_community.llms.llamacpp import LlamaCpp
 
 
 def get_model_for(model_type: str, model_config: dict):

@@ -1,22 +1,71 @@
-from os import environ
+import os
+from contextlib import asynccontextmanager
+from logging import error as log_error
 from typing import Annotated, Any
 
-from dotenv import load_dotenv
 from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile
 from langchain.llms.base import LLM
 from pydantic import BaseModel, ValidationInfo, field_validator
 
-from .chain import ScopeType, embed_sources, process_query
+from .chain import QueryProcException, ScopeType, embed_sources, process_context_query, process_query
 from .config_parser import get_config
-from .download import background_init
+from .download import background_init, ensure_models
+from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, LoaderException, VectorDBLoader
 from .ocs_utils import AppAPIAuthMiddleware
+from .setup_functions import ensure_config_file, repair_run, setup_env_vars
 from .utils import JSONResponse, enabled_guard, update_progress, value_of
-from .vectordb import BaseVectorDB
+from .vectordb import BaseVectorDB, DbException
 
-load_dotenv()
+# setup
 
-app_config = get_config(environ['CC_CONFIG_PATH'])
-app = FastAPI(debug=app_config['debug'])
+setup_env_vars()
+repair_run()
+ensure_config_file()
+
+# disabled for now
+# scheduler = AsyncIOScheduler()
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+	try:
+		# scheduler.start()
+		yield
+		# scheduler.shutdown()
+	finally:
+		vectordb_loader.offload()
+		embedding_loader.offload()
+		llm_loader.offload()
+
+
+app_config = get_config(os.environ['CC_CONFIG_PATH'])
+app = FastAPI(debug=app_config['debug'], lifespan=lifespan)
+
+app.extra['CONFIG'] = app_config
+app.extra['ENABLED'] = ensure_models(app)
+
+
+# loaders
+
+vectordb_loader = VectorDBLoader(app, app_config)
+embedding_loader = EmbeddingModelLoader(app, app_config)
+llm_loader = LLMModelLoader(app, app_config)
+
+
+# schedules
+
+# @scheduler.scheduled_job('interval', minutes=app_config['model_offload_timeout'], seconds=1)
+# def _():
+# 	if app.extra.get('EM_LAST_ACCESSED') is not None \
+# 		and (time() - app.extra['EM_LAST_ACCESSED'] > app_config['model_offload_timeout']) * 60:
+# 		print('Offloading the embedding model', flush=True)
+# 		embedding_loader.offload()
+# 		del app.extra['EM_LAST_ACCESSED']
+
+# 	if app.extra.get('LLM_LAST_ACCESSED') is not None \
+# 		and (time() - app.extra['LLM_LAST_ACCESSED'] > app_config['model_offload_timeout'] * 60):
+# 		print('Offloading the LLM model', flush=True)
+# 		llm_loader.offload()
+# 		del app.extra['LLM_LAST_ACCESSED']
 
 
 # middlewares
@@ -24,6 +73,34 @@ app = FastAPI(debug=app_config['debug'])
 if not app_config['disable_aaa']:
 	app.add_middleware(AppAPIAuthMiddleware)
 
+
+# exception handlers
+
+@app.exception_handler(DbException)
+async def _(request: Request, exc: DbException):
+	log_error(f'Db Error: {request.url.path}: {exc}')
+	return JSONResponse('Vector DB is facing some issues, please check the logs for more info', 500)
+
+
+@app.exception_handler(LoaderException)
+async def _(request: Request, exc: LoaderException):
+	log_error(f'Loader Error: {request.url.path}: {exc}')
+	return JSONResponse('The resource loader is facing some issues, please check the logs for more info', 500)
+
+
+@app.exception_handler(QueryProcException)
+async def _(request: Request, exc: QueryProcException):
+	log_error(f'QueryProc Error: {request.url.path}: {exc}')
+	return JSONResponse(str(exc), 400)
+
+
+@app.exception_handler(ValueError)
+async def _(request: Request, exc: ValueError):
+	log_error(f'Error: {request.url.path}: {exc}')
+	return JSONResponse(str(exc), 400)
+
+
+# routes
 
 @app.get('/')
 def _(request: Request):
@@ -38,11 +115,7 @@ def _(request: Request):
 @enabled_guard(app)
 def _(query: str | None = None):
 	from langchain.schema.embeddings import Embeddings
-	em: Embeddings | None = app.extra.get('EMBEDDING_MODEL')
-
-	if em is None:
-		return JSONResponse('Error: Embedding model not initialised', 500)
-
+	em: Embeddings = embedding_loader.load()
 	return em.embed_query(query if query is not None else 'what is an apple?')
 
 
@@ -54,10 +127,7 @@ def _():
 
 	from .vectordb import get_collection_name
 
-	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
-	if db is None:
-		return JSONResponse('Error: VectorDB not initialised', 500)
-
+	db: BaseVectorDB = vectordb_loader.load()
 	client: ClientAPI | None = db.client
 
 	if client is None:
@@ -80,14 +150,9 @@ def _(userId: str, sourceNames: str):
 	if len(sourceList) == 0:
 		return JSONResponse('No sources provided', 400)
 
-	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
-
-	if db is None:
-		return JSONResponse('Error: VectorDB not initialised', 500)
-
+	db: BaseVectorDB = vectordb_loader.load()
 	source_objs = db.get_objects_from_metadata(userId, 'source', sourceList)
-	# sources = list(map(lambda s: s.get('id'), source_objs.values()))
-	sources = [s.get('id') for s in source_objs.values()]
+	sources = [s['id'] for s in source_objs.values() if s.get('id') is not None]
 
 	return JSONResponse({ 'sources': sources })
 
@@ -99,8 +164,13 @@ def _():
 
 @app.put('/enabled')
 def _(enabled: bool):
-	# todo: offload the resources
 	app.extra['ENABLED'] = enabled
+
+	if not enabled:
+		vectordb_loader.offload()
+		embedding_loader.offload()
+		llm_loader.offload()
+
 	print('App', 'enabled' if enabled else 'disabled', flush=True)
 	return JSONResponse(content={'error': ''}, status_code=200)
 
@@ -130,11 +200,7 @@ def _(userId: Annotated[str, Body()], sourceNames: Annotated[list[str], Body()])
 	if len(sourceNames) == 0:
 		return JSONResponse('No sources provided', 400)
 
-	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
-
-	if db is None:
-		return JSONResponse('Error: VectorDB not initialised', 500)
-
+	db: BaseVectorDB = vectordb_loader.load()
 	res = db.delete(userId, 'source', sourceNames)
 
 	if res is False:
@@ -149,11 +215,7 @@ def _(userId: Annotated[str, Body()], providerKey: Annotated[str, Body()]):
 	if value_of(providerKey) is None:
 		return JSONResponse('Invalid provider key provided', 400)
 
-	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
-
-	if db is None:
-		return JSONResponse('Error: VectorDB not initialised', 500)
-
+	db: BaseVectorDB = vectordb_loader.load()
 	res = db.delete(userId, 'provider', [providerKey])
 
 	if res is False:
@@ -168,11 +230,7 @@ def _(providerKey: str = Body(embed=True)):
 	if value_of(providerKey) is None:
 		return JSONResponse('Invalid provider key provided', 400)
 
-	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
-
-	if db is None:
-		return JSONResponse('Error: VectorDB not initialised', 500)
-
+	db: BaseVectorDB = vectordb_loader.load()
 	res = db.delete_for_all_users('provider', [providerKey])
 
 	if res is False:
@@ -197,10 +255,7 @@ def _(sources: list[UploadFile]):
 	):
 		return JSONResponse('Invaild/missing headers', 400)
 
-	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
-	if db is None:
-		return JSONResponse('Error: VectorDB not initialised', 500)
-
+	db: BaseVectorDB = vectordb_loader.load()
 	result = embed_sources(db, sources)
 	if not result:
 		return JSONResponse('Error: All sources were not loaded, check logs for more info', 500)
@@ -238,41 +293,43 @@ class Query(BaseModel):
 def _(query: Query):
 	print('query:', query, flush=True)
 
-	llm: LLM | None = app.extra.get('LLM_MODEL')
-	if llm is None:
-		return JSONResponse('Error: LLM not initialised', 500)
-
-	db: BaseVectorDB | None = app.extra.get('VECTOR_DB')
-	if db is None:
-		return JSONResponse('Error: VectorDB not initialised', 500)
+	# todo: migrate to Depends during db schema change
+	llm: LLM = llm_loader.load()
 
 	template = app.extra.get('LLM_TEMPLATE')
 	no_ctx_template = app.extra['LLM_NO_CTX_TEMPLATE']
+	# todo: array
 	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
 
-	llm_config = app.extra.get('CONFIG')
-	if llm_config is None:
-		return JSONResponse('Error: config not setup correctly', 500)
-
-	try:
-		(output, sources) = process_query(
+	if query.useContext:
+		db: BaseVectorDB = vectordb_loader.load()
+		(output, sources) = process_context_query(
 			user_id=query.userId,
 			vectordb=db,
 			llm=llm,
-			llm_config=llm_config,
+			app_config=app_config,
 			query=query.query,
 			ctx_limit=query.ctxLimit,
 			template=template,
-			no_ctx_template=no_ctx_template,
 			end_separator=end_separator,
 			scope_type=query.scopeType,
 			scope_list=query.scopeList,
-			use_context=query.useContext,
 		)
-	except ValueError as e:
-		return JSONResponse(str(e), 400)
+
+		return JSONResponse({
+			'output': output,
+			'sources': sources,
+		})
+
+	(output, sources) = process_query(
+		llm=llm,
+		app_config=app_config,
+		query=query.query,
+		no_ctx_template=no_ctx_template,
+		end_separator=end_separator,
+	)
 
 	return JSONResponse({
 		'output': output,
-		'sources': sources,
+		'sources': [],
 	})

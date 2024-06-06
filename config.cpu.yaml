@@ -1,6 +1,7 @@
 debug: true
 disable_aaa: false
 httpx_verify_ssl: true
+model_offload_timeout: 15  # 15 minutes
 use_colors: true
 uvicorn_workers: 1
 

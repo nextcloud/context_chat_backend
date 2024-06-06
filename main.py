@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
+
+from json import dumps
 from os import getenv
 
 import uvicorn
 
-from context_chat_backend import app_config
-from context_chat_backend.utils import to_int
+from context_chat_backend import app  # isort: skip
+from context_chat_backend.utils import to_int  # isort: skip
 
 if __name__ == '__main__':
+	app_config = app.extra['CONFIG']
+	enabled = app.extra['ENABLED']
+
+	print('App config:\n' + dumps(app_config, indent=2), flush=True)
+	print('\n\nApp', 'enabled' if app.extra['ENABLED'] else 'disabled', 'at startup', flush=True)
+
 	uvicorn.run(
 		app='context_chat_backend:app',
 		host=getenv('APP_HOST', '127.0.0.1'),
