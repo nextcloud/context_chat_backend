@@ -43,6 +43,7 @@ jobs:
         php-versions: [ '8.1' ]
         databases: [ 'sqlite' ]
         server-versions: [ 'master', 'stable28', 'stable29' ]
+        lang: ['en', 'de']
 
     name: Integration test on ${{ matrix.server-versions }} php@${{ matrix.php-versions }}
 
@@ -164,9 +165,15 @@ jobs:
           ./occ files:scan --all
           ./occ context_chat:scan -m text/plain admin
 
-      - name: Run prompt
+      - name: Run english prompt
+        if: ${{ matrix.lang == 'en'}}
         run: |
           ./occ context_chat:prompt admin "Which factors are taken into account for the Ethical AI Rating?"
+
+      - name: Run german prompt
+        if: ${{ matrix.lang == 'de'}}
+        run: |
+          ./occ context_chat:prompt admin "Welche Faktoren beeinflussen das Ethical AI Rating?"
 
       - name: Show logs
         if: always()
