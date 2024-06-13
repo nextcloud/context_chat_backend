@@ -9,7 +9,7 @@ _LLM_TEMPLATE = '''Answer based only on this context and do not add any imaginat
 {context}
 
 {question}
-'''
+''' # noqa: E501
 
 
 def process_query(
