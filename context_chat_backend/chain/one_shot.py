@@ -5,11 +5,11 @@ from ..vectordb import BaseVectorDB
 from .context import ScopeType, get_context_chunks, get_context_docs
 from .query_proc import get_pruned_query
 
-_LLM_TEMPLATE = '''Answer based only on this context and do not add any imaginative details:
+_LLM_TEMPLATE = '''Answer based only on this context and do not add any imaginative details. Make sure to use the same language as the question in your answer.
 {context}
 
 {question}
-'''
+''' # noqa: E501
 
 
 def process_query(
