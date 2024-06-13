@@ -126,4 +126,3 @@ def clear_gpu_cache() -> None:
 def clear_cache() -> None:
 	gc.collect()
 	clear_gpu_cache()
-
