@@ -1,4 +1,5 @@
 from langchain.llms.base import LLM
+from typing_extensions import TypedDict
 
 from ..config_parser import TConfig
 from ..vectordb import BaseVectorDB
@@ -12,6 +13,11 @@ _LLM_TEMPLATE = '''Answer based only on this context and do not add any imaginat
 ''' # noqa: E501
 
 
+class LLMOutput(TypedDict):
+	output: str
+	sources: list[str]
+
+
 class QueryProcException(Exception):
 	...
 
@@ -22,7 +28,7 @@ def process_query(
 	query: str,
 	no_ctx_template: str | None = None,
 	end_separator: str = '',
-) -> tuple[str, list[str]]:
+) -> LLMOutput:
 	"""
 	Raises
 	------
@@ -30,10 +36,12 @@ def process_query(
 		If the context length is too small to fit the query
 	"""
 	stop = [end_separator] if end_separator else None
-	return llm.invoke(
+	output = llm.invoke(
 		(query, get_pruned_query(llm, app_config, query, no_ctx_template, []))[no_ctx_template is not None],  # pyright: ignore[reportArgumentType]
 		stop=stop,
-	), []
+	).strip()
+
+	return LLMOutput(output=output, sources=[])
 
 
 def process_context_query(
@@ -47,7 +55,7 @@ def process_context_query(
 	scope_list: list[str] | None = None,
 	template: str | None = None,
 	end_separator: str = '',
-) -> tuple[str, list[str]]:
+) -> LLMOutput:
 	"""
 	Raises
 	------
@@ -66,4 +74,4 @@ def process_context_query(
 	).strip()
 	unique_sources: list[str] = list({source for d in context_docs if (source := d.metadata.get('source'))})
 
-	return (output, unique_sources)
+	return LLMOutput(output=output, sources=unique_sources)

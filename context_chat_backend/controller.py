@@ -1,4 +1,5 @@
 import os
+import threading
 from contextlib import asynccontextmanager
 from logging import error as log_error
 from typing import Annotated, Any
@@ -7,7 +8,7 @@ from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile
 from langchain.llms.base import LLM
 from pydantic import BaseModel, ValidationInfo, field_validator
 
-from .chain import QueryProcException, ScopeType, embed_sources, process_context_query, process_query
+from .chain import LLMOutput, QueryProcException, ScopeType, embed_sources, process_context_query, process_query
 from .config_parser import get_config
 from .download import background_init, ensure_models
 from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, LoaderException, VectorDBLoader
@@ -49,6 +50,10 @@ app.extra['ENABLED'] = ensure_models(app)
 vectordb_loader = VectorDBLoader(app, app_config)
 embedding_loader = EmbeddingModelLoader(app, app_config)
 llm_loader = LLMModelLoader(app, app_config)
+
+
+# locks (temporary solution for sequential prompt processing before NC 30)
+llm_lock = threading.Lock()
 
 
 # schedules
@@ -290,46 +295,38 @@ class Query(BaseModel):
 
 @app.post('/query')
 @enabled_guard(app)
-def _(query: Query):
+def _(query: Query) -> LLMOutput:
+	global llm_lock
 	print('query:', query, flush=True)
 
-	# todo: migrate to Depends during db schema change
-	llm: LLM = llm_loader.load()
+	with llm_lock:
+		# todo: migrate to Depends during db schema change
+		llm: LLM = llm_loader.load()
 
-	template = app.extra.get('LLM_TEMPLATE')
-	no_ctx_template = app.extra['LLM_NO_CTX_TEMPLATE']
-	# todo: array
-	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
+		template = app.extra.get('LLM_TEMPLATE')
+		no_ctx_template = app.extra['LLM_NO_CTX_TEMPLATE']
+		# todo: array
+		end_separator = app.extra.get('LLM_END_SEPARATOR', '')
 
-	if query.useContext:
-		db: BaseVectorDB = vectordb_loader.load()
-		(output, sources) = process_context_query(
-			user_id=query.userId,
-			vectordb=db,
+		if query.useContext:
+			db: BaseVectorDB = vectordb_loader.load()
+			return process_context_query(
+				user_id=query.userId,
+				vectordb=db,
+				llm=llm,
+				app_config=app_config,
+				query=query.query,
+				ctx_limit=query.ctxLimit,
+				template=template,
+				end_separator=end_separator,
+				scope_type=query.scopeType,
+				scope_list=query.scopeList,
+			)
+
+		return process_query(
 			llm=llm,
 			app_config=app_config,
 			query=query.query,
-			ctx_limit=query.ctxLimit,
-			template=template,
+			no_ctx_template=no_ctx_template,
 			end_separator=end_separator,
-			scope_type=query.scopeType,
-			scope_list=query.scopeList,
 		)
-
-		return JSONResponse({
-			'output': output,
-			'sources': sources,
-		})
-
-	(output, sources) = process_query(
-		llm=llm,
-		app_config=app_config,
-		query=query.query,
-		no_ctx_template=no_ctx_template,
-		end_separator=end_separator,
-	)
-
-	return JSONResponse({
-		'output': output,
-		'sources': [],
-	})
