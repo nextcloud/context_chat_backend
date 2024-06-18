@@ -62,8 +62,8 @@ class VectorDBLoader(Loader):
 		return self.app.extra['VECTOR_DB']
 
 	def offload(self) -> None:
-		# todo
-		del self.app.extra['VECTOR_DB']
+		if self.app.extra.get('VECTOR_DB') is not None:
+			del self.app.extra['VECTOR_DB']
 		gc.collect()
 
 
@@ -86,7 +86,8 @@ class EmbeddingModelLoader(Loader):
 		return model
 
 	def offload(self) -> None:
-		del self.app.extra['EMBEDDING_MODEL']
+		if self.app.extra.get('EMBEDDING_MODEL') is not None:
+			del self.app.extra['EMBEDDING_MODEL']
 		clear_cache()
 
 
@@ -113,7 +114,8 @@ class LLMModelLoader(Loader):
 		return model
 
 	def offload(self) -> None:
-		del self.app.extra['LLM_MODEL']
+		if self.app.extra.get('LLM_MODEL') is not None:
+			del self.app.extra['LLM_MODEL']
 		clear_cache()
 
 
