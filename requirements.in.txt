@@ -7,7 +7,7 @@ httpx
 InstructorEmbedding
 langchain
 langchain-community
-llama_cpp_python @ https://github.com/abetlen/llama-cpp-python/releases/download/v0.2.77-cu121/llama_cpp_python-0.2.77-cp311-cp311-linux_x86_64.whl
+llama_cpp_python
 msg-parser
 odfdo
 odfpy
