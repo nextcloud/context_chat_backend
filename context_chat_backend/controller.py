@@ -200,6 +200,8 @@ def _(bg_tasks: BackgroundTasks):
 @app.post('/deleteSources')
 @enabled_guard(app)
 def _(userId: Annotated[str, Body()], sourceNames: Annotated[list[str], Body()]):
+	print('Delete sources request:', userId, sourceNames)
+
 	sourceNames = [source.strip() for source in sourceNames if source.strip() != '']
 
 	if len(sourceNames) == 0:
@@ -217,6 +219,8 @@ def _(userId: Annotated[str, Body()], sourceNames: Annotated[list[str], Body()])
 @app.post('/deleteSourcesByProvider')
 @enabled_guard(app)
 def _(userId: Annotated[str, Body()], providerKey: Annotated[str, Body()]):
+	print('Delete sources by provider request:', userId, providerKey)
+
 	if value_of(providerKey) is None:
 		return JSONResponse('Invalid provider key provided', 400)
 
@@ -232,6 +236,8 @@ def _(userId: Annotated[str, Body()], providerKey: Annotated[str, Body()]):
 @app.post('/deleteSourcesByProviderForAllUsers')
 @enabled_guard(app)
 def _(providerKey: str = Body(embed=True)):
+	print('Delete sources by provider for all users request:', providerKey)
+
 	if value_of(providerKey) is None:
 		return JSONResponse('Invalid provider key provided', 400)
 

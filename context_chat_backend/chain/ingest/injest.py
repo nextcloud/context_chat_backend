@@ -5,7 +5,7 @@ from fastapi.datastructures import UploadFile
 from langchain.schema import Document
 
 from ...utils import not_none, to_int
-from ...vectordb import BaseVectorDB, DbException
+from ...vectordb import BaseVectorDB
 from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
 from .mimetype_list import SUPPORTED_MIMETYPES
@@ -112,11 +112,7 @@ def _bucket_by_type(documents: list[Document]) -> dict[str, list[Document]]:
 
 
 def _process_sources(vectordb: BaseVectorDB, sources: list[UploadFile]) -> bool:
-	try:
-		filtered_sources = _filter_sources(sources[0].headers['userId'], vectordb, sources)
-	except DbException as e:
-		log_error(e)
-		return False
+	filtered_sources = _filter_sources(sources[0].headers['userId'], vectordb, sources)
 
 	if len(filtered_sources) == 0:
 		# no new sources to embed
@@ -151,12 +147,7 @@ def _process_sources(vectordb: BaseVectorDB, sources: list[UploadFile]) -> bool:
 		if len(split_documents) == 0:
 			continue
 
-		try:
-			user_client = vectordb.get_user_client(user_id)
-		except DbException as e:
-			log_error(e)
-			return False
-
+		user_client = vectordb.get_user_client(user_id)
 		doc_ids = user_client.add_documents(split_documents)
 
 		# does not do per document error checking

@@ -1,3 +1,4 @@
+from logging import error as log_error
 from os import getenv
 
 from chromadb import Client
@@ -94,7 +95,6 @@ class VectorDB(BaseVectorDB):
 		}])
 
 		if data_filter is None:
-			# todo: exception handling and Exception docs update
 			raise DbException('Error: Chromadb metadata filter error')
 
 		try:
@@ -106,7 +106,6 @@ class VectorDB(BaseVectorDB):
 			if len(results.get('ids', [])) == 0:
 				return {}
 		except Exception as e:
-			# todo: exception handling
 			raise DbException('Error: Chromadb query error') from e
 
 		try:
@@ -118,7 +117,27 @@ class VectorDB(BaseVectorDB):
 					'modified': meta['modified'],
 				}
 		except (KeyError, IndexError) as e:
-			# todo: exception handling
 			raise DbException('Error: Chromadb metadata parsing error') from e
 
 		return output
+
+	def delete(self, user_id: str, metadata_key: str, values: list[str]) -> bool:
+		if len(values) == 0:
+			return True
+
+		try:
+			collection = self.client.get_collection(get_collection_name(user_id))
+		except ValueError:
+			log_error('Error: Chromadb collection not found for', user_id)
+			return False
+
+		metadata_filter = self.get_metadata_filter([{
+			'metadata_key': metadata_key,
+			'values': values,
+		}])
+		if metadata_filter is None:
+			log_error('Error: Chromadb metadata filter error, metadata_filter:', metadata_filter)
+			return False
+
+		collection.delete(where=metadata_filter)
+		return True
