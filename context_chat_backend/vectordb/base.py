@@ -5,8 +5,6 @@ from typing import Any, TypedDict
 from langchain.schema.embeddings import Embeddings
 from langchain.schema.vectorstore import VectorStore
 
-from ..utils import value_of
-
 
 class DbException(Exception):
 	...
@@ -142,6 +140,27 @@ class BaseVectorDB(ABC):
 		DbException
 		'''
 
+	@abstractmethod
+	def delete(self, user_id: str, metadata_key: str, values: list[str]) -> bool:
+		'''
+		Deletes all documents with the matching values for the given metadata key.
+
+		Args
+		----
+		user_id: str
+			User ID from whose database to delete the documents.
+		metadata_key: str
+			Metadata key to delete by.
+		values: list[str]
+			List of metadata values to match.
+
+		Returns
+		-------
+		bool
+			True if deletion is successful,
+			False otherwise
+		'''
+
 	def delete_by_ids(self, user_id: str, ids: list[str]) -> bool:
 		'''
 		Deletes all documents with the given ids for the given user.
@@ -179,42 +198,6 @@ successful, therefore not considered an error.')
 			return True
 
 		return res
-
-	def delete(self, user_id: str, metadata_key: str, values: list[str]) -> bool:
-		'''
-		Deletes all documents with the matching values for the given metadata key.
-
-		Args
-		----
-		user_id: str
-			User ID from whose database to delete the documents.
-		metadata_key: str
-			Metadata key to delete by.
-		values: list[str]
-			List of metadata values to match.
-
-		Returns
-		-------
-		bool
-			True if deletion is successful,
-			False otherwise
-		'''
-		if len(values) == 0:
-			return True
-
-		try:
-			objs = self.get_objects_from_metadata(user_id, metadata_key, values)
-		except DbException as e:
-			log_error(e)
-			return False
-
-		ids = [
-			obj.get('id')
-			for obj in objs.values()
-			if value_of(obj.get('id')) is not None
-		]
-
-		return self.delete_by_ids(user_id, ids)
 
 	def delete_for_all_users(self, metadata_key: str, values: list[str]) -> bool:
 		'''

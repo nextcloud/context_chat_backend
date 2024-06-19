@@ -173,7 +173,6 @@ class VectorDB(BaseVectorDB):
 			.do()
 
 		if results.get('errors') is not None:
-			# todo: exception handling
 			raise DbException(f'Error: Weaviate query error: {results.get("errors")}')
 
 		dmeta = {}
@@ -195,5 +194,17 @@ class VectorDB(BaseVectorDB):
 
 			return output
 		except (KeyError, IndexError) as e:
-			# todo: exception handling
 			raise DbException('Error: Weaviate metadata parsing error') from e
+
+	def delete(self, user_id: str, metadata_key: str, values: list[str]) -> bool:
+		if len(values) == 0:
+			return True
+
+		objs = self.get_objects_from_metadata(user_id, metadata_key, values)
+		ids = [
+			obj.get('id')
+			for obj in objs.values()
+			if value_of(obj.get('id')) is not None
+		]
+
+		return self.delete_by_ids(user_id, ids)
