@@ -83,25 +83,25 @@ if not app_config['disable_aaa']:
 
 @app.exception_handler(DbException)
 async def _(request: Request, exc: DbException):
-	log_error(f'Db Error: {request.url.path}: {exc}')
+	log_error(f'Db Error: {request.url.path}:', exc)
 	return JSONResponse('Vector DB is facing some issues, please check the logs for more info', 500)
 
 
 @app.exception_handler(LoaderException)
 async def _(request: Request, exc: LoaderException):
-	log_error(f'Loader Error: {request.url.path}: {exc}')
+	log_error(f'Loader Error: {request.url.path}:', exc)
 	return JSONResponse('The resource loader is facing some issues, please check the logs for more info', 500)
 
 
 @app.exception_handler(QueryProcException)
 async def _(request: Request, exc: QueryProcException):
-	log_error(f'QueryProc Error: {request.url.path}: {exc}')
+	log_error(f'QueryProc Error: {request.url.path}:', exc)
 	return JSONResponse(str(exc), 400)
 
 
 @app.exception_handler(ValueError)
 async def _(request: Request, exc: ValueError):
-	log_error(f'Error: {request.url.path}: {exc}')
+	log_error(f'Error: {request.url.path}:', exc)
 	return JSONResponse(str(exc), 400)
 
 
@@ -280,7 +280,7 @@ class Query(BaseModel):
 	useContext: bool = True
 	scopeType: ScopeType | None = None
 	scopeList: list[str] | None = None
-	ctxLimit: int = 10
+	ctxLimit: int = 20
 
 	@field_validator('userId', 'query', 'ctxLimit')
 	@classmethod

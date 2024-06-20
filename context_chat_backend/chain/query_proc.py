@@ -45,4 +45,11 @@ def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, text_
 			accepted_chunks.append(context)
 			remaining_tokens -= context_tokens
 
+	print(
+		'total tokens:', n_ctx - remaining_tokens,
+		'remaining tokens:', remaining_tokens,
+		'accepted chunks:', len(accepted_chunks),
+		flush=True,
+	)
+
 	return template.format(context='\n\n'.join(accepted_chunks), question=query)

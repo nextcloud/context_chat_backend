@@ -16,7 +16,7 @@ def get_context_docs(
 	user_id: str,
 	query: str,
 	vectordb: BaseVectorDB,
-	ctx_limit: int = 10,
+	ctx_limit: int,
 	scope_type: ScopeType | None = None,
 	scope_list: list[str] | None = None,
 ) -> list[Document] | None:

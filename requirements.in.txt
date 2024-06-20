@@ -1,13 +1,13 @@
-# todo: this list seems incomplete
 apscheduler
 chromadb
 ctransformers
 epub2txt
+fastapi
 httpx
 InstructorEmbedding
 langchain
-llama-cpp-python
-fastapi
+langchain-community
+llama_cpp_python
 msg-parser
 odfdo
 odfpy
@@ -15,6 +15,7 @@ openpyxl
 pandas
 pypdf
 docx2txt
+protobuf==3.20.0
 python-dotenv
 python-multipart
 python-pptx
@@ -24,7 +25,7 @@ striprtf
 torch
 torchvision
 transformers
-unstructured@git+https://github.com/kyteinsky/unstructured@d3a404cfb541dae8e16956f096bac99fc05c985b
+unstructured @ git+https://github.com/kyteinsky/unstructured@d3a404cfb541dae8e16956f096bac99fc05c985b
 unstructured-client
 weaviate-client
 xlrd
