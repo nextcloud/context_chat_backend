@@ -280,7 +280,7 @@ class Query(BaseModel):
 	useContext: bool = True
 	scopeType: ScopeType | None = None
 	scopeList: list[str] | None = None
-	ctxLimit: int = 10
+	ctxLimit: int = 20
 
 	@field_validator('userId', 'query', 'ctxLimit')
 	@classmethod

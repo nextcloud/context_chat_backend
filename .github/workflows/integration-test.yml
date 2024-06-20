@@ -144,7 +144,6 @@ jobs:
           cache: 'pip'
           cache-dependency-path: |
             requirements.txt
-            requirements_cpu_extra.txt
 
       - name: Install and init backend
         run: |
