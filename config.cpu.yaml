@@ -30,7 +30,7 @@ embedding:
 
   llama:
     model_path: dolphin-2.2.1-mistral-7b.Q5_K_M.gguf
-    n_batch: 16
+    n_batch: 512
     n_ctx: 8192
 
   hugging_face:
@@ -42,8 +42,9 @@ embedding:
 llm:
   llama:
     model_path: dolphin-2.2.1-mistral-7b.Q5_K_M.gguf
-    n_batch: 10
+    n_batch: 512
     n_ctx: 8192
+    max_tokens: 4096
     template: "<|im_start|> system \nYou're an AI assistant named Nextcloud Assistant, good at finding relevant context from documents to answer questions provided by the user. <|im_end|>\n<|im_start|> user\nUse the following documents as context to answer the question at the end. REMEMBER to excersice source critisicm as the documents are returned by a search provider that can return unrelated documents.\n\nSTART OF CONTEXT: \n{context} \n\nEND OF CONTEXT!\n\nIf you don't know the answer or are unsure, just say that you don't know, don't try to make up an answer. Don't mention the context in your answer but rather just answer the question directly. Detect the language of the question and make sure to use the same language that was used in the question to answer the question. Don't mention which language was used, but just answer the question directly in the same langauge. \nQuestion: {question} Let's think this step-by-step. \n<|im_end|>\n<|im_start|> assistant\n"
     no_ctx_template: "<|im_start|> system \nYou're an AI assistant named Nextcloud Assistant.<|im_end|>\n<|im_start|> user\n{question}<|im_end|>\n<|im_start|> assistant\n"
     end_separator: "<|im_end|>"
@@ -55,6 +56,8 @@ llm:
     end_separator: "<|im_end|>"
     config:
       context_length: 8192
+      max_new_tokens: 4096
+      local_files_only: True
 
   hugging_face:
     model_id: gpt2
