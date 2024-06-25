@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 2.2.0 - 2024-06-25
+### Fixed
+- leave room for generated tokens in the context window @kyteinsky
+- Dockerfile llama-cpp-python install @kyteinsky
+- Version based repair and other changes (#54) @kyteinsky
+- .in.txt and use compiled llama-cpp-python @kyteinsky
+- correctly log exceptions @kyteinsky
+- do not verify docs before delete in Chroma (#53) @kyteinsky
+- offload only when instantiated @kyteinsky
+- add odfpy back and update deps @kyteinsky
+
+### Changed
+- up context limit to 30 @kyteinsky
+- update configs @kyteinsky
+- change repairs to be version based @kyteinsky
+- upgrade base image to cuda 12.1 and drop cuda dev deps @kyteinsky
+- gh: run the prompts without strategy matrix @kyteinsky
+
+### Added
+- simple queueing of prompts @kyteinsky
+- dynamic loader and unloader @kyteinsky
+- add `GET /enabled` for init check @kyteinsky
+- Use the user's language (#50) @marcelklehr
+
+
 ## 2.1.1 - 2024-04-23
 ### Changed
 - use 8192 as context length
