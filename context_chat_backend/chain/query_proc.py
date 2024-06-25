@@ -14,19 +14,30 @@ def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, text_
 		If the context length is too small to fit the query
 	'''
 	llm_config = config['llm'][1]
+	# fav
 	n_ctx = llm_config.get('n_ctx') \
 		or llm_config.get('config', {}).get('context_length') \
 		or llm_config.get('pipeline_kwargs', {}).get('config', {}).get('max_length') \
+		or 8192
+
+	# fav: tokens to generate
+	n_gen = llm_config.get('max_tokens') \
+		or llm_config.get('config', {}).get('max_new_tokens') \
+		or max(
+			llm_config.get('pipeline_kwargs', {}).get('config', {}).get('max_new_tokens', 0),
+			llm_config.get('pipeline_kwargs', {}).get('config', {}).get('max_length')
+		) \
 		or 4096
 
 	query_tokens = llm.get_num_tokens(query)
 	template_tokens = llm.get_num_tokens(template.format(context='', question=''))
 
-	remaining_tokens = n_ctx - template_tokens - query_tokens
+	# remaining tokens after the template, query and 'to be' generated tokens
+	remaining_tokens = n_ctx - template_tokens - query_tokens - n_gen
 
 	# If the query is too long to fit in the context, truncate it (keeping the template)
 	if remaining_tokens <= 0:
-		new_remaining_tokens = n_ctx - template_tokens
+		new_remaining_tokens = n_ctx - template_tokens - n_gen
 		while query and llm.get_num_tokens(query) > new_remaining_tokens:
 			query = ' '.join(query.split()[:-10])
 

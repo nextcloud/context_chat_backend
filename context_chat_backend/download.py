@@ -50,6 +50,7 @@ _model_config: dict[str, tuple[str, str, str]] = {
 def _get_model_name_or_path(config: TConfig, model_type: str) -> str | None:
 	if (model_config := config.get(model_type)) is not None:
 		model_config = model_config[1]
+		# fav
 		return (
 			model_config.get('model_name')
 			or model_config.get('model_path')

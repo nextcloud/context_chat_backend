@@ -39,7 +39,7 @@ async def lifespan(_: FastAPI):
 
 
 app_config = get_config(os.environ['CC_CONFIG_PATH'])
-app = FastAPI(debug=app_config['debug'], lifespan=lifespan)
+app = FastAPI(debug=app_config['debug'], lifespan=lifespan)  # pyright: ignore[reportArgumentType]
 
 app.extra['CONFIG'] = app_config
 app.extra['ENABLED'] = ensure_models(app)

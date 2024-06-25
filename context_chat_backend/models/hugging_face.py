@@ -1,7 +1,7 @@
 from os import getenv, path
 
-from langchain.llms import HuggingFacePipeline
 from langchain_community.embeddings.huggingface import HuggingFaceEmbeddings
+from langchain_community.llms.huggingface_pipeline import HuggingFacePipeline
 
 
 def get_model_for(model_type: str, model_config: dict):
