@@ -22,9 +22,10 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install requirements
-RUN python3 -m pip install --upgrade pip setuptools wheel
+RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN python3 -m pip install --no-cache-dir https://github.com/abetlen/llama-cpp-python/releases/download/v0.2.77-cu121/llama_cpp_python-0.2.77-cp311-cp311-linux_x86_64.whl
+RUN sed -i '/llama_cpp_python/d' requirements.txt
 RUN python3 -m pip install --no-cache-dir --no-deps -r requirements.txt
-RUN python3 -m pip install --no-cache-dir llama_cpp_python --index-url https://github.com/abetlen/llama-cpp-python/releases/download/v0.2.77-cu121/llama_cpp_python-0.2.77-cp311-cp311-linux_x86_64.whl
 
 # Copy application files
 COPY context_chat_backend context_chat_backend
