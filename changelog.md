@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 2.2.1 - 2024-07-09
+### Fixed
+- use COMPUTE_DEVICE env var if present for config @kyteinsky
+- add cuda compat llib path back @kyteinsky
+
+
 ## 2.2.0 - 2024-06-25
 ### Fixed
 - leave room for generated tokens in the context window @kyteinsky
