@@ -27,6 +27,10 @@ RUN python3 -m pip install --no-cache-dir https://github.com/abetlen/llama-cpp-p
 RUN sed -i '/llama_cpp_python/d' requirements.txt
 RUN python3 -m pip install --no-cache-dir --no-deps -r requirements.txt
 
+# CUDA 12.1 compat lib
+ENV LD_LIBRARY_PATH=/usr/local/cuda/compat:$LD_LIBRARY_PATH
+ENV LIBRARY_PATH=/usr/local/cuda/compat:$LIBRARY_PATH
+
 # Copy application files
 COPY context_chat_backend context_chat_backend
 COPY main.py .

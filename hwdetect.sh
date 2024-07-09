@@ -2,8 +2,13 @@
 
 set -e
 
-# if argument is provided, use it as the accelerator
-if [ -z "$2" ]; then
+accel=$COMPUTE_DEVICE
+if [ "$accel" = "rocm" ]; then
+	accel="cuda"
+fi
+
+# if the COMPUTE_DEVICE env var is not set, try to detect the hardware
+if [ -z "$accel" ]; then
 	echo "Detecting hardware..."
 
 	lspci_out=$(lspci)
