@@ -25,7 +25,7 @@ def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, text_
 		or llm_config.get('config', {}).get('max_new_tokens') \
 		or max(
 			llm_config.get('pipeline_kwargs', {}).get('config', {}).get('max_new_tokens', 0),
-			llm_config.get('pipeline_kwargs', {}).get('config', {}).get('max_length')
+			llm_config.get('pipeline_kwargs', {}).get('config', {}).get('max_length', 0)
 		) \
 		or 4096
 

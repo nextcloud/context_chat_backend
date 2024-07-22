@@ -29,3 +29,4 @@ unstructured @ git+https://github.com/kyteinsky/unstructured@d3a404cfb541dae8e16
 unstructured-client
 weaviate-client
 xlrd
+nc_py_api
