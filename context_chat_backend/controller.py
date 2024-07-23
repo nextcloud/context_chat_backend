@@ -1,6 +1,8 @@
+import json
 import os
 import threading
 from contextlib import asynccontextmanager
+from json import JSONDecodeError
 from logging import error as log_error
 from typing import Annotated, Any
 
@@ -308,6 +310,11 @@ def _(query: Query) -> LLMOutput:
 	with llm_lock:
 		# todo: migrate to Depends during db schema change
 		llm: LLM = llm_loader.load()
+
+		try:
+			query.query = json.loads(query.query).get("prompt", query.query)
+		except JSONDecodeError:
+			pass
 
 		template = app.extra.get('LLM_TEMPLATE')
 		no_ctx_template = app.extra['LLM_NO_CTX_TEMPLATE']
