@@ -1,6 +1,7 @@
 import json
 import time
 from typing import Any, Dict, List, Optional
+from pydantic import BaseModel
 
 from nc_py_api import Nextcloud
 from langchain_core.callbacks.manager import CallbackManagerForLLMRun
@@ -14,6 +15,13 @@ def get_model_for(model_type: str, model_config: dict):
 		return CustomLLM()
 
 	return None
+
+
+class Task(BaseModel):
+	id: int
+	status: str
+	output: Optional[Dict[str, str]] = None
+
 
 class CustomLLM(LLM):
 	"""A custom chat model that queries Nextcloud's TextToText provider
@@ -54,17 +62,17 @@ class CustomLLM(LLM):
 			}
 		})
 
-		task_id = response["task"]["id"]
+		task = Task.model_validate(response["task"])
 
-		while response['task']['status'] != 'STATUS_SUCCESSFUL' and response['task']['status'] != 'STATUS_FAILED':
+		while task.status != 'STATUS_SUCCESSFUL' and task.status != 'STATUS_FAILED':
 			time.sleep(5)
-			response = nc.ocs("GET", f"/ocs/v1.php/taskprocessing/task/{task_id}")
-			print(json.dumps(response))
+			response = nc.ocs("GET", f"/ocs/v1.php/taskprocessing/task/{task.id}")
+			task = Task.model_validate(response["task"])
 
-		if response['task']['status'] == 'STATUS_FAILED':
-			raise RuntimeError('Nextcloud TaskProcessing Task failed')
+		if task.status == 'STATUS_FAILED':
+			raise LlmException('Nextcloud TaskProcessing Task failed')
 
-		return response['task']['output']['output']
+		return task.output['output']
 
 	@property
 	def _identifying_params(self) -> Dict[str, Any]:
@@ -81,3 +89,6 @@ class CustomLLM(LLM):
 	def _llm_type(self) -> str:
 		"""Get the type of language model used by this chat model. Used for logging purposes only."""
 		return "nc_texttotetx"
+
+class LlmException(Exception):
+	...
