@@ -166,7 +166,8 @@ jobs:
 
       - name: Run the prompts
         run: |
-          ./occ background-job:worker 'OC\\TaskProcessing\\SynchronousBackgroundJob' &
+          ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' &
+          ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' &
           ./occ context_chat:prompt admin "Which factors are taken into account for the Ethical AI Rating?"
           ./occ context_chat:prompt admin "Welche Faktoren beeinflussen das Ethical AI Rating?"
 
