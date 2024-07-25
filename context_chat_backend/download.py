@@ -221,7 +221,7 @@ def ensure_models(app: FastAPI) -> bool:
 	for model_type in ('embedding', 'llm'):
 		model_name = _get_model_name_or_path(app.extra['CONFIG'], model_type)
 		if model_name is None:
-			return False
+			return True
 
 		if not _model_exists(model_name):
 			return False
