@@ -12,7 +12,7 @@ from .chain import LLMOutput, QueryProcException, ScopeType, embed_sources, proc
 from .config_parser import get_config
 from .download import background_init, ensure_models
 from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, LoaderException, VectorDBLoader
-from .models.nc_texttotext import LlmException
+from .models import LlmException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
 from .utils import JSONResponse, enabled_guard, update_progress, value_of

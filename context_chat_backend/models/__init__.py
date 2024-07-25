@@ -12,7 +12,7 @@ models = {
 	'llm': _llm_models,
 }
 
-__all__ = ['init_model', 'load_model', 'models']
+__all__ = ['init_model', 'load_model', 'models', 'LlmException']
 
 
 def load_model(model_type: str, model_info: tuple[str, dict]) -> Embeddings | LLM | None:
@@ -54,3 +54,6 @@ def init_model(model_type: str, model_info: tuple[str, dict]):
 		raise AssertionError(f'Error: {model} does not implement "llm" type or has returned an invalid object')
 
 	return model
+
+class LlmException(Exception):
+	...
