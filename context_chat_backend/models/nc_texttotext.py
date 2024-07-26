@@ -68,8 +68,8 @@ class CustomLLM(LLM):
             print(task)
 
             i = 0
-            # wait for 10 minutes
-            while task.status != "STATUS_SUCCESSFUL" and task.status != "STATUS_FAILED" and i < 120:
+            # wait for 30 minutes
+            while task.status != "STATUS_SUCCESSFUL" and task.status != "STATUS_FAILED" and i < 60 * 6:
                 time.sleep(5)
                 i += 1
                 response = nc.ocs("GET", f"/ocs/v1.php/taskprocessing/task/{task.id}")
@@ -78,7 +78,7 @@ class CustomLLM(LLM):
         except ValidationError as e:
             raise LlmException("Failed to parse Nextcloud TaskProcessing task result") from e
 
-        if task.status == "STATUS_SUCCESSFUL":
+        if task.status != "STATUS_SUCCESSFUL":
             raise LlmException("Nextcloud TaskProcessing Task failed")
 
         return task.output["output"]
