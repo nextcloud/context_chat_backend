@@ -25,7 +25,7 @@ Install the given apps for Context Chat to work as desired **in the given order*
 	<bugs>https://github.com/nextcloud/context_chat_backend/issues</bugs>
 	<repository type="git">https://github.com/nextcloud/context_chat_backend.git</repository>
 	<dependencies>
-		<nextcloud min-version="28" max-version="30"/>
+		<nextcloud min-version="30" max-version="30"/>
 	</dependencies>
 	<external-app>
 		<docker-install>

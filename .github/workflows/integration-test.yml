@@ -42,7 +42,7 @@ jobs:
       matrix:
         php-versions: [ '8.1' ]
         databases: [ 'sqlite' ]
-        server-versions: [ 'master', 'stable28', 'stable29' ]
+        server-versions: [ 'master' ]
 
     name: Integration test on ${{ matrix.server-versions }} php@${{ matrix.php-versions }}
 
@@ -123,7 +123,7 @@ jobs:
           php -S localhost:8080 &
 
       - name: Enable context_chat and app_api
-        run: ./occ app:enable -vvv -f context_chat app_api
+        run: ./occ app:enable -vvv -f context_chat app_api testing
 
       - name: Checkout documentation
         uses: actions/checkout@v4
@@ -166,6 +166,8 @@ jobs:
 
       - name: Run the prompts
         run: |
+          ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' &
+          ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' &
           ./occ context_chat:prompt admin "Which factors are taken into account for the Ethical AI Rating?"
           ./occ context_chat:prompt admin "Welche Faktoren beeinflussen das Ethical AI Rating?"
 

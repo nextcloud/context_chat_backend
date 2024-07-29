@@ -12,6 +12,7 @@ from .chain import LLMOutput, QueryProcException, ScopeType, embed_sources, proc
 from .config_parser import get_config
 from .download import background_init, ensure_models
 from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, LoaderException, VectorDBLoader
+from .models import LlmException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
 from .utils import JSONResponse, enabled_guard, update_progress, value_of
@@ -104,6 +105,11 @@ async def _(request: Request, exc: ValueError):
 	log_error(f'Error: {request.url.path}:', exc)
 	return JSONResponse(str(exc), 400)
 
+
+@app.exception_handler(LlmException)
+async def _(request: Request, exc: LlmException):
+	log_error(f'Llm Error: {request.url.path}:', exc)
+	return JSONResponse(str(exc), 400)
 
 # routes
 

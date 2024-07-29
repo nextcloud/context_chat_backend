@@ -40,6 +40,8 @@ embedding:
       device: cpu
 
 llm:
+  nc_texttotext:
+
   llama:
     model_path: dolphin-2.2.1-mistral-7b.Q5_K_M.gguf
     n_batch: 512

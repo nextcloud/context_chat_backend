@@ -202,7 +202,8 @@ def background_init(app: FastAPI):
 	for model_type in ('embedding', 'llm'):
 		model_name = _get_model_name_or_path(config, model_type)
 		if model_name is None:
-			raise Exception(f'Error: Model name/path not found for {model_type}')
+			update_progress(app, progress := progress + 50)
+			continue
 
 		if not _download_model(model_name):
 			raise Exception(f'Error: Model download failed for {model_name}')
@@ -220,7 +221,7 @@ def ensure_models(app: FastAPI) -> bool:
 	for model_type in ('embedding', 'llm'):
 		model_name = _get_model_name_or_path(app.extra['CONFIG'], model_type)
 		if model_name is None:
-			return False
+			return True
 
 		if not _model_exists(model_name):
 			return False
