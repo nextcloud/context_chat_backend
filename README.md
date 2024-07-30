@@ -18,10 +18,10 @@
 ## Simple Install
 
 Install the given apps for Context Chat to work as desired **in the given order**:
-- `AppAPI` (>= v2.2.0) from the Apps page (https://apps.nextcloud.com/apps/app_api)
+- `AppAPI` (latest) from the Apps page (https://apps.nextcloud.com/apps/app_api)
 - `Context Chat Backend` (same major and minor version as Context Chat app below) from the External Apps page (https://apps.nextcloud.com/apps/context_chat_backend)
 - `Context Chat` (same major and minor version as the backend) from the Apps page (https://apps.nextcloud.com/apps/context_chat)
-- `Assistant` from the Apps page (https://apps.nextcloud.com/apps/assistant). The OCS API or the `occ` commands can also be used to interact with this app but it recommended to do that through a Text Processing OCP API consumer like the Assitant app, which is also the officially supported universal UI for all the AI providers.
+- `Assistant` (latest) from the Apps page (https://apps.nextcloud.com/apps/assistant). The OCS API or the `occ` commands can also be used to interact with this app but it recommended to do that through a Text Processing OCP API consumer like the Assitant app, which is also the officially supported universal UI for all the AI providers.
 
 > [!NOTE]
 > See [AppAPI's deploy daemon configuration](#configure-the-appapis-deploy-daemon)
@@ -61,7 +61,7 @@ If nextcloud is inside a container, `--add-host` option would be required by you
 **2. Register the app using the deploy daemon (be mindful of the port number and the app's version):**
 ```
 occ app_api:app:register context_chat_backend manual_install --json-info \
-"{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"2.2.1\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system_app\":0}" \
+"{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"3.0.0\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system_app\":0}" \
 --force-scopes --wait-finish
 ```
 The command to unregister is given below (force is used to also remove apps whose container has been removed)
@@ -209,7 +209,7 @@ sudo -u www-data php occ app_api:app:register \
     --json-info "{\"appid\":\"context_chat_backend\",\
                   \"name\":\"Context Chat Backend\",\
                   \"daemon_config_name\":\"manual_install\",\
-                  \"version\":\"2.2.1\",\
+                  \"version\":\"3.0.0\",\
                   \"secret\":\"12345\",\
                   \"port\":10034,\
                   \"scopes\":[],\

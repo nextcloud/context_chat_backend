@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 3.0.0 - 2024-07-30
+### Changed
+- New major version to maintain versioning consistency with the companion app
+
+### Added
+- Use Taskprocessing TextToText provider as LLM (#60) @marcelklehr
+
+
 ## 2.2.1 - 2024-07-09
 ### Fixed
 - use COMPUTE_DEVICE env var if present for config @kyteinsky
