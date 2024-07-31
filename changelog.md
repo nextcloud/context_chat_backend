@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 3.0.1 - 2024-08-01
+### Changed
+- update llama-cpp-python package in dockerfile @kyteinsky
+
+### Fixed
+- nvidia-cuda/llama.cpp compat issue @kyteinsky
+
 ## 3.0.0 - 2024-07-30
 ### Changed
 - New major version to maintain versioning consistency with the companion app
