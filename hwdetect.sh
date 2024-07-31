@@ -21,6 +21,11 @@ if [ -z "$accel" ]; then
 	echo "Detected hardware: $accel"
 fi
 
+# llama.cpp fix for cpu in docker
+if [ "${AA_DOCKER_ENV:-0}" = "1" ] & [ "$accel" = "cpu" ]; then
+	ln -sf /usr/local/cuda/compat/libcuda.so.1 /lib/x86_64-linux-gnu/
+fi
+
 # if argument is "config", copy the detected hw config to the persistent storage and exit
 if [ "$1" = "config" ]; then
 	if [ ! -d "$APP_PERSISTENT_STORAGE" ]; then
