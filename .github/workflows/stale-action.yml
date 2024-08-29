@@ -17,4 +17,5 @@ jobs:
           days-before-pr-stale: -1
           days-before-pr-close: -1
           exempt-all-pr-assignees: true
+          exempt-issue-labels: bug
           repo-token: ${{ secrets.GITHUB_TOKEN }}
