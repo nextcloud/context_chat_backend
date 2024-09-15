@@ -5,10 +5,10 @@ from langchain.text_splitter import (
 )
 
 
-def get_splitter_for(mimetype: str = 'text/plain') -> TextSplitter:
+def get_splitter_for(chunk_size: int, mimetype: str = 'text/plain') -> TextSplitter:
 	kwargs = {
-		'chunk_size': 2000,
-		'chunk_overlap': 200,
+		'chunk_size': chunk_size,
+		'chunk_overlap': int(chunk_size / 10),
 		'add_start_index': True,
 		'strip_whitespace': True,
 		'is_separator_regex': True,

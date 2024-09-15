@@ -273,7 +273,7 @@ def _(sources: list[UploadFile]):
 		return JSONResponse('Invaild/missing headers', 400)
 
 	db: BaseVectorDB = vectordb_loader.load()
-	result = embed_sources(db, sources)
+	result = embed_sources(db, app.extra['CONFIG'], sources)
 	if not result:
 		return JSONResponse('Error: All sources were not loaded, check logs for more info', 500)
 
