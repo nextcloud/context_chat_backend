@@ -13,6 +13,7 @@ class TConfig(TypedDict):
 	model_offload_timeout: int
 	use_colors: bool
 	uvicorn_workers: int
+	embedding_chunk_size: int
 
 	# model files download configuration
 	disable_custom_model_download: bool
@@ -74,6 +75,7 @@ def get_config(file_path: str) -> TConfig:
 		'model_offload_timeout': config.get('model_offload_timeout', 15),
 		'use_colors': config.get('use_colors', True),
 		'uvicorn_workers': config.get('uvicorn_workers', 1),
+		'embedding_chunk_size': config.get('embedding_chunk_size', 1000),
 
 		'disable_custom_model_download': config.get('disable_custom_model_download', False),
 		'model_download_uri': config.get('model_download_uri', 'https://download.nextcloud.com/server/apps/context_chat_backend'),

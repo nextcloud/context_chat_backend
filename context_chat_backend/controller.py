@@ -273,7 +273,7 @@ def _(sources: list[UploadFile]):
 		return JSONResponse('Invaild/missing headers', 400)
 
 	db: BaseVectorDB = vectordb_loader.load()
-	result = embed_sources(db, sources)
+	result = embed_sources(db, app.extra['CONFIG'], sources)
 	if not result:
 		return JSONResponse('Error: All sources were not loaded, check logs for more info', 500)
 
@@ -305,40 +305,47 @@ class Query(BaseModel):
 		return value
 
 
+def execute_query(query: Query) -> LLMOutput:
+	# todo: migrate to Depends during db schema change
+	llm: LLM = llm_loader.load()
+
+	template = app.extra.get('LLM_TEMPLATE')
+	no_ctx_template = app.extra['LLM_NO_CTX_TEMPLATE']
+	# todo: array
+	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
+
+	if query.useContext:
+		db: BaseVectorDB = vectordb_loader.load()
+		return process_context_query(
+			user_id=query.userId,
+			vectordb=db,
+			llm=llm,
+			app_config=app_config,
+			query=query.query,
+			ctx_limit=query.ctxLimit,
+			template=template,
+			end_separator=end_separator,
+			scope_type=query.scopeType,
+			scope_list=query.scopeList,
+		)
+
+	return process_query(
+		llm=llm,
+		app_config=app_config,
+		query=query.query,
+		no_ctx_template=no_ctx_template,
+		end_separator=end_separator,
+	)
+
+
 @app.post('/query')
 @enabled_guard(app)
 def _(query: Query) -> LLMOutput:
 	global llm_lock
 	print('query:', query, flush=True)
 
+	if app_config['llm'][0] == 'nc_texttotext':
+		return execute_query(query)
+
 	with llm_lock:
-		# todo: migrate to Depends during db schema change
-		llm: LLM = llm_loader.load()
-
-		template = app.extra.get('LLM_TEMPLATE')
-		no_ctx_template = app.extra['LLM_NO_CTX_TEMPLATE']
-		# todo: array
-		end_separator = app.extra.get('LLM_END_SEPARATOR', '')
-
-		if query.useContext:
-			db: BaseVectorDB = vectordb_loader.load()
-			return process_context_query(
-				user_id=query.userId,
-				vectordb=db,
-				llm=llm,
-				app_config=app_config,
-				query=query.query,
-				ctx_limit=query.ctxLimit,
-				template=template,
-				end_separator=end_separator,
-				scope_type=query.scopeType,
-				scope_list=query.scopeList,
-			)
-
-		return process_query(
-			llm=llm,
-			app_config=app_config,
-			query=query.query,
-			no_ctx_template=no_ctx_template,
-			end_separator=end_separator,
-		)
+		return execute_query(query)

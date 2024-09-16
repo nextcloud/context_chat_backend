@@ -4,6 +4,7 @@ from logging import error as log_error
 from fastapi.datastructures import UploadFile
 from langchain.schema import Document
 
+from ...config_parser import TConfig
 from ...utils import not_none, to_int
 from ...vectordb import BaseVectorDB
 from .doc_loader import decode_source
@@ -111,7 +112,7 @@ def _bucket_by_type(documents: list[Document]) -> dict[str, list[Document]]:
 	return bucketed_documents
 
 
-def _process_sources(vectordb: BaseVectorDB, sources: list[UploadFile]) -> bool:
+def _process_sources(vectordb: BaseVectorDB, config: TConfig, sources: list[UploadFile]) -> bool:
 	filtered_sources = _filter_sources(sources[0].headers['userId'], vectordb, sources)
 
 	if len(filtered_sources) == 0:
@@ -132,7 +133,7 @@ def _process_sources(vectordb: BaseVectorDB, sources: list[UploadFile]) -> bool:
 		type_bucketed_docs = _bucket_by_type(documents)
 
 		for _type, _docs in type_bucketed_docs.items():
-			text_splitter = get_splitter_for(_type)
+			text_splitter = get_splitter_for(config['embedding_chunk_size'], _type)
 			split_docs = text_splitter.split_documents(_docs)
 			split_documents.extend(split_docs)
 
@@ -158,6 +159,7 @@ def _process_sources(vectordb: BaseVectorDB, sources: list[UploadFile]) -> bool:
 
 def embed_sources(
 	vectordb: BaseVectorDB,
+	config: TConfig,
 	sources: list[UploadFile],
 ) -> bool:
 	# either not a file or a file that is allowed
@@ -172,4 +174,4 @@ def embed_sources(
 		'\n'.join([f'{source.filename} ({source.headers.get("title", "")})' for source in sources_filtered]),
 		flush=True,
 	)
-	return _process_sources(vectordb, sources_filtered)
+	return _process_sources(vectordb, config, sources_filtered)
