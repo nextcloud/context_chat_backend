@@ -4,9 +4,9 @@ from logging import error as log_error
 from fastapi.datastructures import UploadFile
 from langchain.schema import Document
 
+from ...config_parser import TConfig
 from ...utils import not_none, to_int
 from ...vectordb import BaseVectorDB
-from ...config_parser import TConfig
 from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
 from .mimetype_list import SUPPORTED_MIMETYPES
