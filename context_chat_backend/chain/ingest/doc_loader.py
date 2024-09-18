@@ -1,5 +1,6 @@
 import re
 import tempfile
+import traceback
 from collections.abc import Callable
 from logging import error as log_error
 from typing import BinaryIO
@@ -129,6 +130,7 @@ def decode_source(source: UploadFile) -> str | None:
 			return _loader_map[mimetype](source.file)
 
 		return source.file.read().decode('utf-8')
-	except Exception as e:
-		log_error(f'Error decoding source file ({source.filename}): {e}')
+	except Exception:
+		traceback.print_exc()
+		log_error(f'Error decoding source file ({source.filename})')
 		return None
