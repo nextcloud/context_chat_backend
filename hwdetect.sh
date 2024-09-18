@@ -3,8 +3,8 @@
 set -e
 
 accel=$COMPUTE_DEVICE
-if [ "$accel" = "rocm" ]; then
-	accel="cuda"
+if [ "$accel" = "ROCM" ]; then
+	accel="CUDA"
 fi
 
 # if the COMPUTE_DEVICE env var is not set, try to detect the hardware
@@ -13,16 +13,16 @@ if [ -z "$accel" ]; then
 
 	lspci_out=$(lspci)
 	if echo "$lspci_out" | grep -q -E "(VGA|3D).*NVIDIA"; then
-		accel="cuda"
+		accel="CUDA"
 	else
-		accel="cpu"
+		accel="CPU"
 	fi
 
 	echo "Detected hardware: $accel"
 fi
 
 # llama.cpp fix for cpu in docker
-if [ "${AA_DOCKER_ENV:-0}" = "1" ] && [ "$accel" = "cpu" ]; then
+if [ "${AA_DOCKER_ENV:-0}" = "1" ] && [ "$accel" = "CPU" ]; then
 	ln -sf /usr/local/cuda/compat/libcuda.so.1 /lib/x86_64-linux-gnu/
 fi
 
