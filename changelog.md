@@ -4,12 +4,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 3.0.2 - 2024-09-18
+### Changed
+- make stuff fit in 8GB VRAM and don't lock text2text api calls (#70) @kyteinsky
+
+### Fixed
+- fix: detect additional NVIDIA GPUs (#68) @kyteinsky
+
+
 ## 3.0.1 - 2024-08-01
 ### Changed
 - update llama-cpp-python package in dockerfile @kyteinsky
 
 ### Fixed
 - nvidia-cuda/llama.cpp compat issue @kyteinsky
+
 
 ## 3.0.0 - 2024-07-30
 ### Changed
