@@ -34,7 +34,7 @@ if [ "$1" = "config" ]; then
 	fi
 
 	# if second argument is provided, use it as the accelerator
-	if [ -n "$2" ] && ([ "$2" = "cpu" ] || [ "$2" = "cuda" ]); then
+	if [ -n "$2" ] && ([ "$2" = "CPU" ] || [ "$2" = "CUDA" ]); then
 		echo "Using provided hardware: $2"
 		accel="$2"
 	fi
@@ -45,7 +45,7 @@ if [ "$1" = "config" ]; then
 	fi
 
 	echo "Copying config file to the persistent storage..."
-	if [ "$accel" = "cuda" ]; then
+	if [ "$accel" = "CUDA" ]; then
 		cp "config.gpu.yaml" "$APP_PERSISTENT_STORAGE/config.yaml"
 	else
 		cp "config.cpu.yaml" "$APP_PERSISTENT_STORAGE/config.yaml"
