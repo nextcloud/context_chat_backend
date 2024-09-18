@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 3.0.3 - 2024-09-18
+### Fixed
+- use uppercase comparisons for COMPUTE_DEVICE @kyteinsky
+- add traceback to caught exception in doc loader @kyteinsky
+
+
 ## 3.0.2 - 2024-09-18
 ### Changed
 - make stuff fit in 8GB VRAM and don't lock text2text api calls (#70) @kyteinsky
