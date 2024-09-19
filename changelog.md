@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 3.0.5 - 2024-09-19
+### Fixed
+- lock embedding model forward pass (#78) @kyteinsky
+
+
 ## 3.0.4 - 2024-09-18
 ### Fixed
 - fix remaining lowercase comparisons for COMPUTE_DEVICE @kyteinsky
