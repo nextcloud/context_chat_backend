@@ -341,7 +341,6 @@ def execute_query(query: Query) -> LLMOutput:
 @app.post('/query')
 @enabled_guard(app)
 def _(query: Query) -> LLMOutput:
-	global llm_lock
 	print('query:', query, flush=True)
 
 	if app_config['llm'][0] == 'nc_texttotext':
