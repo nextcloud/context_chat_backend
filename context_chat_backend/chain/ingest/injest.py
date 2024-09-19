@@ -1,4 +1,5 @@
 import re
+import threading
 from logging import error as log_error
 
 from fastapi.datastructures import UploadFile
@@ -11,6 +12,7 @@ from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
 from .mimetype_list import SUPPORTED_MIMETYPES
 
+embed_lock = threading.Lock()
 
 def _allowed_file(file: UploadFile) -> bool:
 	return file.headers.get('type', default='') in SUPPORTED_MIMETYPES
@@ -148,8 +150,9 @@ def _process_sources(vectordb: BaseVectorDB, config: TConfig, sources: list[Uplo
 		if len(split_documents) == 0:
 			continue
 
-		user_client = vectordb.get_user_client(user_id)
-		doc_ids = user_client.add_documents(split_documents)
+		with embed_lock:
+			user_client = vectordb.get_user_client(user_id)
+			doc_ids = user_client.add_documents(split_documents)
 
 		# does not do per document error checking
 		success &= len(split_documents) == len(doc_ids)
