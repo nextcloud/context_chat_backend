@@ -205,6 +205,10 @@ def background_init(app: FastAPI):
 			update_progress(app, progress := progress + 50)
 			continue
 
+		if config.get(model_type)[0] == 'hugging_face':
+			update_progress(app, progress := progress + 50)
+			continue
+
 		if not _download_model(model_name):
 			raise Exception(f'Error: Model download failed for {model_name}')
 
