@@ -27,6 +27,11 @@ vectordb:
     # url: http://localhost:8080
 
 embedding:
+  hugging_face:
+    model_name: nextcloud-ai/multilingual-e5-large-instruct
+    model_kwargs:
+      device: cpu
+
   instructor:
     model_name: hkunlp/instructor-base
     model_kwargs:
@@ -37,11 +42,11 @@ embedding:
     n_batch: 512
     n_ctx: 8192
 
-  hugging_face:
+  #hugging_face:
     # model_name: all-MiniLM-L6-v2
-    model_name: sentence-transformers/all-mpnet-base-v2
-    model_kwargs:
-      device: cpu
+    #model_name: sentence-transformers/all-mpnet-base-v2
+    #model_kwargs:
+    #  device: cpu
 
 llm:
   nc_texttotext:
