@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 3.1.0 - 2024-09-30
+
+### Changed
+- New minor version to maintain versioning consistency with the companion app
+
+
 ## 3.0.5 - 2024-09-19
 ### Fixed
 - lock embedding model forward pass (#78) @kyteinsky
