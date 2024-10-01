@@ -3,7 +3,7 @@ from typing_extensions import TypedDict
 
 from ..config_parser import TConfig
 from ..vectordb import BaseVectorDB
-from .context import ScopeType, get_context_chunks, get_context_docs
+from .context import ContextException, ScopeType, get_context_chunks, get_context_docs
 from .query_proc import get_pruned_query
 
 _LLM_TEMPLATE = '''Answer based only on this context and do not add any imaginative details. Make sure to use the same language as the question in your answer.
@@ -16,10 +16,6 @@ _LLM_TEMPLATE = '''Answer based only on this context and do not add any imaginat
 class LLMOutput(TypedDict):
 	output: str
 	sources: list[str]
-
-
-class QueryProcException(Exception):
-	...
 
 
 def process_query(
@@ -63,10 +59,11 @@ def process_context_query(
 		If the context length is too small to fit the query
 	"""
 	context_docs = get_context_docs(user_id, query, vectordb, ctx_limit, scope_type, scope_list)
-	if context_docs is None:
-		raise QueryProcException('No documents retrieved, please index a few documents first to use context-aware mode')
+	if len(context_docs) == 0:
+		raise ContextException('No documents retrieved, please index a few documents first to use context-aware mode')
 
 	context_chunks = get_context_chunks(context_docs)
+	print('len(context_chunks)', len(context_chunks), flush=True)
 
 	output = llm.invoke(
 		get_pruned_query(llm, app_config, query, template or _LLM_TEMPLATE, context_chunks),

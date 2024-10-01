@@ -1,15 +1,17 @@
 from enum import Enum
-from logging import error as log_error
 
 from langchain.schema import Document
 
-from ..utils import not_none
-from ..vectordb import BaseVectorDB, DbException
+from ..vectordb import BaseVectorDB
 
 
 class ScopeType(Enum):
 	PROVIDER = 'provider'
 	SOURCE = 'source'
+
+
+class ContextException(Exception):
+	...
 
 
 def get_context_docs(
@@ -19,33 +21,28 @@ def get_context_docs(
 	ctx_limit: int,
 	scope_type: ScopeType | None = None,
 	scope_list: list[str] | None = None,
-) -> list[Document] | None:
-	try:
-		user_client = vectordb.get_user_client(user_id)
-	except DbException as e:
-		log_error(e)
-		return None
+) -> list[Document]:
+	user_client = vectordb.get_user_client(user_id)
 
-	context_docs = None
-	if not_none(scope_type) and not_none(scope_list) and len(scope_list) > 0:
-		ctx_filter = vectordb.get_metadata_filter([{
-			'metadata_key': scope_type.value,
-			'values': scope_list,
-		}])
+	# unscoped search
+	if not scope_type:
+		return user_client.similarity_search(query, k=ctx_limit)
 
-		if ctx_filter is not None:
-			context_docs = user_client.similarity_search(query, k=ctx_limit, filter=ctx_filter)
-		else:
-			log_error(f'Error: could not get filter for \nscope type: {scope_type}\n\
-scope list: {scope_list}\n\nproceeding with an unscoped query')
+	if not scope_list:
+		raise ContextException('Error: scope list must be provided and not empty if scope type is provided')
 
-	if context_docs is None:
-		context_docs = user_client.similarity_search(query, k=ctx_limit)
+	ctx_filter = vectordb.get_metadata_filter([{
+		'metadata_key': scope_type.value,
+		'values': scope_list,
+	}])
 
-	return context_docs
+	if ctx_filter is None:
+		raise ContextException(f'Error: could not get filter for \nscope type: {scope_type}\nscope list: {scope_list}')
+
+	return user_client.similarity_search(query, k=ctx_limit, filter=ctx_filter)
 
 
-def get_context_chunks(context_docs: list[Document]):
+def get_context_chunks(context_docs: list[Document]) -> list[str]:
 	context_chunks = []
 	for doc in context_docs:
 		if title := doc.metadata.get('title'):

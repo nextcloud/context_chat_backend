@@ -7,7 +7,7 @@ from langchain_core.language_models.llms import LLM
 from nc_py_api import Nextcloud
 from pydantic import BaseModel, ValidationError
 
-from context_chat_backend.models import LlmException
+from . import LlmException
 
 
 def get_model_for(model_type: str, model_config: dict):
@@ -24,6 +24,10 @@ class Task(BaseModel):
     id: int
     status: str
     output: dict[str, str] | None = None
+
+
+class Response(BaseModel):
+    task: Task
 
 
 class CustomLLM(LLM):
@@ -63,8 +67,7 @@ class CustomLLM(LLM):
         )
 
         try:
-            task = Task.model_validate(response["task"])
-
+            task = Response.model_validate(response).task
             print(task)
 
             i = 0
@@ -73,13 +76,16 @@ class CustomLLM(LLM):
                 time.sleep(5)
                 i += 1
                 response = nc.ocs("GET", f"/ocs/v1.php/taskprocessing/task/{task.id}")
-                task = Task.model_validate(response["task"])
+                task = Response.model_validate(response).task
                 print(task)
         except ValidationError as e:
             raise LlmException("Failed to parse Nextcloud TaskProcessing task result") from e
 
         if task.status != "STATUS_SUCCESSFUL":
             raise LlmException("Nextcloud TaskProcessing Task failed")
+
+        if not isinstance(task.output, dict) or "output" not in task.output:
+            raise LlmException('"output" key not found in Nextcloud TaskProcessing task result')
 
         return task.output["output"]
 
@@ -97,4 +103,4 @@ class CustomLLM(LLM):
     @property
     def _llm_type(self) -> str:
         """Get the type of language model used by this chat model. Used for logging purposes only."""
-        return "nc_texttotetx"
+        return "nc_texttotext"
