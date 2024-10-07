@@ -8,7 +8,7 @@ from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile
 from langchain.llms.base import LLM
 from pydantic import BaseModel, ValidationInfo, field_validator
 
-from .chain import LLMOutput, QueryProcException, ScopeType, embed_sources, process_context_query, process_query
+from .chain import ContextException, LLMOutput, ScopeType, embed_sources, process_context_query, process_query
 from .config_parser import get_config
 from .download import background_init, ensure_models
 from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, LoaderException, VectorDBLoader
@@ -94,21 +94,24 @@ async def _(request: Request, exc: LoaderException):
 	return JSONResponse('The resource loader is facing some issues, please check the logs for more info', 500)
 
 
-@app.exception_handler(QueryProcException)
-async def _(request: Request, exc: QueryProcException):
-	log_error(f'QueryProc Error: {request.url.path}:', exc)
+@app.exception_handler(ContextException)
+async def _(request: Request, exc: ContextException):
+	log_error(f'Context Retrieval Error: {request.url.path}:', exc)
+	# error message is safe
 	return JSONResponse(str(exc), 400)
 
 
 @app.exception_handler(ValueError)
 async def _(request: Request, exc: ValueError):
 	log_error(f'Error: {request.url.path}:', exc)
+	# error message is safe
 	return JSONResponse(str(exc), 400)
 
 
 @app.exception_handler(LlmException)
 async def _(request: Request, exc: LlmException):
 	log_error(f'Llm Error: {request.url.path}:', exc)
+	# error message should be safe
 	return JSONResponse(str(exc), 400)
 
 # routes
