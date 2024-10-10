@@ -60,24 +60,6 @@ def JSONResponse(
 	return FastAPIJSONResponse(content, status_code, **kwargs)
 
 
-def enabled_guard(app: FastAPI):
-	def decorator(func: Callable):
-		'''
-		Decorator to check if the service is enabled
-		'''
-		@wraps(func)
-		def wrapper(*args, **kwargs):
-			disable_aaa = app.extra['CONFIG']['disable_aaa']
-			if not disable_aaa and not app.extra.get('ENABLED', False):
-				return JSONResponse('Context Chat is disabled, enable it from AppAPI to use it.', 503)
-
-			return func(*args, **kwargs)
-
-		return wrapper
-
-	return decorator
-
-
 def update_progress(app: FastAPI, progress: int):
 	if app.extra['CONFIG']['disable_aaa']:
 		return
