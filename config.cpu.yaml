@@ -42,12 +42,6 @@ embedding:
     n_batch: 512
     n_ctx: 8192
 
-  #hugging_face:
-    # model_name: all-MiniLM-L6-v2
-    #model_name: sentence-transformers/all-mpnet-base-v2
-    #model_kwargs:
-    #  device: cpu
-
 llm:
   nc_texttotext:
 
