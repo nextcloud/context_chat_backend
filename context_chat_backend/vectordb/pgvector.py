@@ -1,5 +1,5 @@
-import typing
 from logging import error as log_error
+from typing import Any
 
 import sqlalchemy as sa
 from dotenv import load_dotenv
@@ -11,6 +11,12 @@ from . import get_collection_name, get_user_id_from_collection
 from .base import BaseVectorDB, DbException, MetadataFilter, TSearchDict
 
 load_dotenv()
+
+
+class JSONB(sa.sql.sqltypes.Indexable, sa.sql.sqltypes.TypeEngine[Any]):  # pyright: ignore[reportAttributeAccessIssue]
+	__visit_name__ = "JSONB"
+
+	hashable = False
 
 
 class VectorDB(BaseVectorDB):
@@ -45,7 +51,8 @@ class VectorDB(BaseVectorDB):
 		return PGVector(emb, collection_name=get_collection_name(user_id), **self.client_kwargs)
 
 	def get_metadata_filter(self, filters: list[MetadataFilter]) -> dict | None:
-		assert len(filters) > 0
+		if len(filters) == 0:
+			raise DbException('Error: PGVector metadata filter received empty filters')
 
 		try:
 			if len(filters) == 1:
@@ -114,13 +121,6 @@ class VectorDB(BaseVectorDB):
 		if len(values) == 0:
 			return True
 
-		# # validate the filter
-		# if metadata_key not in ('source', 'provider'):
-		# 	# programmer error
-		# 	raise DbException('Error: Invalid metadata key, deletion is only supported for source and provider keys')
-		# if not all([re.match(r'^[A-Za-z0-9_]__[A-Za-z0-9_](: [A-Za-z0-9]+)?$', v) for v in values]):
-		# 	raise DbException('Error: Invalid metadata values, expected a list of source ids')
-
 		metadata_filter = self.get_metadata_filter([{
 			'metadata_key': metadata_key,
 			'values': values,
@@ -128,65 +128,22 @@ class VectorDB(BaseVectorDB):
 		if metadata_filter is None:
 			raise DbException('Error: PGVector metadata filter error')
 
-		def format_string_value(v):
-			return f'\'"{v}"\''
-
 		client = PGVector(self.embedding, collection_name=get_collection_name(user_id), **self.client_kwargs)
 		with client._make_sync_session() as session:
 			collection = client.get_collection(session)
-			filter_by = [
-				client.EmbeddingStore.collection_id == collection.uuid,
-				# client._create_filter_clause(metadata_filter),
-			]
 
 			stmt = (
-					sa.delete(
-							client.EmbeddingStore,
-					)
-					.filter(*filter_by)
-					.filter(
-						# *[client.EmbeddingStore.cmetadata[metadata_key].astext == v for v in values],
-						client.EmbeddingStore.cmetadata[metadata_key].in_([sa.cast(f'"{v}"', JSONB) for v in values]),
-					)
+				sa.delete(
+					client.EmbeddingStore,
+				)
+				.filter(client.EmbeddingStore.collection_id == collection.uuid)
+				.filter(client.EmbeddingStore.cmetadata[metadata_key].in_([sa.cast(f'"{v}"', JSONB) for v in values]))
 			)
-			# print(stmt.compile(
-			# 	dialect=sa.dialects.postgresql.dialect(),
-			# 	compile_kwargs={'literal_binds': True},
-			# ), flush=True)
 
-			result = session.execute(stmt).fetchall()
+			result = session.execute(stmt)
+			session.commit()
 
-
-
-
-		# with client._make_sync_session() as session:
-		# 	emb_table_name = client.EmbeddingStore.__tablename__
-		# 	collection_uuid = client.get_collection(session).uuid
-		# 	conn = session.connection()
-		# 	result = conn.execute(sa.text(
-		# 		f'''delete from {emb_table_name}
-		# 		where
-		# 			{emb_table_name}.collection_id = '{collection_uuid}'
-		# 			and {emb_table_name}.cmetadata::jsonb->'{metadata_key}' in ({','.join([format_string_value(v) for v in values])})
-		# 		returning {emb_table_name}.id, {emb_table_name}.cmetadata'''
-		# 	), {
-		# 		'collection_uuid': collection_uuid,
-		# 		'values': values,
-		# 	}).fetchall()
-
-			if result is None:
+			if result.rowcount == 0:
 				return False
 
-			if len(result) < len(values):
-				log_error('Some sources were not deleted.\nRequested:%s\nDeleted:%s',
-					values,
-					{r[1]['source'] for r in result},
-				)
-
 		return True
-
-
-class JSONB(sa.sql.sqltypes.Indexable, sa.sql.sqltypes.TypeEngine[typing.Any]):
-    __visit_name__ = "JSONB"
-
-    hashable = False
