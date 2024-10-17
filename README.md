@@ -7,24 +7,30 @@
 >
 > The HTTP request timeout is 50 minutes for all requests and can be changed with the `request_timeout` app config for the php app `context_chat` using the occ command (`occ config:app:set context_chat request_timeout --value=3000`, value is in seconds). The same also needs to be done for docker socket proxy. See [Slow responding ExApps](https://github.com/cloud-py-api/docker-socket-proxy?tab=readme-ov-file#slow-responding-exapps)
 >
-> A fully working GPU Example with cuda 11.8 is at the end of this readme
+> An end-to-end example on how to build and register the backend manually (with CUDA) is at the end of this readme
 >
 > See the [NC Admin docs](https://docs.nextcloud.com/server/latest/admin_manual/ai/app_context_chat.html) for requirements and known limitations.
 
 ## Simple Install
 
 Install the given apps for Context Chat to work as desired **in the given order**:
-- `AppAPI` (latest) from the Apps page (https://apps.nextcloud.com/apps/app_api)
-- `Context Chat Backend` (same major and minor version as Context Chat app below) from the External Apps page (https://apps.nextcloud.com/apps/context_chat_backend)
-- `Context Chat` (same major and minor version as the backend) from the Apps page (https://apps.nextcloud.com/apps/context_chat)
-- `Assistant` (latest) from the Apps page (https://apps.nextcloud.com/apps/assistant). The OCS API or the `occ` commands can also be used to interact with this app but it recommended to do that through a Text Processing OCP API consumer like the Assitant app, which is also the officially supported universal UI for all the AI providers.
+- [AppAPI from the Apps page](https://apps.nextcloud.com/apps/app_api)
+- [Context Chat Backend (same major and minor version as Context Chat app below) from the External Apps page](https://apps.nextcloud.com/apps/context_chat_backend)
+- [Context Chat (same major and minor version as the backend) from the Apps page](https://apps.nextcloud.com/apps/context_chat)
+- [Assistant from the Apps page](https://apps.nextcloud.com/apps/assistant). The OCS API or the `occ` commands can also be used to interact with this app but it recommended to do that through a Text Processing OCP API consumer like the Assitant app, which is also the officially supported universal UI for all the AI providers.
+- Text2Text Task Processing Provider like [llm2 from the External Apps page](https://apps.nextcloud.com/apps/llm2) or [integration_openai from the Apps page](https://apps.nextcloud.com/apps/integration_openai)
 
 > [!NOTE]
 > See [AppAPI's deploy daemon configuration](#configure-the-appapis-deploy-daemon)
+>
 > For GPU Support: enable gpu support in the Deploy Daemon's configuration (Admin settings -> AppAPI)
+
+> [!IMPORTANT]
+> For no wait times on task processings, setup at 4 background job workers in the main server (where Nextcloud is installed). The setup process is documented here: https://docs.nextcloud.com/server/latest/admin_manual/ai/overview.html#improve-ai-task-pickup-speed
 
 ## Complex Install (without docker)
 
+0. Install the required apps from [Simple Install](#simple-install) other than Context Chat Backend and setup background job workers
 1. `python -m venv .venv`
 2. `. .venv/bin/activate`
 3. `pip install --upgrade pip setuptools wheel`
@@ -36,6 +42,8 @@ Install the given apps for Context Chat to work as desired **in the given order*
 9. [Follow the below steps to register the app in the app ecosystem](#register-as-an-ex-app)
 
 ## Complex Install (with docker)
+
+0. Install the required apps from [Simple Install](#simple-install) other than Context Chat Backend and setup background job workers
 1. Build the image
     *(this is a good place to edit the example.env file before building the container)*
     `docker build -t context_chat_backend . -f Dockerfile`
@@ -85,7 +93,13 @@ volumes:
 ```
 
 ## Configuration
-Configuration resides inside the persistent storage as `config.yaml`. The location is `$APP_PERSISTENT_STORAGE`. Containers made by AppAPI would have the value `/nc_app_context_chat_backend_data`.
+Configuration resides inside the persistent storage as `config.yaml`. The location is `$APP_PERSISTENT_STORAGE`. By default it would be at `/nc_app_context_chat_backend_data/config.yaml` inside the container.
+
+All the options in the top of the file can be changed normally but for the sections `vectordb`, `embedding`, and `llm` the first key from the list is only used. The rest are ignored.
+Some of the possible options for the loaders/adaptors in the special sections can be found in the provided example config files itself. The rest of the options can be found in langchain's documentation.
+For llm->llama as an example, they can be found here: https://api.python.langchain.com/en/latest/llms/langchain_community.llms.llamacpp.LlamaCpp.html
+
+Make sure to restart the app after changing the config file. For docker, this would mean restarting the container (`docker restart nc_app_context_chat_backend` or the container name/id).
 
 This is a file copied from one of the two configurations (config.cpu.yaml or config.gpu.conf) during app startup if `config.yaml` is not already present to the persistent storage. See [Repair section](#repair) on details on the repair step that removes the config if you have a custom config.
 
@@ -104,7 +118,8 @@ Use the below command inside the container or add the repair filename manually i
 
 `APP_VERSION="2.1.0" ./genrepair.sh`
 
-## A fully working GPU Example with cuda 12.2
+## End-to-End Example for Building and Registering the Backend Manually (with CUDA)
+
 **1. Build the image**
 ```
 cd /your/path/to/the/cloned/repository
