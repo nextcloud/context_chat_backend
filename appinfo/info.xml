@@ -7,14 +7,14 @@
 	<![CDATA[This is the Python backend for Context Chat.  
 Context Chat is useful for people who want to ask questions from a large language model but using their documents as context.
 
-IMPORTANT:
-v2.1.0 introduces repair steps and the first repair step introduced removes the config.yaml file that resides inside the persistent storage. If you have a custom config.yaml file inside the persistent storage, please back it up before upgrading to v2.1.0 or mark the repair step as completed (see the readme on github). The repair step will remove the file and you will have to reconfigure the backend after the upgrade.
-
 Install the given apps for Context Chat to work as desired **in the given order**:
-- `AppAPI` (latest) from the Apps page (https://apps.nextcloud.com/apps/app_api)
-- `Context Chat Backend` (same major and minor version as Context Chat app below) from the External Apps page (https://apps.nextcloud.com/apps/context_chat_backend)
-- `Context Chat` (same major and minor version as the backend) from the Apps page (https://apps.nextcloud.com/apps/context_chat)
-- `Assistant` (latest) from the Apps page (https://apps.nextcloud.com/apps/assistant). The OCS API or the `occ` commands can also be used to interact with this app but it recommended to do that through a Text Processing OCP API consumer like the Assitant app, which is also the officially supported universal UI for all the AI providers.
+- [AppAPI from the Apps page](https://apps.nextcloud.com/apps/app_api)
+- [Context Chat Backend (same major and minor version as Context Chat app below) from the External Apps page](https://apps.nextcloud.com/apps/context_chat_backend)
+- [Context Chat (same major and minor version as the backend) from the Apps page](https://apps.nextcloud.com/apps/context_chat)
+- [Assistant from the Apps page](https://apps.nextcloud.com/apps/assistant). The OCS API or the `occ` commands can also be used to interact with this app but it recommended to do that through a Task Processing OCP API consumer like the Assistant app, which is also the officially supported universal UI for all the AI providers.
+- Text2Text Task Processing Provider like [llm2 from the External Apps page](https://apps.nextcloud.com/apps/llm2) or [integration_openai from the Apps page](https://apps.nextcloud.com/apps/integration_openai)
+
+Setup background job workers as described here: https://docs.nextcloud.com/server/latest/admin_manual/ai/overview.html#improve-ai-task-pickup-speed
 ]]></description>
 	<version>3.1.0</version>
 	<licence>agpl</licence>
@@ -33,8 +33,5 @@ Install the given apps for Context Chat to work as desired **in the given order*
 			<image>nextcloud/context_chat_backend</image>
 			<image-tag>3.1.0</image-tag>
 		</docker-install>
-		<scopes>
-		</scopes>
-		<system>false</system>
 	</external-app>
 </info>
