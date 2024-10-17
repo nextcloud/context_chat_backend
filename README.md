@@ -95,7 +95,7 @@ volumes:
 ## Configuration
 Configuration resides inside the persistent storage as `config.yaml`. The location is `$APP_PERSISTENT_STORAGE`. By default it would be at `/nc_app_context_chat_backend_data/config.yaml` inside the container.
 
-All the options in the top of the file can be changed normally but for the sections `vectordb`, `embedding`, and `llm` the first key from the list is only used. The rest are ignored.
+All the options in the top of the file can be changed normally but for the sections `vectordb`, `embedding`, and `llm`, only the first key from the list is used. The rest is ignored.
 Some of the possible options for the loaders/adaptors in the special sections can be found in the provided example config files itself. The rest of the options can be found in langchain's documentation.
 For llm->llama as an example, they can be found here: https://api.python.langchain.com/en/latest/llms/langchain_community.llms.llamacpp.LlamaCpp.html
 
