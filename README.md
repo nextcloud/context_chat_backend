@@ -26,7 +26,7 @@ Install the given apps for Context Chat to work as desired **in the given order*
 > For GPU Support: enable gpu support in the Deploy Daemon's configuration (Admin settings -> AppAPI)
 
 > [!IMPORTANT]
-> For no wait times on task processings, setup at 4 background job workers in the main server (where Nextcloud is installed). The setup process is documented here: https://docs.nextcloud.com/server/latest/admin_manual/ai/overview.html#improve-ai-task-pickup-speed
+> To avoid task processing execution delay, setup at 4 background job workers in the main server (where Nextcloud is installed). The setup process is documented here: https://docs.nextcloud.com/server/latest/admin_manual/ai/overview.html#improve-ai-task-pickup-speed
 
 ## Complex Install (without docker)
 
