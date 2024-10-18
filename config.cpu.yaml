@@ -4,6 +4,7 @@ httpx_verify_ssl: true
 model_offload_timeout: 15  # 15 minutes
 use_colors: true
 uvicorn_workers: 1
+doc_parser_workers: 4
 embedding_chunk_size: 1000
 
 # model files download configuration

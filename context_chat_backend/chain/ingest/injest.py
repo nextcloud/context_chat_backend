@@ -1,5 +1,7 @@
+import multiprocessing as mp
 import re
 import threading
+from functools import partial
 from logging import error as log_error
 
 from fastapi.datastructures import UploadFile
@@ -65,51 +67,56 @@ def _filter_sources(
 	]
 
 
-def _sources_to_documents(sources: list[UploadFile]) -> dict[str, list[Document]]:
+def _source_to_documents(embedding_chunk_size: int, source: UploadFile) -> tuple[str, list[Document]] | None:
 	'''
-	Converts a list of sources to a dictionary of documents with the user_id as the key.
+	Converts a source to a set of documents, split into chunks and laced with metadata,
+	and returns it with the user_id.
 	'''
-	documents = {}
+	user_id = source.headers['userId']
+	if user_id is None:
+		log_error(f'userId not found in headers for source: {source.filename}')
+		return None
 
-	for source in sources:
-		user_id = source.headers.get('userId')
-		if user_id is None:
-			log_error(f'userId not found in headers for source: {source.filename}')
-			continue
+	metadata = {
+		'source': source.filename,
+		'title': source.headers['title'],
+		'type': source.headers['type'],
+		'modified': source.headers['modified'],
+		'provider': source.headers['provider'],
+	}
 
-		# transform the source to have text data
-		content = decode_source(source)
-		if content is None or content == '':
-			continue
+	# transform the source to have text data
+	content = decode_source(source)
+	if content is None or content == '':
+		return None
 
-		metadata = {
-			'source': source.filename,
-			'title': source.headers.get('title'),
-			'type': source.headers.get('type'),
-			'modified': source.headers.get('modified'),
-			'provider': source.headers.get('provider'),
-		}
+	# replace more than two newlines with two newlines (also blank spaces, more than 4)
+	content = re.sub(r'((\r)?\n){3,}', '\n\n', content)
+	# NOTE: do not use this with all docs when programming files are added
+	content = re.sub(r'(\s){5,}', r'\g<1>', content)
+	# filter out null bytes
+	content = content.replace('\0', '')
 
-		document = Document(page_content=content, metadata=metadata)
+	text_splitter = get_splitter_for(embedding_chunk_size, metadata['type'])
+	# split_documents instead of split_text to copy metadata to all documents and have start_index key
+	split_documents = text_splitter.split_documents([Document(page_content=content, metadata=metadata)])
+	# filter out empty documents
+	split_documents = list(filter(lambda doc: doc.page_content != '', split_documents))
 
-		if documents.get(user_id) is not None:
-			documents[user_id].append(document)
-		else:
-			documents[user_id] = [document]
+	if len(split_documents) == 0:
+		return None
 
-	return documents
+	return (user_id, split_documents)
 
 
-def _bucket_by_type(documents: list[Document]) -> dict[str, list[Document]]:
+def _bucket_by_userid(documents: list[tuple[str, list[Document]]]) -> dict[str, list[Document]]:
 	bucketed_documents = {}
 
-	for doc in documents:
-		doc_type = doc.metadata.get('type')
-
-		if bucketed_documents.get(doc_type) is not None:
-			bucketed_documents[doc_type].append(doc)
+	for user_id, docs in documents:
+		if bucketed_documents.get(user_id) is not None:
+			bucketed_documents[user_id].extend(docs)
 		else:
-			bucketed_documents[doc_type] = [doc]
+			bucketed_documents[user_id] = docs
 
 	return bucketed_documents
 
@@ -119,46 +126,25 @@ def _process_sources(vectordb: BaseVectorDB, config: TConfig, sources: list[Uplo
 
 	if len(filtered_sources) == 0:
 		# no new sources to embed
+		print('Filtered all docs, no new sources to embed', flush=True)
 		return True
 
-	ddocuments: dict[str, list[Document]] = _sources_to_documents(filtered_sources)
+	with mp.Pool(config['doc_parser_workers']) as pool:
+		user_docs = pool.map(partial(_source_to_documents, config['doc_parser_workers']), filtered_sources)
+		user_docs = list(filter(not_none, user_docs))
 
-	if len(ddocuments.keys()) == 0:
-		# document(s) were empty, not an error
+	if len(user_docs) == 0:
+		print('All provided sources were empty', flush=True)
 		return True
 
 	success = True
-
-	for user_id, documents in ddocuments.items():
-		split_documents: list[Document] = []
-
-		type_bucketed_docs = _bucket_by_type(documents)
-
-		for _type, _docs in type_bucketed_docs.items():
-			text_splitter = get_splitter_for(config['embedding_chunk_size'], _type)
-			split_docs = text_splitter.split_documents(_docs)
-			split_documents.extend(split_docs)
-
-		# replace more than two newlines with two newlines (also blank spaces, more than 4)
-		for doc in split_documents:
-			doc.page_content = re.sub(r'((\r)?\n){3,}', '\n\n', doc.page_content)
-			# NOTE: do not use this with all docs when programming files are added
-			doc.page_content = re.sub(r'(\s){5,}', r'\g<1>', doc.page_content)
-			# filter out null bytes
-			doc.page_content = doc.page_content.replace('\0', '')
-
-		# filter out empty documents
-		split_documents = list(filter(lambda doc: doc.page_content != '', split_documents))
-
-		if len(split_documents) == 0:
-			continue
-
-		with embed_lock:
+	user_buckets = _bucket_by_userid(user_docs)
+	with embed_lock:
+		for user_id, split_documents in user_buckets.items():
 			user_client = vectordb.get_user_client(user_id)
 			doc_ids = user_client.add_documents(split_documents)
-
-		# does not do per document error checking
-		success &= len(split_documents) == len(doc_ids)
+			# does not do per document error checking
+			success &= len(split_documents) == len(doc_ids)
 
 	return success
 

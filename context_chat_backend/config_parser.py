@@ -13,6 +13,7 @@ class TConfig(TypedDict):
 	model_offload_timeout: int
 	use_colors: bool
 	uvicorn_workers: int
+	doc_parser_workers: int
 	embedding_chunk_size: int
 
 	# model files download configuration
@@ -75,6 +76,7 @@ def get_config(file_path: str) -> TConfig:
 		'model_offload_timeout': config.get('model_offload_timeout', 15),
 		'use_colors': config.get('use_colors', True),
 		'uvicorn_workers': config.get('uvicorn_workers', 1),
+		'doc_parser_workers': config.get('doc_parser_workers', 1),
 		'embedding_chunk_size': config.get('embedding_chunk_size', 1000),
 
 		'disable_custom_model_download': config.get('disable_custom_model_download', False),
