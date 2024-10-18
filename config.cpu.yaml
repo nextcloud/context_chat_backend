@@ -19,6 +19,9 @@ vectordb:
     # chroma_server_ssl_enabled:
     # chroma_server_api_default_path:
 
+  pgvector:
+    connection: postgresql+psycopg://ccbuser:ccbpass@localhost:5432/ccb
+
   weaviate:
     # auth_client_secret:
     # url: http://localhost:8080

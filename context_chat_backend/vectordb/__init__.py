@@ -3,7 +3,7 @@ from importlib import import_module
 
 from .base import BaseVectorDB, DbException, MetadataFilter, TSearchDict, TSearchObject
 
-vector_dbs = ['weaviate', 'chroma']
+vector_dbs = ['weaviate', 'chroma', 'pgvector']
 
 __all__ = [
 	'BaseVectorDB',
