@@ -268,6 +268,7 @@ def _(sources: list[UploadFile]):
 	# TODO: headers validation using pydantic
 	if not (
 		value_of(source.headers.get('userId'))
+		and value_of(source.headers.get('title'))
 		and value_of(source.headers.get('type'))
 		and value_of(source.headers.get('modified'))
 		and value_of(source.headers.get('provider'))
