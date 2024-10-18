@@ -144,9 +144,12 @@ def _process_sources(vectordb: BaseVectorDB, config: TConfig, sources: list[Uplo
 			doc.page_content = re.sub(r'((\r)?\n){3,}', '\n\n', doc.page_content)
 			# NOTE: do not use this with all docs when programming files are added
 			doc.page_content = re.sub(r'(\s){5,}', r'\g<1>', doc.page_content)
+			# filter out null bytes
+			doc.page_content = doc.page_content.replace('\0', '')
 
 		# filter out empty documents
 		split_documents = list(filter(lambda doc: doc.page_content != '', split_documents))
+
 		if len(split_documents) == 0:
 			continue
 
