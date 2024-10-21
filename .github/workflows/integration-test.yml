@@ -154,7 +154,7 @@ jobs:
           cp example.env .env
           echo "NEXTCLOUD_URL=http://localhost:8080" >> .env
           ./main.py | tee backend_logs &
-          echo $! > pid.txt          # Save the process ID (PID)
+          echo $! > ../pid.txt          # Save the process ID (PID)
 
       - name: Register backend
         run: |
