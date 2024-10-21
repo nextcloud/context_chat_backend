@@ -21,9 +21,9 @@ def _temp_file_wrapper(file: BinaryIO, loader: Callable, sep: str = '\n') -> str
 		tmp.write(raw_bytes)
     		docs = loader(tmp.name)
 
-	if not tmp.delete:
-		import os
-		os.remove(tmp.name)
+		if not tmp.delete:
+			import os
+			os.remove(tmp.name)
 
 	if isinstance(docs, str) or isinstance(docs, bytes):
 		return docs.decode('utf-8') if isinstance(docs, bytes) else docs  # pyright: ignore[reportReturnType]
