@@ -1,4 +1,5 @@
 import re
+import gc
 import tempfile
 import traceback
 from collections.abc import Callable
@@ -17,15 +18,13 @@ from striprtf import striprtf
 
 def _temp_file_wrapper(file: BinaryIO, loader: Callable, sep: str = '\n') -> str:
 	raw_bytes = file.read()
-	tmp = tempfile.NamedTemporaryFile(mode='wb')
-	tmp.write(raw_bytes)
+	with tempfile.NamedTemporaryFile(mode='wb', delete=False) as tmp:
+		tmp.write(raw_bytes)
+		docs = loader(tmp.name)
 
-	docs = loader(tmp.name)
-
-	tmp.close()
-	if not tmp.delete:
-		import os
-		os.remove(tmp.name)
+		if not tmp.delete:
+			import os
+			os.remove(tmp.name)
 
 	if isinstance(docs, str) or isinstance(docs, bytes):
 		return docs.decode('utf-8') if isinstance(docs, bytes) else docs  # pyright: ignore[reportReturnType]
@@ -127,10 +126,17 @@ def decode_source(source: UploadFile) -> str | None:
 			return None
 
 		if _loader_map.get(mimetype):
-			return _loader_map[mimetype](source.file)
+			result = _loader_map[mimetype](source.file)
+			source.file.close()
+			return result
 
-		return source.file.read().decode('utf-8')
+		result = source.file.read().decode('utf-8')
+		source.file.close()
+		return result
 	except Exception:
 		traceback.print_exc()
 		log_error(f'Error decoding source file ({source.filename})')
 		return None
+	finally:
+        	source.file.close()  # Ensure file is closed after processing
+        	gc.collect()  # Force garbage collection to free up memory
