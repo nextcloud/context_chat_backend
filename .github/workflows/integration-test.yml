@@ -189,7 +189,6 @@ jobs:
           ps -p $(cat pid.txt) -o %mem --no-headers > after_prompt_mem.txt
 
       - name: Compare memory usage and detect leak
-        id: compare_memory
         run: |
           initial_mem=$(cat initial_mem.txt | tr -d ' ')
           final_mem=$(cat after_scan_mem.txt | tr -d ' ')
@@ -204,7 +203,6 @@ jobs:
           fi
 
       - name: Compare memory usage and detect leak
-        id: compare_memory
         run: |
           initial_mem=$(cat after_scan_mem.txt | tr -d ' ')
           final_mem=$(cat after_prompt_mem.txt | tr -d ' ')
