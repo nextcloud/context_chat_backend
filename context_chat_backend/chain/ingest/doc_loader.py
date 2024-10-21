@@ -1,4 +1,5 @@
 import re
+import gc
 import tempfile
 import traceback
 from collections.abc import Callable
@@ -19,7 +20,7 @@ def _temp_file_wrapper(file: BinaryIO, loader: Callable, sep: str = '\n') -> str
 	raw_bytes = file.read()
 	with tempfile.NamedTemporaryFile(mode='wb', delete=False) as tmp:
 		tmp.write(raw_bytes)
-    		docs = loader(tmp.name)
+		docs = loader(tmp.name)
 
 		if not tmp.delete:
 			import os
