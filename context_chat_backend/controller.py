@@ -11,7 +11,7 @@ from langchain.llms.base import LLM
 from pydantic import BaseModel, ValidationInfo, field_validator
 from nc_py_api.ex_app import persistent_storage
 from nc_py_api.ex_app.integration_fastapi import fetch_models_task
-from nc_py_api import NextcloudApp, AsyncNextcloudApp
+from nc_py_api import NextcloudApp
 
 from .chain import ContextException, LLMOutput, ScopeType, embed_sources, process_context_query, process_query
 from .config_parser import get_config

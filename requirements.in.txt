@@ -30,3 +30,4 @@ unstructured-client
 weaviate-client
 xlrd
 nc_py_api
+setuptools
