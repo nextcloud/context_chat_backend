@@ -154,6 +154,7 @@ jobs:
           cp example.env .env
           echo "NEXTCLOUD_URL=http://localhost:8080" >> .env
           ./main.py | tee backend_logs &
+          echo $! > pid.txt          # Save the process ID (PID)
 
       - name: Register backend
         run: |
@@ -162,7 +163,8 @@ jobs:
 
       - name: Check python memory usage
         run: |
-          ps -C python3 -o pid,cmd,%mem,rss --sort=-%mem
+          ps -p $(cat pid.txt) -o pid,cmd,%mem,rss --sort=-%mem
+          ps -p $(cat pid.txt) -o %mem --no-headers > initial_mem.txt
 
       - name: Scan files
         run: |
@@ -171,7 +173,8 @@ jobs:
 
       - name: Check python memory usage
         run: |
-          ps -C python3 -o pid,cmd,%mem,rss --sort=-%mem
+          ps -p $(cat pid.txt) -o pid,cmd,%mem,rss --sort=-%mem
+          ps -p $(cat pid.txt) -o %mem --no-headers > after_scan_mem.txt
 
       - name: Run the prompts
         run: |
@@ -182,7 +185,38 @@ jobs:
 
       - name: Check python memory usage
         run: |
-          ps -C python3 -o pid,cmd,%mem,rss --sort=-%mem
+          ps -p $(cat pid.txt) -o pid,cmd,%mem,rss --sort=-%mem
+          ps -p $(cat pid.txt) -o %mem --no-headers > after_prompt_mem.txt
+
+      - name: Compare memory usage and detect leak
+        id: compare_memory
+        run: |
+          initial_mem=$(cat initial_mem.txt | tr -d ' ')
+          final_mem=$(cat after_scan_mem.txt | tr -d ' ')
+          echo "Initial Memory Usage: $initial_mem%"
+          echo "Memory Usage after scan: $final_mem%"
+          
+          if (( $(echo "$final_mem > $initial_mem" | bc -l) )); then
+            echo "Memory usage has increased during scan. Possible memory leak detected!"
+            exit 1
+          else
+            echo "Memory usage during scan is stable. No memory leak detected."
+          fi
+
+      - name: Compare memory usage and detect leak
+        id: compare_memory
+        run: |
+          initial_mem=$(cat after_scan_mem.txt | tr -d ' ')
+          final_mem=$(cat after_prompt_mem.txt | tr -d ' ')
+          echo "Initial Memory Usage: $initial_mem%"
+          echo "Memory Usage after prompt: $final_mem%"
+          
+          if (( $(echo "$final_mem > $initial_mem" | bc -l) )); then
+            echo "Memory usage has increased during prompt. Possible memory leak detected!"
+            exit 1
+          else
+            echo "Memory usage during prompt is stable. No memory leak detected."
+          fi
 
       - name: Show logs
         if: always()
@@ -190,3 +224,4 @@ jobs:
           tail data/nextcloud.log
           echo '--------------------------------------------------'
           [ -f context_chat_backend/backend_logs ] && cat context_chat_backend/backend_logs || echo "No backend logs"
+          
