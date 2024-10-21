@@ -27,7 +27,7 @@ vectordb:
     # url: http://localhost:8080
 
 embedding:
-  hugging_face:
+  llama:
     model_name: nextcloud-ai/multilingual-e5-large-instruct
     model_kwargs:
       device: cpu
