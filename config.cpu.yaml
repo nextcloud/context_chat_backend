@@ -28,9 +28,8 @@ vectordb:
 
 embedding:
   llama:
-    model_name: nextcloud-ai/multilingual-e5-large-instruct
-    model_kwargs:
-      device: cpu
+    model_path: nextcloud-ai/multilingual-e5-large-instruct
+    device: cpu
     n_batch: 512
     n_ctx: 8192
 
