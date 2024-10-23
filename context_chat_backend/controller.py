@@ -3,15 +3,15 @@ import threading
 from contextlib import asynccontextmanager
 from functools import wraps
 from logging import error as log_error
-from typing import Annotated, Any, Callable
 from threading import Event
+from typing import Annotated, Any, Callable
 
 from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile
 from langchain.llms.base import LLM
-from pydantic import BaseModel, ValidationInfo, field_validator
+from nc_py_api import NextcloudApp
 from nc_py_api.ex_app import persistent_storage
 from nc_py_api.ex_app.integration_fastapi import fetch_models_task
-from nc_py_api import NextcloudApp
+from pydantic import BaseModel, ValidationInfo, field_validator
 
 from .chain import ContextException, LLMOutput, ScopeType, embed_sources, process_context_query, process_query
 from .config_parser import get_config
@@ -208,7 +208,7 @@ def _():
 @app.post('/init')
 def _(bg_tasks: BackgroundTasks):
 	nc = NextcloudApp()
-	bg_tasks.add_task(fetch_models_task, nc, models_to_fetch, 0)
+	fetch_models_task(nc, models_to_fetch, 0)
 	update_progress(app, 100)
 	return JSONResponse(content={}, status_code=200)
 
