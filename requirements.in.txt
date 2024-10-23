@@ -20,7 +20,6 @@ python-dotenv
 python-multipart
 python-pptx
 ruamel.yaml
-sentence-transformers==2.4.0
 striprtf
 torch
 torchvision

@@ -33,11 +33,6 @@ embedding:
     n_ctx: 8192
     n_gpu_layers: -1
 
-  instructor:
-    model_name: hkunlp/instructor-base
-    model_kwargs:
-      device: cuda
-
   hugging_face:
     model_name: nextcloud-ai/multilingual-e5-large-instruct
     model_kwargs:

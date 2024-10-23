@@ -33,11 +33,6 @@ embedding:
     n_batch: 512
     n_ctx: 8192
 
-  instructor:
-    model_name: hkunlp/instructor-base
-    model_kwargs:
-      device: cpu
-
 llm:
   nc_texttotext:
 
