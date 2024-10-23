@@ -1,3 +1,4 @@
+import multiprocessing as mp
 import os
 import threading
 from contextlib import asynccontextmanager
@@ -53,7 +54,9 @@ embedding_loader = EmbeddingModelLoader(app, app_config)
 llm_loader = LLMModelLoader(app, app_config)
 
 
-# locks (temporary solution for sequential prompt processing before NC 30)
+# locks
+
+# sequential prompt processing for in-house LLMs (non-nc_texttotext)
 llm_lock = threading.Lock()
 
 
@@ -277,7 +280,12 @@ def _(sources: list[UploadFile]):
 		return JSONResponse('Invaild/missing headers', 400)
 
 	db: BaseVectorDB = vectordb_loader.load()
-	result = embed_sources(db, app.extra['CONFIG'], sources)
+	queue = mp.Queue()
+	p = mp.Process(target=embed_sources, args=(db, app.extra['CONFIG'], sources, queue))
+	p.start()
+	p.join()
+
+	result = queue.get()
 	if not result:
 		return JSONResponse('Error: All sources were not loaded, check logs for more info', 500)
 
@@ -310,36 +318,49 @@ class Query(BaseModel):
 
 
 def execute_query(query: Query) -> LLMOutput:
-	# todo: migrate to Depends during db schema change
 	llm: LLM = llm_loader.load()
-
 	template = app.extra.get('LLM_TEMPLATE')
 	no_ctx_template = app.extra['LLM_NO_CTX_TEMPLATE']
 	# todo: array
 	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
 
+	queue = mp.Queue()
+
 	if query.useContext:
 		db: BaseVectorDB = vectordb_loader.load()
-		return process_context_query(
-			user_id=query.userId,
-			vectordb=db,
-			llm=llm,
-			app_config=app_config,
-			query=query.query,
-			ctx_limit=query.ctxLimit,
-			template=template,
-			end_separator=end_separator,
-			scope_type=query.scopeType,
-			scope_list=query.scopeList,
+		p = mp.Process(
+			target=process_context_query,
+			args=(
+				queue,
+				query.userId,
+				db,
+				llm,
+				app_config,
+				query.query,
+				query.ctxLimit,
+				template,
+				end_separator,
+				query.scopeType,
+				query.scopeList,
+			),
+		)
+	else:
+		p = mp.Process(
+			target=process_query,
+			args=(
+				queue,
+				llm,
+				app_config,
+				query.query,
+				no_ctx_template,
+				end_separator,
+			),
 		)
 
-	return process_query(
-		llm=llm,
-		app_config=app_config,
-		query=query.query,
-		no_ctx_template=no_ctx_template,
-		end_separator=end_separator,
-	)
+	p.start()
+	p.join()
+
+	return queue.get()
 
 
 @app.post('/query')
