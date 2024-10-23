@@ -69,6 +69,9 @@ llm_loader = LLMModelLoader(app, app_config)
 # sequential prompt processing for in-house LLMs (non-nc_texttotext)
 llm_lock = threading.Lock()
 
+# only one Process can use the embedding model at a time (vectordb calls it)
+vectordb_lock = mp.Lock()
+
 
 # middlewares
 
@@ -288,7 +291,7 @@ def _(sources: list[UploadFile]):
 
 	db: BaseVectorDB = vectordb_loader.load()
 	queue = mp.Queue()
-	p = mp.Process(target=embed_sources, args=(db, app.extra['CONFIG'], sources, queue))
+	p = mp.Process(target=embed_sources, args=(db, vectordb_lock, app.extra['CONFIG'], sources, queue))
 	p.start()
 	p.join()
 
