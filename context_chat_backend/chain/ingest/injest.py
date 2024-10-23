@@ -12,7 +12,6 @@ from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
 from .mimetype_list import SUPPORTED_MIMETYPES
 
-embed_lock = mp.Lock()
 
 def _allowed_file(file: UploadFile) -> bool:
 	return file.headers.get('type', default='') in SUPPORTED_MIMETYPES
@@ -83,7 +82,7 @@ def _sources_to_documents(sources: list[UploadFile]) -> dict[str, list[Document]
 		if content is None or content == '':
 			continue
 
-		print('decoded non empty source:', source.filename, ' -- ', content[:100], flush=True)
+		print('decoded non empty source:', source.filename, flush=True)
 
 		metadata = {
 			'source': source.filename,
@@ -117,7 +116,12 @@ def _bucket_by_type(documents: list[Document]) -> dict[str, list[Document]]:
 	return bucketed_documents
 
 
-def _process_sources(vectordb: BaseVectorDB, config: TConfig, sources: list[UploadFile]) -> bool:
+def _process_sources(
+	vectordb_lock: mp.Lock,  # pyright: ignore[reportInvalidTypeForm]
+	vectordb: BaseVectorDB,
+	config: TConfig,
+	sources: list[UploadFile],
+) -> bool:
 	filtered_sources = _filter_sources(sources[0].headers['userId'], vectordb, sources)
 
 	if len(filtered_sources) == 0:
@@ -163,11 +167,11 @@ def _process_sources(vectordb: BaseVectorDB, config: TConfig, sources: list[Uplo
 		if len(split_documents) == 0:
 			continue
 
-		with embed_lock:
+		with vectordb_lock:
 			user_client = vectordb.get_user_client(user_id)
 			doc_ids = user_client.add_documents(split_documents)
 
-		print('Added documents to vectordb:', doc_ids, flush=True)
+		print('Added documents to vectordb', flush=True)
 		# does not do per document error checking
 		success &= len(split_documents) == len(doc_ids)
 
@@ -176,6 +180,7 @@ def _process_sources(vectordb: BaseVectorDB, config: TConfig, sources: list[Uplo
 
 def embed_sources(
 	vectordb: BaseVectorDB,
+	vectordb_lock: mp.Lock,  # pyright: ignore[reportInvalidTypeForm]
 	config: TConfig,
 	sources: list[UploadFile],
 	result_queue: mp.Queue,
@@ -189,7 +194,7 @@ def embed_sources(
 
 	print(
 		'Embedding sources:\n' +
-		'\n'.join([f'{source.filename} ({source.headers.get("title", "")})' for source in sources_filtered]),
+		'\n'.join([f'{source.filename} ({source.headers["title"]})' for source in sources_filtered]),
 		flush=True,
 	)
-	result_queue.put(_process_sources(vectordb, config, sources_filtered))
+	result_queue.put(_process_sources(vectordb_lock, vectordb, config, sources_filtered))
