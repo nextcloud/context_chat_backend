@@ -1,6 +1,7 @@
 import multiprocessing as mp
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from logging import error as log_error
 
@@ -8,13 +9,14 @@ from fastapi.datastructures import UploadFile
 from langchain.schema import Document
 
 from ...config_parser import TConfig
-from ...utils import not_none, to_int
+from ...dyn_loader import VectorDBLoader
+from ...utils import log, not_none, to_int
 from ...vectordb import BaseVectorDB
 from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
 from .mimetype_list import SUPPORTED_MIMETYPES
 
-embed_lock = threading.Lock()
+# embed_lock = threading.Lock()
 
 def _allowed_file(file: UploadFile) -> bool:
 	return file.headers.get('type', default='') in SUPPORTED_MIMETYPES
@@ -72,6 +74,7 @@ def _source_to_documents(embedding_chunk_size: int, source: UploadFile) -> tuple
 	Converts a source to a set of documents, split into chunks and laced with metadata,
 	and returns it with the user_id.
 	'''
+	log('in _source_to_documents, pid:', mp.current_process().pid)
 	user_id = source.headers['userId']
 	if user_id is None:
 		log_error(f'userId not found in headers for source: {source.filename}')
@@ -90,6 +93,7 @@ def _source_to_documents(embedding_chunk_size: int, source: UploadFile) -> tuple
 	if content is None or content == '':
 		return None
 
+	log('in _source_to_documents, after decode_source, content:', content[:100])
 	# replace more than two newlines with two newlines (also blank spaces, more than 4)
 	content = re.sub(r'((\r)?\n){3,}', '\n\n', content)
 	# NOTE: do not use this with all docs when programming files are added
@@ -109,6 +113,7 @@ def _source_to_documents(embedding_chunk_size: int, source: UploadFile) -> tuple
 	return (user_id, split_documents)
 
 
+'''#todo
 def _bucket_by_userid(documents: list[tuple[str, list[Document]]]) -> dict[str, list[Document]]:
 	bucketed_documents = {}
 
@@ -119,9 +124,28 @@ def _bucket_by_userid(documents: list[tuple[str, list[Document]]]) -> dict[str, 
 			bucketed_documents[user_id] = docs
 
 	return bucketed_documents
+'''
+
+# todo: n procs
+# todo: forkserver
+# pool = mp.get_context('fork').Pool(4, maxtasksperchild=10)
+thpool = ThreadPoolExecutor(4)
+
+def _embed_document(config: TConfig, source: UploadFile) -> bool:
+	vectordb = VectorDBLoader(config).load()
+	result = _source_to_documents(config['embedding_chunk_size'], source)
+	if result is None:
+		return False
+
+	user_id, split_documents = result
+	user_client = vectordb.get_user_client(user_id)
+	doc_ids = user_client.add_documents(split_documents)
+
+	return len(split_documents) == len(doc_ids)
 
 
-def _process_sources(vectordb: BaseVectorDB, config: TConfig, sources: list[UploadFile]) -> bool:
+def _process_sources(config: TConfig, sources: list[UploadFile]) -> bool:
+	vectordb = VectorDBLoader(config).load()
 	filtered_sources = _filter_sources(sources[0].headers['userId'], vectordb, sources)
 
 	if len(filtered_sources) == 0:
@@ -129,28 +153,25 @@ def _process_sources(vectordb: BaseVectorDB, config: TConfig, sources: list[Uplo
 		print('Filtered all docs, no new sources to embed', flush=True)
 		return True
 
-	with mp.Pool(config['doc_parser_workers']) as pool:
-		user_docs = pool.map(partial(_source_to_documents, config['doc_parser_workers']), filtered_sources)
-		user_docs = list(filter(not_none, user_docs))
+	log('in _process_sources, before mp.Pool, pid:', mp.current_process().pid)
+	# with mp.get_context('forkserver').Pool(config['doc_parser_workers'], maxtasksperchild=10) as pool:
+	# results = pool.map(partial(_embed_document, config), filtered_sources)
+	futures = []
+	results = []
+	for source in filtered_sources:
+		futures.append(thpool.submit(partial(_embed_document, config, source)))
 
-	if len(user_docs) == 0:
+	for f in futures:
+		results.append(f.result())
+
+	if not any(results):
 		print('All provided sources were empty', flush=True)
 		return True
 
-	success = True
-	user_buckets = _bucket_by_userid(user_docs)
-	with embed_lock:
-		for user_id, split_documents in user_buckets.items():
-			user_client = vectordb.get_user_client(user_id)
-			doc_ids = user_client.add_documents(split_documents)
-			# does not do per document error checking
-			success &= len(split_documents) == len(doc_ids)
-
-	return success
+	return all(results)
 
 
 def embed_sources(
-	vectordb: BaseVectorDB,
 	config: TConfig,
 	sources: list[UploadFile],
 ) -> bool:
@@ -166,4 +187,4 @@ def embed_sources(
 		'\n'.join([f'{source.filename} ({source.headers.get("title", "")})' for source in sources_filtered]),
 		flush=True,
 	)
-	return _process_sources(vectordb, config, sources_filtered)
+	return _process_sources(config, sources_filtered)

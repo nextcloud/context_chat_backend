@@ -48,8 +48,8 @@ app.extra['ENABLED'] = ensure_models(app)
 
 # loaders
 
-vectordb_loader = VectorDBLoader(app, app_config)
-embedding_loader = EmbeddingModelLoader(app, app_config)
+vectordb_loader = VectorDBLoader(app_config)
+embedding_loader = EmbeddingModelLoader(app_config)
 llm_loader = LLMModelLoader(app, app_config)
 
 
@@ -276,8 +276,8 @@ def _(sources: list[UploadFile]):
 	):
 		return JSONResponse('Invaild/missing headers', 400)
 
-	db: BaseVectorDB = vectordb_loader.load()
-	result = embed_sources(db, app.extra['CONFIG'], sources)
+	# db: BaseVectorDB = vectordb_loader.load()
+	result = embed_sources(app.extra['CONFIG'], sources)
 	if not result:
 		return JSONResponse('Error: All sources were not loaded, check logs for more info', 500)
 

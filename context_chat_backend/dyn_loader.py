@@ -30,8 +30,7 @@ class LoaderException(Exception):
 
 
 class Loader(ABC):
-	def __init__(self, app: FastAPI, config: TConfig) -> None:
-		self.app = app
+	def __init__(self, config: TConfig) -> None:
 		self.config = config
 
 	@abstractmethod
@@ -45,34 +44,23 @@ class Loader(ABC):
 
 class VectorDBLoader(Loader):
 	def load(self) -> BaseVectorDB:
-		if self.app.extra.get('VECTOR_DB') is not None:
-			return self.app.extra['VECTOR_DB']
-
 		try:
 			client_klass = get_vector_db(self.config['vectordb'][0])
 		except (AssertionError, ImportError) as e:
 			raise LoaderException() from e
 
 		try:
-			embedding_model = EmbeddingModelLoader(self.app, self.config).load()
-			self.app.extra['VECTOR_DB'] = client_klass(embedding_model, **self.config['vectordb'][1])  # type: ignore
+			embedding_model = EmbeddingModelLoader(self.config).load()
+			return client_klass(embedding_model, **self.config['vectordb'][1])  # type: ignore
 		except DbException as e:
 			raise LoaderException() from e
 
-		return self.app.extra['VECTOR_DB']
-
 	def offload(self) -> None:
-		if self.app.extra.get('VECTOR_DB') is not None:
-			del self.app.extra['VECTOR_DB']
 		gc.collect()
 
 
 class EmbeddingModelLoader(Loader):
 	def load(self) -> Embeddings:
-		if self.app.extra.get('EMBEDDING_MODEL') is not None:
-			self.app.extra['EM_LAST_ACCESSED'] = time()
-			return self.app.extra['EMBEDDING_MODEL']
-
 		try:
 			model = init_model('embedding', self.config['embedding'])
 		except AssertionError as e:
@@ -81,17 +69,17 @@ class EmbeddingModelLoader(Loader):
 		if not isinstance(model, Embeddings):
 			raise LoaderException(f'Error: {model} does not implement "embedding" type or has returned an invalid object')  # noqa: E501
 
-		self.app.extra['EMBEDDING_MODEL'] = model
-		self.app.extra['EM_LAST_ACCESSED'] = time()
 		return model
 
 	def offload(self) -> None:
-		if self.app.extra.get('EMBEDDING_MODEL') is not None:
-			del self.app.extra['EMBEDDING_MODEL']
 		clear_cache()
 
 
 class LLMModelLoader(Loader):
+	def __init__(self, app: FastAPI, config: TConfig) -> None:
+		super().__init__(config)
+		self.app = app
+
 	def load(self) -> LLM:
 		if self.app.extra.get('LLM_MODEL') is not None:
 			self.app.extra['LLM_LAST_ACCESSED'] = time()
