@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 from functools import wraps
 from logging import error as log_error
@@ -10,6 +11,7 @@ from fastapi.responses import JSONResponse as FastAPIJSONResponse
 from .ocs_utils import ocs_call
 
 T = TypeVar('T')
+LOGGER_NAME = getenv('APP_ID', 'context_chat_backend')
 
 
 def not_none(value: T | None) -> TypeGuard[T]:
@@ -91,3 +93,11 @@ def update_progress(app: FastAPI, progress: int):
 		)
 	except Exception as e:
 		log_error(f'Error: Failed to update progress: {e}')
+
+
+# todo: logging.DEBUG
+def log(*args, level: int = logging.ERROR, **kwargs):
+	# logger = logging.getLogger(LOGGER_NAME)
+	# logger.log(level, *args, **kwargs)
+	print(args, kwargs)
+

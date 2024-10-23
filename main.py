@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 
+import logging
 from json import dumps
+from multiprocessing import set_start_method
 from os import getenv
 
 import uvicorn
+from nc_py_api.ex_app import setup_nextcloud_logging
 
 from context_chat_backend import app  # isort: skip
 from context_chat_backend.utils import to_int  # isort: skip
@@ -11,6 +14,13 @@ from context_chat_backend.utils import to_int  # isort: skip
 if __name__ == '__main__':
 	app_config = app.extra['CONFIG']
 	enabled = app.extra['ENABLED']
+
+	# set_start_method('fork', force=True)
+
+	APP_ID = getenv('APP_ID', 'context_chat_backend')
+	logger = logging.getLogger(APP_ID)
+	logger.setLevel(('WARNING', 'DEBUG')[app_config['debug']])
+	setup_nextcloud_logging(APP_ID, logging.WARNING)
 
 	print('App config:\n' + dumps(app_config, indent=2), flush=True)
 	print('\n\nApp', 'enabled' if app.extra['ENABLED'] else 'disabled', 'at startup', flush=True)
