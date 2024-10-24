@@ -1,21 +1,25 @@
 import os
 import threading
 from contextlib import asynccontextmanager
+from functools import wraps
 from logging import error as log_error
-from typing import Annotated, Any
+from threading import Event
+from typing import Annotated, Any, Callable
 
 from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile
 from langchain.llms.base import LLM
+from nc_py_api import NextcloudApp
+from nc_py_api.ex_app import persistent_storage
+from nc_py_api.ex_app.integration_fastapi import fetch_models_task
 from pydantic import BaseModel, ValidationInfo, field_validator
 
 from .chain import ContextException, LLMOutput, ScopeType, embed_sources, process_context_query, process_query
 from .config_parser import get_config
-from .download import background_init, ensure_models
 from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, LoaderException, VectorDBLoader
 from .models import LlmException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
-from .utils import JSONResponse, enabled_guard, update_progress, value_of
+from .utils import JSONResponse, update_progress, value_of
 from .vectordb import BaseVectorDB, DbException
 
 # setup
@@ -24,26 +28,32 @@ setup_env_vars()
 repair_run()
 ensure_config_file()
 
+models_to_fetch = {
+	"https://huggingface.co/Ralriki/multilingual-e5-large-instruct-GGUF/resolve/main/multilingual-e5-large-instruct-q6_k.gguf": {
+		"save_path": os.path.join(persistent_storage(), 'model_files',  "multilingual-e5-large-instruct-q6_k.gguf")
+	}
+}
+app_enabled = Event()
+
 # disabled for now
 # scheduler = AsyncIOScheduler()
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
-	try:
-		# scheduler.start()
-		yield
-		# scheduler.shutdown()
-	finally:
-		vectordb_loader.offload()
-		embedding_loader.offload()
-		llm_loader.offload()
+async def lifespan(app: FastAPI):
+	nc = NextcloudApp()
+	if nc.enabled_state:
+		app_enabled.set()
+	print('\n\nApp', 'enabled' if app_enabled.is_set() else 'disabled', 'at startup', flush=True)
+	yield
+	vectordb_loader.offload()
+	embedding_loader.offload()
+	llm_loader.offload()
 
 
 app_config = get_config(os.environ['CC_CONFIG_PATH'])
 app = FastAPI(debug=app_config['debug'], lifespan=lifespan)  # pyright: ignore[reportArgumentType]
 
 app.extra['CONFIG'] = app_config
-app.extra['ENABLED'] = ensure_models(app)
 
 
 # loaders
@@ -55,23 +65,6 @@ llm_loader = LLMModelLoader(app, app_config)
 
 # locks (temporary solution for sequential prompt processing before NC 30)
 llm_lock = threading.Lock()
-
-
-# schedules
-
-# @scheduler.scheduled_job('interval', minutes=app_config['model_offload_timeout'], seconds=1)
-# def _():
-# 	if app.extra.get('EM_LAST_ACCESSED') is not None \
-# 		and (time() - app.extra['EM_LAST_ACCESSED'] > app_config['model_offload_timeout']) * 60:
-# 		print('Offloading the embedding model', flush=True)
-# 		embedding_loader.offload()
-# 		del app.extra['EM_LAST_ACCESSED']
-
-# 	if app.extra.get('LLM_LAST_ACCESSED') is not None \
-# 		and (time() - app.extra['LLM_LAST_ACCESSED'] > app_config['model_offload_timeout'] * 60):
-# 		print('Offloading the LLM model', flush=True)
-# 		llm_loader.offload()
-# 		del app.extra['LLM_LAST_ACCESSED']
 
 
 # middlewares
@@ -113,6 +106,25 @@ async def _(request: Request, exc: LlmException):
 	log_error(f'Llm Error: {request.url.path}:', exc)
 	# error message should be safe
 	return JSONResponse(str(exc), 400)
+
+# guards
+
+def enabled_guard(app: FastAPI):
+	def decorator(func: Callable):
+		'''
+		Decorator to check if the service is enabled
+		'''
+		@wraps(func)
+		def wrapper(*args, **kwargs):
+			disable_aaa = app.extra['CONFIG']['disable_aaa']
+			if not disable_aaa and not app_enabled.is_set():
+				return JSONResponse('Context Chat is disabled, enable it from AppAPI to use it.', 503)
+
+			return func(*args, **kwargs)
+
+		return wrapper
+
+	return decorator
 
 # routes
 
@@ -173,17 +185,15 @@ def _(userId: str, sourceNames: str):
 
 @app.get('/enabled')
 def _():
-	return JSONResponse(content={'enabled': app.extra.get('ENABLED', False)}, status_code=200)
-
+	return JSONResponse(content={'enabled': app_enabled.is_set()}, status_code=200)
 
 @app.put('/enabled')
 def _(enabled: bool):
-	app.extra['ENABLED'] = enabled
 
-	if not enabled:
-		vectordb_loader.offload()
-		embedding_loader.offload()
-		llm_loader.offload()
+	if enabled:
+		app_enabled.set()
+	else:
+		app_enabled.clear()
 
 	print('App', 'enabled' if enabled else 'disabled', flush=True)
 	return JSONResponse(content={'error': ''}, status_code=200)
@@ -197,12 +207,9 @@ def _():
 
 @app.post('/init')
 def _(bg_tasks: BackgroundTasks):
-	if not app.extra.get('ENABLED', False):
-		bg_tasks.add_task(background_init, app)
-		return JSONResponse(content={}, status_code=200)
-
+	nc = NextcloudApp()
+	fetch_models_task(nc, models_to_fetch, 0)
 	update_progress(app, 100)
-	print('App already initialised', flush=True)
 	return JSONResponse(content={}, status_code=200)
 
 

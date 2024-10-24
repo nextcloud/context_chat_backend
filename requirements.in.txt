@@ -20,7 +20,6 @@ python-dotenv
 python-multipart
 python-pptx
 ruamel.yaml
-sentence-transformers==2.2.2
 striprtf
 torch
 torchvision
@@ -30,3 +29,4 @@ unstructured-client
 weaviate-client
 xlrd
 nc_py_api
+setuptools
