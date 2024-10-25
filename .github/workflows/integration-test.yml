@@ -139,8 +139,11 @@ jobs:
           mv documentation/developer_manual .
           cd developer_manual
           find . -type f -name "*.rst" -exec bash -c 'mv "$0" "${0%.rst}.md"' {} \;
+          mv documentation/developer_manual ./developer_manual2
+          cd developer_manual2
+          find . -type f -name "*.rst" -exec bash -c 'mv "$0" "${0%.rst}.txt"' {} \;
           rm -rf documentation
-          
+
 
       - name: Setup python 3.11
         uses: actions/setup-python@v5
@@ -165,12 +168,17 @@ jobs:
           ./occ app_api:daemon:register --net host manual_install "Manual Install" manual-install http localhost http://localhost:8080
           ./occ app_api:app:register context_chat_backend manual_install --json-info "{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"${{ fromJson(steps.appinfo.outputs.result).version }}\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system_app\":0}" --force-scopes --wait-finish
 
+      - name: Scan files, baseline
+        run: |
+          ./occ files:scan admin
+          ./occ context_chat:scan admin -m text/plain
+
       - name: Check python memory usage
         run: |
           ps -p $(cat pid.txt) -o pid,cmd,%mem,rss --sort=-%mem
           ps -p $(cat pid.txt) -o %mem --no-headers > initial_mem.txt
 
-      - name: Scan files
+      - name: Scan files, check this for memory leaks
         run: |
           ./occ files:scan admin
           ./occ context_chat:scan admin -m text/markdown &

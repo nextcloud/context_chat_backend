@@ -1,6 +1,7 @@
 import multiprocessing as mp
 import re
 from logging import error as log_error
+from multiprocessing.queues import Queue
 
 from fastapi.datastructures import UploadFile
 from langchain.schema import Document
@@ -9,6 +10,7 @@ from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
 from .mimetype_list import SUPPORTED_MIMETYPES
 from ...config_parser import TConfig
+from ...controller import embedding_taskqueue
 from ...utils import not_none, to_int
 from ...vectordb import BaseVectorDB
 
@@ -169,13 +171,13 @@ def _process_sources(
 		if len(split_documents) == 0:
 			continue
 
-		with vectordb_lock:
-			user_client = vectordb.get_user_client(user_id)
-			doc_ids = user_client.add_documents(split_documents)
+		result_queue = Queue()
+		embedding_taskqueue.put((user_id, split_documents, result_queue))
+		result = result_queue.get()
 
 		print('Added documents to vectordb', flush=True)
 		# does not do per document error checking
-		success &= len(split_documents) == len(doc_ids)
+		success &= len(split_documents) == result
 
 	return success
 
@@ -183,8 +185,7 @@ def _process_sources(
 def embed_sources(
 	vectordb: BaseVectorDB,
 	config: TConfig,
-	sources: list[UploadFile],
-	result_queue: mp.Queue,
+	sources: list[UploadFile]
 ):
 	# either not a file or a file that is allowed
 	sources_filtered = [
@@ -198,4 +199,4 @@ def embed_sources(
 		'\n'.join([f'{source.filename} ({source.headers["title"]})' for source in sources_filtered]),
 		flush=True,
 	)
-	result_queue.put(_process_sources(vectordb, config, sources_filtered))
+	return _process_sources(vectordb, config, sources_filtered)

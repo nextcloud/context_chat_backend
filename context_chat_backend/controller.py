@@ -4,6 +4,8 @@ import threading
 from contextlib import asynccontextmanager
 from functools import wraps
 from logging import error as log_error
+from multiprocessing.context import Process
+from multiprocessing.queues import Queue
 from threading import Event
 from typing import Annotated, Any, Callable
 
@@ -14,7 +16,7 @@ from nc_py_api.ex_app import persistent_storage
 from nc_py_api.ex_app.integration_fastapi import fetch_models_task
 from pydantic import BaseModel, ValidationInfo, field_validator
 
-from .chain import ContextException, LLMOutput, ScopeType, embed_sources, process_context_query, process_query
+from .chain import ContextException, LLMOutput, ScopeType, process_context_query, process_query
 from .config_parser import get_config
 from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, LoaderException, VectorDBLoader
 from .models import LlmException
@@ -22,6 +24,8 @@ from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
 from .utils import JSONResponse, update_progress, value_of
 from .vectordb import BaseVectorDB, DbException
+from .workers.embedding import embedding_worker
+from .workers.parsing import parsing_worker
 
 # setup
 
@@ -74,6 +78,28 @@ llm_lock = threading.Lock()
 if not app_config['disable_aaa']:
 	app.add_middleware(AppAPIAuthMiddleware)
 
+
+# queues
+
+# parser queue
+num_parsing_workers = 4
+parsing_taskqueue = Queue()
+
+# embedding queue
+num_embedding_workers = 1
+embedding_taskqueue = Queue()
+
+
+processes = []
+for i in range(num_parsing_workers):
+	p = Process(target=parsing_worker, args=(i, parsing_taskqueue))
+	p.start()
+	processes.append(p)
+
+for i in range(num_embedding_workers):
+	p = Process(target=embedding_worker, args=(i, embedding_taskqueue))
+	p.start()
+	processes.append(p)
 
 # exception handlers
 
@@ -285,13 +311,10 @@ def _(sources: list[UploadFile]):
 	):
 		return JSONResponse('Invaild/missing headers', 400)
 
-	db: BaseVectorDB = vectordb_loader.load()
-	queue = mp.Queue()
-	p = mp.Process(target=embed_sources, args=(db, app.extra['CONFIG'], sources, queue))
-	p.start()
-	p.join()
+	result_queue = Queue()
+	parsing_taskqueue.put((sources, result_queue, app.extra['CONFIG']))
 
-	result = queue.get()
+	result = result_queue.get()
 	if not result:
 		return JSONResponse('Error: All sources were not loaded, check logs for more info', 500)
 
