@@ -5,12 +5,13 @@ from logging import error as log_error
 from fastapi.datastructures import UploadFile
 from langchain.schema import Document
 
-from ...config_parser import TConfig
-from ...utils import not_none, to_int
-from ...vectordb import BaseVectorDB
 from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
 from .mimetype_list import SUPPORTED_MIMETYPES
+from ...config_parser import TConfig
+from ...controller import vectordb_lock
+from ...utils import not_none, to_int
+from ...vectordb import BaseVectorDB
 
 
 def _allowed_file(file: UploadFile) -> bool:
@@ -117,7 +118,6 @@ def _bucket_by_type(documents: list[Document]) -> dict[str, list[Document]]:
 
 
 def _process_sources(
-	vectordb_lock: mp.Lock,  # pyright: ignore[reportInvalidTypeForm]
 	vectordb: BaseVectorDB,
 	config: TConfig,
 	sources: list[UploadFile],
