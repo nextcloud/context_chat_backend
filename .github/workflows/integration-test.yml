@@ -136,7 +136,11 @@ jobs:
         run: |
           cd data/admin/files
           mv documentation/admin_manual .
+          mv documentation/developer_manual .
+          cd developer_manual
+          find . -type f -name "*.rst" -exec bash -c 'mv "$0" "${0%.rst}.md"' {} \;
           rm -rf documentation
+          
 
       - name: Setup python 3.11
         uses: actions/setup-python@v5
@@ -163,7 +167,8 @@ jobs:
       - name: Scan files
         run: |
           ./occ files:scan admin
-          ./occ context_chat:scan admin
+          ./occ context_chat:scan admin -m text/markdown &
+          ./occ context_chat:scan admin -m text/x-rst
 
       - name: Run the prompts
         run: |
