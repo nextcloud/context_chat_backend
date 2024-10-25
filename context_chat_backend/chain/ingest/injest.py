@@ -9,10 +9,11 @@ from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
 from .mimetype_list import SUPPORTED_MIMETYPES
 from ...config_parser import TConfig
-from ...controller import vectordb_lock
 from ...utils import not_none, to_int
 from ...vectordb import BaseVectorDB
 
+# only one Process can use the embedding model at a time (vectordb calls it)
+vectordb_lock = mp.Lock()
 
 def _allowed_file(file: UploadFile) -> bool:
 	return file.headers.get('type', default='') in SUPPORTED_MIMETYPES
@@ -180,7 +181,6 @@ def _process_sources(
 
 def embed_sources(
 	vectordb: BaseVectorDB,
-	vectordb_lock: mp.Lock,  # pyright: ignore[reportInvalidTypeForm]
 	config: TConfig,
 	sources: list[UploadFile],
 	result_queue: mp.Queue,
@@ -197,4 +197,4 @@ def embed_sources(
 		'\n'.join([f'{source.filename} ({source.headers["title"]})' for source in sources_filtered]),
 		flush=True,
 	)
-	result_queue.put(_process_sources(vectordb_lock, vectordb, config, sources_filtered))
+	result_queue.put(_process_sources(vectordb, config, sources_filtered))
