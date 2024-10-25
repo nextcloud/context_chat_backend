@@ -136,11 +136,11 @@ jobs:
         run: |
           cd data/admin/files
           mv documentation/admin_manual .
-          mv documentation/developer_manual .
+          cp -R documentation/developer_manual .
           cd developer_manual
           find . -type f -name "*.rst" -exec bash -c 'mv "$0" "${0%.rst}.md"' {} \;
           cd ..
-          mv documentation/developer_manual ./developer_manual2
+          cp -R documentation/developer_manual ./developer_manual2
           cd developer_manual2
           find . -type f -name "*.rst" -exec bash -c 'mv "$0" "${0%.rst}.txt"' {} \;
           cd ..
