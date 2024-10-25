@@ -1,5 +1,4 @@
 import re
-import gc
 import tempfile
 import traceback
 from collections.abc import Callable
