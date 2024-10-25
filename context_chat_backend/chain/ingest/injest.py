@@ -123,7 +123,8 @@ def _process_sources(
 	config: TConfig,
 	sources: list[UploadFile],
 ) -> bool:
-	filtered_sources = _filter_sources(sources[0].headers['userId'], vectordb, sources)
+	with vectordb_lock:
+		filtered_sources = _filter_sources(sources[0].headers['userId'], vectordb, sources)
 
 	if len(filtered_sources) == 0:
 		# no new sources to embed

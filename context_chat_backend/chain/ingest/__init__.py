@@ -1,3 +1,3 @@
-from .injest import embed_sources, vectordb_lock
+from .injest import embed_sources
 
-__all__ = [ 'embed_sources', 'vectordb_lock' ]
+__all__ = [ 'embed_sources' ]

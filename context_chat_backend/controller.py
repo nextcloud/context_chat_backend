@@ -9,8 +9,7 @@ from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile
 from langchain.llms.base import LLM
 from pydantic import BaseModel, ValidationInfo, field_validator
 
-from .chain import ContextException, LLMOutput, ScopeType, embed_sources, process_context_query, process_query, \
-	vectordb_lock
+from .chain import ContextException, LLMOutput, ScopeType, embed_sources, process_context_query, process_query
 from .config_parser import get_config
 from .download import background_init, ensure_models
 from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, LoaderException, VectorDBLoader
@@ -59,8 +58,6 @@ llm_loader = LLMModelLoader(app, app_config)
 
 # sequential prompt processing for in-house LLMs (non-nc_texttotext)
 llm_lock = threading.Lock()
-
-vectordb_lock = vectordb_lock
 
 # schedules
 
