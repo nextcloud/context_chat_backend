@@ -1,11 +1,11 @@
 from multiprocessing.queues import Queue
 
 from context_chat_backend.chain.ingest.injest import vectordb_lock
-from context_chat_backend.controller import vectordb_loader
 from context_chat_backend.vectordb import BaseVectorDB
 
 
 def embedding_worker(worker_idx, embedding_taskqueue: Queue):
+    from context_chat_backend.controller import vectordb_loader
     db: BaseVectorDB = vectordb_loader.load()
     while True:
         user_id, split_documents, result_queue = embedding_taskqueue.get()

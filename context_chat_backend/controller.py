@@ -4,8 +4,8 @@ import threading
 from contextlib import asynccontextmanager
 from functools import wraps
 from logging import error as log_error
-from multiprocessing.context import Process
-from multiprocessing.queues import Queue
+from multiprocessing import Process
+from multiprocessing import Queue
 from threading import Event
 from typing import Annotated, Any, Callable
 
