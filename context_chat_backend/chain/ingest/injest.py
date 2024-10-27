@@ -10,7 +10,6 @@ from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
 from .mimetype_list import SUPPORTED_MIMETYPES
 from ...config_parser import TConfig
-from ...controller import embedding_taskqueue
 from ...utils import not_none, to_int
 from ...vectordb import BaseVectorDB
 
@@ -144,6 +143,7 @@ def _process_sources(
 		return True
 
 	success = True
+	from ...controller import embedding_taskqueue
 
 	for user_id, documents in ddocuments.items():
 		split_documents: list[Document] = []
