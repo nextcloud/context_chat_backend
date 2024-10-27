@@ -1,7 +1,7 @@
 import multiprocessing as mp
 import re
 from logging import error as log_error
-from multiprocessing.queues import Queue
+from multiprocessing import Queue
 
 from fastapi.datastructures import UploadFile
 from langchain.schema import Document
