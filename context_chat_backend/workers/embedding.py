@@ -8,7 +8,7 @@ def embedding_worker(worker_idx, embedding_taskqueue: Queue):
     from context_chat_backend.controller import vectordb_loader
     db: BaseVectorDB = vectordb_loader.load()
     while True:
-        user_id, split_documents, result_queue = embedding_taskqueue.get()
+        user_id, split_documents, result = embedding_taskqueue.get()
 
         with vectordb_lock:
             try:
@@ -17,4 +17,6 @@ def embedding_worker(worker_idx, embedding_taskqueue: Queue):
             except:
                 count = 0
 
-        result_queue.put(count)
+        if count == len(split_documents):
+            result[1].set() # set success flag
+        result[0].set()# set done flag

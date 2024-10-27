@@ -9,12 +9,14 @@ def parsing_worker(worker_idx, parsing_taskqueue: Queue):
     db: BaseVectorDB = vectordb_loader.load()
 
     while True:
-        sources, result_queue, config = parsing_taskqueue.get()
+        sources, result, config = parsing_taskqueue.get()
 
         try:
-            result = embed_sources(db, config, sources)
+            success = embed_sources(db, config, sources)
         except:
             # log error
-            result = False
+            success = False
         finally:
-            result_queue.put(result)
+            if success:
+                result[1].set()# set success flag
+            result[0].set()# set done flag

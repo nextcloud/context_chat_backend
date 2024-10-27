@@ -1,7 +1,7 @@
 import multiprocessing as mp
 import re
 from logging import error as log_error
-from multiprocessing import Queue
+from threading import Event
 
 from fastapi.datastructures import UploadFile
 from langchain.schema import Document
@@ -171,13 +171,14 @@ def _process_sources(
 		if len(split_documents) == 0:
 			continue
 
-		result_queue = Queue()
-		embedding_taskqueue.put((user_id, split_documents, result_queue))
-		result = result_queue.get()
+		# done, success
+		result = (Event(), Event())
+		embedding_taskqueue.put((user_id, split_documents, result))
+		result[0].wait()
 
 		print('Added documents to vectordb', flush=True)
 		# does not do per document error checking
-		success &= len(split_documents) == result
+		success &= result[1].is_set()
 
 	return success
 

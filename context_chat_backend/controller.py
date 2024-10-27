@@ -311,11 +311,14 @@ def _(sources: list[UploadFile]):
 	):
 		return JSONResponse('Invaild/missing headers', 400)
 
-	result_queue = Queue()
-	parsing_taskqueue.put((sources, result_queue, app.extra['CONFIG']))
+	# (done, success)
+	result = (Event(), Event())
+	parsing_taskqueue.put((sources, result, app.extra['CONFIG']))
 
-	result = result_queue.get()
-	if not result:
+	result[0].wait()# wait for done flag
+
+	# check if successful
+	if not result[1].is_set():
 		return JSONResponse('Error: All sources were not loaded, check logs for more info', 500)
 
 	return JSONResponse('All sources loaded')
