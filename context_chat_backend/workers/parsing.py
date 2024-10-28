@@ -16,6 +16,7 @@ def parsing_worker(worker_idx, parsing_taskqueue: Queue):
         print('[parsing_worker] Received parsing task')
         if db is None:
             db = vectordb_loader.load()
+            # dummy request to make sure db is set up
             db.get_objects_from_metadata(
                 'dummy',
                 'source',

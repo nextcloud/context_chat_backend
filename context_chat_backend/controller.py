@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import multiprocessing as mp
 import os
 import threading
@@ -146,12 +147,16 @@ def enabled_guard(app: FastAPI):
 		Decorator to check if the service is enabled
 		'''
 		@wraps(func)
-		def wrapper(*args, **kwargs):
+		async def wrapper(*args, **kwargs):
 			disable_aaa = app.extra['CONFIG']['disable_aaa']
 			if not disable_aaa and not app_enabled.is_set():
 				return JSONResponse('Context Chat is disabled, enable it from AppAPI to use it.', 503)
 
-			return func(*args, **kwargs)
+			# Check if the function is asynchronous
+			if inspect.iscoroutinefunction(func):
+				return await func(*args, **kwargs)
+			else:
+				return func(*args, **kwargs)
 
 		return wrapper
 
