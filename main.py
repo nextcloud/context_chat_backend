@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from json import dumps
 from os import getenv
 
 import uvicorn
@@ -12,7 +11,7 @@ from context_chat_backend.config_parser import TConfig  # isort: skip
 if __name__ == '__main__':
 	app_config: TConfig = app.extra['CONFIG']
 
-	print('App config:\n' + dumps(app_config, indent=2), flush=True)
+	print('App config:\n' + app_config.model_dump_json(indent=2), flush=True)
 
 	uvicorn.run(
 		app=app,
