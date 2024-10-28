@@ -1,5 +1,4 @@
 import re
-import gc
 import tempfile
 import traceback
 from collections.abc import Callable
@@ -138,5 +137,4 @@ def decode_source(source: UploadFile) -> str | None:
 		log_error(f'Error decoding source file ({source.filename})')
 		return None
 	finally:
-        	source.file.close()  # Ensure file is closed after processing
-        	gc.collect()  # Force garbage collection to free up memory
+		source.file.close()  # Ensure file is closed after processing

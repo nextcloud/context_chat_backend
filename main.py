@@ -5,7 +5,7 @@ from os import getenv
 
 import uvicorn
 
-from context_chat_backend import app  # isort: skip
+from context_chat_backend.controller import app  # isort: skip
 from context_chat_backend.utils import to_int  # isort: skip
 
 if __name__ == '__main__':
@@ -14,7 +14,7 @@ if __name__ == '__main__':
 	print('App config:\n' + dumps(app_config, indent=2), flush=True)
 
 	uvicorn.run(
-		app='context_chat_backend:app',
+		app=app,
 		host=getenv('APP_HOST', '127.0.0.1'),
 		port=to_int(getenv('APP_PORT'), 9000),
 		http='h11',

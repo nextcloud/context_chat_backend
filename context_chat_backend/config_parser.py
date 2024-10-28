@@ -6,6 +6,17 @@ from .models import models
 from .vectordb import vector_dbs
 
 
+# todo: pydantic validation
+class TEmbedding(TypedDict):
+	protocol: str
+	host: str
+	port: int
+	workers: int
+	offload_after_mins: int
+	request_timeout: int
+	llama: dict
+
+
 class TConfig(TypedDict):
 	debug: bool
 	disable_aaa: bool
@@ -19,8 +30,9 @@ class TConfig(TypedDict):
 	disable_custom_model_download: bool
 	model_download_uri: str
 
+	embedding: TEmbedding
+
 	vectordb: tuple[str, dict]
-	embedding: tuple[str, dict]
 	llm: tuple[str, dict]
 
 
@@ -56,12 +68,6 @@ def get_config(file_path: str) -> TConfig:
 			f'Error: vectordb should be at least one of {vector_dbs} in the config file'
 		)
 
-	embedding = _first_in_list(config.get('embedding', {}), models['embedding'])
-	if not embedding:
-		raise AssertionError(
-			f'Error: embedding model should be at least one of {models["embedding"]} in the config file'
-		)
-
 	llm = _first_in_list(config.get('llm', {}), models['llm'])
 	if not llm:
 		raise AssertionError(
@@ -81,7 +87,7 @@ def get_config(file_path: str) -> TConfig:
 		'model_download_uri': config.get('model_download_uri', 'https://download.nextcloud.com/server/apps/context_chat_backend'),
 
 		'vectordb': vectordb,
-		'embedding': embedding,
+		'embedding': config.get('embedding', {}),
 		'llm': llm,
 	}
 

@@ -6,6 +6,7 @@ from fastapi.datastructures import UploadFile
 from langchain.schema import Document
 
 from ...config_parser import TConfig
+from ...dyn_loader import VectorDBLoader
 from ...utils import not_none, to_int
 from ...vectordb import BaseVectorDB
 from .doc_loader import decode_source
@@ -117,7 +118,6 @@ def _bucket_by_type(documents: list[Document]) -> dict[str, list[Document]]:
 
 
 def _process_sources(
-	vectordb_lock: mp.Lock,  # pyright: ignore[reportInvalidTypeForm]
 	vectordb: BaseVectorDB,
 	config: TConfig,
 	sources: list[UploadFile],
@@ -167,9 +167,8 @@ def _process_sources(
 		if len(split_documents) == 0:
 			continue
 
-		with vectordb_lock:
-			user_client = vectordb.get_user_client(user_id)
-			doc_ids = user_client.add_documents(split_documents)
+		user_client = vectordb.get_user_client(user_id)
+		doc_ids = user_client.add_documents(split_documents)
 
 		print('Added documents to vectordb', flush=True)
 		# does not do per document error checking
@@ -179,8 +178,7 @@ def _process_sources(
 
 
 def embed_sources(
-	vectordb: BaseVectorDB,
-	vectordb_lock: mp.Lock,  # pyright: ignore[reportInvalidTypeForm]
+	vectordb_loader: VectorDBLoader,
 	config: TConfig,
 	sources: list[UploadFile],
 	result_queue: mp.Queue,
@@ -197,4 +195,6 @@ def embed_sources(
 		'\n'.join([f'{source.filename} ({source.headers["title"]})' for source in sources_filtered]),
 		flush=True,
 	)
-	result_queue.put(_process_sources(vectordb_lock, vectordb, config, sources_filtered))
+
+	vectordb = vectordb_loader.load()
+	result_queue.put(_process_sources(vectordb, config, sources_filtered))

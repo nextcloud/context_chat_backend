@@ -59,8 +59,9 @@ app.extra['CONFIG'] = app_config
 
 # loaders
 
-vectordb_loader = VectorDBLoader(app, app_config)
-embedding_loader = EmbeddingModelLoader(app, app_config)
+# global embedding_loader so the server is not started multiple times
+embedding_loader = EmbeddingModelLoader(app_config)
+vectordb_loader = VectorDBLoader(embedding_loader, app_config)
 llm_loader = LLMModelLoader(app, app_config)
 
 
@@ -68,9 +69,6 @@ llm_loader = LLMModelLoader(app, app_config)
 
 # sequential prompt processing for in-house LLMs (non-nc_texttotext)
 llm_lock = threading.Lock()
-
-# only one Process can use the embedding model at a time (vectordb calls it)
-vectordb_lock = mp.Lock()
 
 
 # middlewares
@@ -142,64 +140,18 @@ def _(request: Request):
 	return f'Hello, {request.scope.get("username", "anon")}!'
 
 
-# TODO: for testing, remove later
-@app.get('/world')
-@enabled_guard(app)
-def _(query: str | None = None):
-	from langchain.schema.embeddings import Embeddings
-	em: Embeddings = embedding_loader.load()
-	return em.embed_query(query if query is not None else 'what is an apple?')
-
-
-# TODO: for testing, remove later
-@app.get('/vectors')
-@enabled_guard(app)
-def _():
-	from chromadb.api import ClientAPI
-
-	from .vectordb import get_collection_name
-
-	db: BaseVectorDB = vectordb_loader.load()
-	client: ClientAPI | None = db.client
-
-	if client is None:
-		return JSONResponse('Error: VectorDB client not initialised', 500)
-
-	vectors = {}
-	for user_id in db.get_users():
-		db.setup_schema(user_id)
-		vectors[user_id] = client.get_collection(get_collection_name(user_id)).get()
-
-	return JSONResponse(vectors)
-
-
-# TODO: for testing, remove later
-@app.get('/search')
-@enabled_guard(app)
-def _(userId: str, sourceNames: str):
-	sourceList = [source.strip() for source in sourceNames.split(',') if source.strip() != '']
-
-	if len(sourceList) == 0:
-		return JSONResponse('No sources provided', 400)
-
-	db: BaseVectorDB = vectordb_loader.load()
-	source_objs = db.get_objects_from_metadata(userId, 'source', sourceList)
-	sources = [s['id'] for s in source_objs.values() if s.get('id') is not None]
-
-	return JSONResponse({ 'sources': sources })
-
-
 @app.get('/enabled')
 def _():
 	return JSONResponse(content={'enabled': app_enabled.is_set()}, status_code=200)
 
 @app.put('/enabled')
 def _(enabled: bool):
-
 	if enabled:
 		app_enabled.set()
 	else:
 		app_enabled.clear()
+		vectordb_loader.offload()
+		llm_loader.offload()
 
 	print('App', 'enabled' if enabled else 'disabled', flush=True)
 	return JSONResponse(content={'error': ''}, status_code=200)
@@ -289,9 +241,8 @@ def _(sources: list[UploadFile]):
 	):
 		return JSONResponse('Invaild/missing headers', 400)
 
-	db: BaseVectorDB = vectordb_loader.load()
 	queue = mp.Queue()
-	p = mp.Process(target=embed_sources, args=(db, vectordb_lock, app.extra['CONFIG'], sources, queue))
+	p = mp.Process(target=embed_sources, args=(vectordb_loader, app.extra['CONFIG'], sources, queue))
 	p.start()
 	p.join()
 
