@@ -14,6 +14,7 @@ odfdo
 odfpy
 openpyxl
 pandas
+psutil
 pypdf
 docx2txt
 protobuf
@@ -32,4 +33,5 @@ transformers
 unstructured @ git+https://github.com/kyteinsky/unstructured@d3a404cfb541dae8e16956f096bac99fc05c985b
 unstructured-client
 weaviate-client
+wheel
 xlrd
