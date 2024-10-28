@@ -2,7 +2,6 @@ import multiprocessing as mp
 import re
 from logging import error as log_error
 
-from fastapi.datastructures import UploadFile
 from langchain.schema import Document
 
 from .doc_loader import decode_source

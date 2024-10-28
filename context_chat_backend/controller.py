@@ -7,7 +7,6 @@ from logging import error as log_error
 from multiprocessing import Process
 from multiprocessing import Queue
 from threading import Event
-from multiprocessing import Event as MPEvent
 from multiprocessing import Manager
 from typing import Annotated, Any, Callable
 

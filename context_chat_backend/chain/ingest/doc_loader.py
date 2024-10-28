@@ -8,7 +8,6 @@ from typing import BinaryIO
 
 import docx2txt
 from epub2txt import epub2txt
-from fastapi import UploadFile
 from langchain_community.document_loaders.unstructured import UnstructuredFileLoader
 from odfdo import Document
 from pandas import read_csv, read_excel
