@@ -6,10 +6,12 @@ from context_chat_backend.vectordb import BaseVectorDB
 
 def parsing_worker(worker_idx, parsing_taskqueue: Queue):
     from context_chat_backend.controller import vectordb_loader
-    db: BaseVectorDB = vectordb_loader.load()
+    db: BaseVectorDB
 
     while True:
         sources, result, config = parsing_taskqueue.get()
+        if not db:
+            db: BaseVectorDB = vectordb_loader.load()
 
         try:
             success = embed_sources(db, config, sources)
