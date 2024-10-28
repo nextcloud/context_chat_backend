@@ -25,7 +25,7 @@ def die_on_time(app_config: TConfig):
 	while True:
 		time.sleep(60)
 		with last_time_lock:
-			if holding_cnt <= 0 and time.time() - last_time > app_config['embedding']['offload_after_mins'] * 60:
+			if holding_cnt <= 0 and time.time() - last_time > app_config.embedding.offload_after_mins * 60:
 				print('Killing the embedding server due to inactivity', flush=True)
 				os.kill(os.getpid(), signal.SIGKILL)
 
@@ -67,28 +67,29 @@ if __name__ == '__main__':
 	ensure_config_file()
 
 	app_config = get_config(os.environ['CC_CONFIG_PATH'])
-	print('Embedder config:\n' + json.dumps(app_config['embedding'], indent=2), flush=True)
+	em_conf = app_config.embedding
+	print('Embedder config:\n' + json.dumps(em_conf, indent=2), flush=True)
 
 	# update model path to be in the persistent storage if it is not already valid
-	if 'model' not in app_config['embedding']['llama']:
+	if 'model' not in em_conf.llama:
 		raise ValueError('Error: "model" key not found in embedding->llama\'s config')
 
-	if not os.path.isfile(app_config['embedding']['llama']['model']):
-		app_config['embedding']['llama']['model'] = os.path.join(
+	if not os.path.isfile(em_conf.llama['model']):
+		em_conf.llama['model'] = os.path.join(
 			os.getenv('APP_PERSISTENT_STORAGE', 'persistent_storage'),
 			'model_files',
-			app_config['embedding']['llama']['model'],
+			em_conf.llama['model'],
 		)
 
 		# if the model file is still not found, raise an error
-		if not os.path.isfile(app_config['embedding']['llama']['model']):
+		if not os.path.isfile(em_conf.llama['model']):
 			raise ValueError('Error: Model file not found at the updated path')
 
 	server_settings = ServerSettings(
-		host=app_config['embedding']['host'],
-		port=app_config['embedding']['port'],
+		host=em_conf.llama['host'],
+		port=em_conf.llama['port'],
 	)
-	model_settings = [ModelSettings(model_alias='em_model', embedding=True, **app_config['embedding']['llama'])]
+	model_settings = [ModelSettings(model_alias='em_model', embedding=True, **em_conf.llama)]
 	app = create_app(
 		server_settings=server_settings,
 		model_settings=model_settings,
@@ -108,7 +109,7 @@ if __name__ == '__main__':
 		http='h11',
 		interface='asgi3',
 		# todo
-		log_level=('warning', 'trace')[app_config['debug']],
-		use_colors=bool(app_config['use_colors'] and os.getenv('CI', 'false') == 'false'),
-		workers=app_config['embedding']['workers'],
+		log_level=('warning', 'trace')[app_config.debug],
+		use_colors=bool(app_config.use_colors and os.getenv('CI', 'false') == 'false'),
+		workers=em_conf.workers,
 	)

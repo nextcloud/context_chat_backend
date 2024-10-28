@@ -61,13 +61,13 @@ class EmbeddingModelLoader(Loader):
 
 		# poll for heartbeat
 		try_ = 0
-		emconf = self.config['embedding']
+		emconf = self.config.embedding
 		while try_ < 20:
 			with httpx.Client() as client:
 				try:
 					# test the server is up
 					response = client.post(
-						f'{emconf["protocol"]}://{emconf["host"]}:{emconf["port"]}/v1/embeddings',
+						f'{emconf.protocol}://{emconf.host}:{emconf.port}/v1/embeddings',
 						json={'input': 'hello'},
 						timeout=20, # seconds
 					)
@@ -95,7 +95,7 @@ class VectorDBLoader(Loader):
 
 	def load(self) -> BaseVectorDB:
 		try:
-			client_klass = get_vector_db(self.config['vectordb'][0])
+			client_klass = get_vector_db(self.config.vectordb[0])
 		except (AssertionError, ImportError) as e:
 			raise LoaderException() from e
 
@@ -123,7 +123,7 @@ class LLMModelLoader(Loader):
 			self.app.extra['LLM_LAST_ACCESSED'] = time()
 			return self.app.extra['LLM_MODEL']
 
-		llm_name, llm_config = self.config['llm']
+		llm_name, llm_config = self.config.llm
 		self.app.extra['LLM_TEMPLATE'] = llm_config.pop('template', '')
 		self.app.extra['LLM_NO_CTX_TEMPLATE'] = llm_config.pop('no_ctx_template', '')
 		self.app.extra['LLM_END_SEPARATOR'] = llm_config.pop('end_separator', '')

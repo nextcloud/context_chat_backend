@@ -11,12 +11,12 @@ class NetworkEmbeddings(Embeddings, BaseModel):
 	app_config: TConfig
 
 	def _get_embedding(self, input_: str | list[str]) -> list[float] | list[list[float]]:
-		emconf = self.app_config['embedding']
+		emconf = self.app_config.embedding
 		with httpx.Client() as client:
 			response = client.post(
-				f'{emconf["protocol"]}://{emconf["host"]}:{emconf["port"]}/v1/embeddings',
+				f'{emconf.protocol}://{emconf.host}:{emconf.port}/v1/embeddings',
 				json={'input': input_},
-				timeout=emconf['request_timeout'],
+				timeout=emconf.request_timeout,
 			)
 			try:
 				response.raise_for_status()

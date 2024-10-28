@@ -1,11 +1,12 @@
 import multiprocessing as mp
 import os
 import threading
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from functools import wraps
 from logging import error as log_error
 from threading import Event
-from typing import Annotated, Any, Callable
+from typing import Annotated, Any
 
 from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile
 from langchain.llms.base import LLM
@@ -30,7 +31,7 @@ repair_run()
 ensure_config_file()
 
 models_to_fetch = {
-	"https://huggingface.co/Ralriki/multilingual-e5-large-instruct-GGUF/resolve/main/multilingual-e5-large-instruct-q6_k.gguf": {
+	"https://huggingface.co/Ralriki/multilingual-e5-large-instruct-GGUF/resolve/main/multilingual-e5-large-instruct-q6_k.gguf": {  # noqa: E501
 		"save_path": os.path.join(persistent_storage(), 'model_files',  "multilingual-e5-large-instruct-q6_k.gguf")
 	}
 }
@@ -52,7 +53,7 @@ async def lifespan(app: FastAPI):
 
 
 app_config = get_config(os.environ['CC_CONFIG_PATH'])
-app = FastAPI(debug=app_config['debug'], lifespan=lifespan)  # pyright: ignore[reportArgumentType]
+app = FastAPI(debug=app_config.debug, lifespan=lifespan)  # pyright: ignore[reportArgumentType]
 
 app.extra['CONFIG'] = app_config
 
@@ -73,7 +74,7 @@ llm_lock = threading.Lock()
 
 # middlewares
 
-if not app_config['disable_aaa']:
+if not app_config.disable_aaa:
 	app.add_middleware(AppAPIAuthMiddleware)
 
 
@@ -329,7 +330,7 @@ def execute_query(query: Query) -> LLMOutput:
 def _(query: Query) -> LLMOutput:
 	print('query:', query, flush=True)
 
-	if app_config['llm'][0] == 'nc_texttotext':
+	if app_config.llm[0] == 'nc_texttotext':
 		return execute_query(query)
 
 	with llm_lock:

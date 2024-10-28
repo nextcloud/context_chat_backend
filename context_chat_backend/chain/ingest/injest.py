@@ -147,7 +147,7 @@ def _process_sources(
 		type_bucketed_docs = _bucket_by_type(documents)
 
 		for _type, _docs in type_bucketed_docs.items():
-			text_splitter = get_splitter_for(config['embedding_chunk_size'], _type)
+			text_splitter = get_splitter_for(config.embedding_chunk_size, _type)
 			split_docs = text_splitter.split_documents(_docs)
 			split_documents.extend(split_docs)
 

@@ -1,13 +1,12 @@
-from typing import TypedDict
 
+from pydantic import BaseModel
 from ruamel.yaml import YAML
 
 from .models import models
 from .vectordb import vector_dbs
 
 
-# todo: pydantic validation
-class TEmbedding(TypedDict):
+class TEmbedding(BaseModel):
 	protocol: str
 	host: str
 	port: int
@@ -17,7 +16,7 @@ class TEmbedding(TypedDict):
 	llama: dict
 
 
-class TConfig(TypedDict):
+class TConfig(BaseModel):
 	debug: bool
 	disable_aaa: bool
 	httpx_verify_ssl: bool
@@ -74,21 +73,19 @@ def get_config(file_path: str) -> TConfig:
 			f'Error: llm model should be at least one of {models["llm"]} in the config file'
 		)
 
-	selected_config: TConfig = {
-		'debug': config.get('debug', False),
-		'disable_aaa': config.get('disable_aaa', False),
-		'httpx_verify_ssl': config.get('httpx_verify_ssl', True),
-		'model_offload_timeout': config.get('model_offload_timeout', 15),
-		'use_colors': config.get('use_colors', True),
-		'uvicorn_workers': config.get('uvicorn_workers', 1),
-		'embedding_chunk_size': config.get('embedding_chunk_size', 1000),
+	return TConfig(
+		debug=config.get('debug', False),
+		disable_aaa=config.get('disable_aaa', False),
+		httpx_verify_ssl=config.get('httpx_verify_ssl', True),
+		model_offload_timeout=config.get('model_offload_timeout', 15),
+		use_colors=config.get('use_colors', True),
+		uvicorn_workers=config.get('uvicorn_workers', 1),
+		embedding_chunk_size=config.get('embedding_chunk_size', 1000),
 
-		'disable_custom_model_download': config.get('disable_custom_model_download', False),
-		'model_download_uri': config.get('model_download_uri', 'https://download.nextcloud.com/server/apps/context_chat_backend'),
+		disable_custom_model_download=config.get('disable_custom_model_download', False),
+		model_download_uri=config.get('model_download_uri', 'https://download.nextcloud.com/server/apps/context_chat_backend'),
 
-		'vectordb': vectordb,
-		'embedding': config.get('embedding', {}),
-		'llm': llm,
-	}
-
-	return selected_config
+		vectordb=vectordb,
+		embedding=config.get('embedding', {}), # for a more appropriate response
+		llm=llm,
+	)

@@ -13,7 +13,7 @@ def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, text_
 	ValueError
 		If the context length is too small to fit the query
 	'''
-	llm_config = config['llm'][1]
+	llm_config = config.llm[1]
 	# fav
 	n_ctx = llm_config.get('n_ctx') \
 		or llm_config.get('config', {}).get('context_length') \
