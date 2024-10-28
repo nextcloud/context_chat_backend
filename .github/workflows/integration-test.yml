@@ -150,7 +150,7 @@ jobs:
         run: |
           cd context_chat_backend
           pip install --upgrade pip setuptools wheel
-          pip install --no-deps -r requirements.txt
+          pip install -r requirements.txt
           cp example.env .env
           echo "NEXTCLOUD_URL=http://localhost:8080" >> .env
           ./main.py > backend_logs 2>&1 &
