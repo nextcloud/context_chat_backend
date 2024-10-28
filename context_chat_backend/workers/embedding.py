@@ -6,13 +6,16 @@ from context_chat_backend.vectordb import BaseVectorDB
 
 def embedding_worker(worker_idx, embedding_taskqueue: Queue):
     from context_chat_backend.controller import vectordb_loader
-    db: BaseVectorDB
+    db: BaseVectorDB|None = None
     while True:
         user_id, split_documents, result = embedding_taskqueue.get()
-        if not db:
-            db: BaseVectorDB = vectordb_loader.load()
+        print('[embedding_worker] Received task from embedding queue')
+        if db is None:
+            db = vectordb_loader.load()
 
+        print('[embedding_worker] Waiting for vectordb_lock')
         with vectordb_lock:
+            print('[embedding_worker] Got vectordb_lock, adding documents to vectordb')
             try:
                 user_client = db.get_user_client(user_id)
                 count = len(user_client.add_documents(split_documents))

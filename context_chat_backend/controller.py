@@ -7,6 +7,8 @@ from logging import error as log_error
 from multiprocessing import Process
 from multiprocessing import Queue
 from threading import Event
+from multiprocessing import Event as MPEvent
+from multiprocessing import Manager
 from typing import Annotated, Any, Callable
 
 from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile
@@ -91,6 +93,7 @@ embedding_taskqueue = Queue()
 
 
 processes = []
+manager = Manager()
 for i in range(num_parsing_workers):
 	p = Process(target=parsing_worker, args=(i, parsing_taskqueue))
 	p.start()
@@ -312,8 +315,18 @@ def _(sources: list[UploadFile]):
 		return JSONResponse('Invaild/missing headers', 400)
 
 	# (done, success)
-	result = (Event(), Event())
-	parsing_taskqueue.put((sources, result, app.extra['CONFIG']))
+	result = (manager.Event(), manager.Event())
+	parsing_taskqueue.put(([
+		{
+			'filename': s.filename,
+			'content': s.file.read(),
+			'title': s.headers['title'],
+			'userId': s.headers['userId'],
+			'type': s.headers['type'],
+			'modified': s.headers['modified'],
+			'provider': s.headers['provider'],
+		} for s in sources
+		], result))
 
 	result[0].wait()# wait for done flag
 

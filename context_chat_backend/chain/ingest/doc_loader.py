@@ -2,6 +2,7 @@ import re
 import tempfile
 import traceback
 from collections.abc import Callable
+from io import BytesIO
 from logging import error as log_error
 from typing import BinaryIO
 
@@ -113,28 +114,24 @@ _loader_map = {
 }
 
 
-def decode_source(source: UploadFile) -> str | None:
+def decode_source(source) -> str | None:
 	try:
 		# .pot files are powerpoint templates but also plain text files,
 		# so we skip them to prevent decoding errors
-		if source.headers.get('title', '').endswith('.pot'):
+		if source.get('title', '').endswith('.pot'):
 			return None
 
-		mimetype = source.headers.get('type')
+		mimetype = source.get('type')
 		if mimetype is None:
 			return None
 
 		if _loader_map.get(mimetype):
-			result = _loader_map[mimetype](source.file)
-			source.file.close()
+			result = _loader_map[mimetype](BytesIO(source.get('content')))
 			return result
 
-		result = source.file.read().decode('utf-8')
-		source.file.close()
+		result = source.get('content').decode('utf-8')
 		return result
 	except Exception:
 		traceback.print_exc()
-		log_error(f'Error decoding source file ({source.filename})')
+		log_error(f'Error decoding source file ({source.get("filename")})')
 		return None
-	finally:
-		source.file.close()  # Ensure file is closed after processing

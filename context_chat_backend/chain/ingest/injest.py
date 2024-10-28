@@ -1,7 +1,6 @@
 import multiprocessing as mp
 import re
 from logging import error as log_error
-from threading import Event
 
 from fastapi.datastructures import UploadFile
 from langchain.schema import Document
@@ -16,15 +15,15 @@ from ...vectordb import BaseVectorDB
 # only one Process can use the embedding model at a time (vectordb calls it)
 vectordb_lock = mp.Lock()
 
-def _allowed_file(file: UploadFile) -> bool:
-	return file.headers.get('type', default='') in SUPPORTED_MIMETYPES
+def _allowed_file(file: dict) -> bool:
+	return file.get('type', '') in SUPPORTED_MIMETYPES
 
 
 def _filter_sources(
 	user_id: str,
 	vectordb: BaseVectorDB,
-	sources: list[UploadFile]
-) -> list[UploadFile]:
+	sources: list,
+) -> list:
 	'''
 	Returns a filtered list of sources that are not already in the vectordb
 	or have been modified since they were last added.
@@ -38,9 +37,9 @@ def _filter_sources(
 
 	input_sources = {}
 	for source in sources:
-		if not not_none(source.filename) or not not_none(source.headers.get('modified')):
+		if not not_none(source.get('filename')) or not not_none(source.get('modified')):
 			continue
-		input_sources[source.filename] = source.headers.get('modified')
+		input_sources[source.get('filename')] = source.get('modified')
 
 	existing_objects = vectordb.get_objects_from_metadata(
 		user_id,
@@ -63,21 +62,21 @@ def _filter_sources(
 
 	return [
 		source for source in sources
-		if source.filename in new_sources
+		if source.get('filename') in new_sources
 	]
 
 
-def _sources_to_documents(sources: list[UploadFile]) -> dict[str, list[Document]]:
+def _sources_to_documents(sources: list) -> dict[str, list[Document]]:
 	'''
 	Converts a list of sources to a dictionary of documents with the user_id as the key.
 	'''
 	documents = {}
 
 	for source in sources:
-		print('processing source:', source.filename, flush=True)
-		user_id = source.headers.get('userId')
+		print('processing source:', source.get('filename'), flush=True)
+		user_id = source.get('userId')
 		if user_id is None:
-			log_error(f'userId not found in headers for source: {source.filename}')
+			log_error(f'userId not found in headers for source: {source.get("filename")}')
 			continue
 
 		# transform the source to have text data
@@ -85,14 +84,14 @@ def _sources_to_documents(sources: list[UploadFile]) -> dict[str, list[Document]
 		if content is None or content == '':
 			continue
 
-		print('decoded non empty source:', source.filename, flush=True)
+		print('decoded non empty source:', source.get('filename'), flush=True)
 
 		metadata = {
-			'source': source.filename,
-			'title': source.headers.get('title'),
-			'type': source.headers.get('type'),
-			'modified': source.headers.get('modified'),
-			'provider': source.headers.get('provider'),
+			'source': source.get('filename'),
+			'title': source.get('title'),
+			'type': source.get('type'),
+			'modified': source.get('modified'),
+			'provider': source.get('provider'),
 		}
 
 		document = Document(page_content=content, metadata=metadata)
@@ -122,17 +121,17 @@ def _bucket_by_type(documents: list[Document]) -> dict[str, list[Document]]:
 def _process_sources(
 	vectordb: BaseVectorDB,
 	config: TConfig,
-	sources: list[UploadFile],
+	sources: list,
 ) -> bool:
 	with vectordb_lock:
-		filtered_sources = _filter_sources(sources[0].headers['userId'], vectordb, sources)
+		filtered_sources = _filter_sources(sources[0].get('userId'), vectordb, sources)
 
 	if len(filtered_sources) == 0:
 		# no new sources to embed
 		print('Filtered all sources, nothing to embed', flush=True)
 		return True
 
-	print('Filtered sources:', [source.filename for source in filtered_sources], flush=True)
+	print('Filtered sources:', [source.get('filename') for source in filtered_sources], flush=True)
 	ddocuments: dict[str, list[Document]] = _sources_to_documents(filtered_sources)
 
 	print('Converted sources to documents')
@@ -144,6 +143,7 @@ def _process_sources(
 
 	success = True
 	from ...controller import embedding_taskqueue
+	from ...controller import manager
 
 	for user_id, documents in ddocuments.items():
 		split_documents: list[Document] = []
@@ -172,7 +172,8 @@ def _process_sources(
 			continue
 
 		# done, success
-		result = (Event(), Event())
+		result = (manager.Event(), manager.Event())
+		print('Sending task to embedding queue')
 		embedding_taskqueue.put((user_id, split_documents, result))
 		result[0].wait()
 
@@ -186,18 +187,18 @@ def _process_sources(
 def embed_sources(
 	vectordb: BaseVectorDB,
 	config: TConfig,
-	sources: list[UploadFile]
+	sources: list
 ):
 	# either not a file or a file that is allowed
 	sources_filtered = [
 		source for source in sources
-		if (source.filename is not None and not source.filename.startswith('files__default: '))
+		if (source.get('filename') is not None and not source.get('filename').startswith('files__default: '))
 		or _allowed_file(source)
 	]
 
 	print(
 		'Embedding sources:\n' +
-		'\n'.join([f'{source.filename} ({source.headers["title"]})' for source in sources_filtered]),
+		'\n'.join([f'{source.get("filename")}' for source in sources_filtered]),
 		flush=True,
 	)
 	return _process_sources(vectordb, config, sources_filtered)
