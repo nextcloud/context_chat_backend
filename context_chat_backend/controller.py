@@ -11,6 +11,7 @@ from multiprocessing import Queue
 from threading import Event
 from multiprocessing import Manager
 from typing import Annotated, Any, Callable
+from threading import Thread
 
 from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile
 from langchain.llms.base import LLM
@@ -92,18 +93,24 @@ parsing_taskqueue = Queue()
 num_embedding_workers = 1
 embedding_taskqueue = Queue()
 
-
-processes = []
 manager = Manager()
-for i in range(num_parsing_workers):
-	p = Process(target=parsing_worker, args=(i, parsing_taskqueue))
-	p.start()
-	processes.append(p)
 
-for i in range(num_embedding_workers):
-	p = Process(target=embedding_worker, args=(i, embedding_taskqueue))
-	p.start()
-	processes.append(p)
+def worker_processes():
+	processes = []
+	for i in range(num_parsing_workers):
+		p = Process(target=parsing_worker, args=(i, parsing_taskqueue))
+		p.start()
+		processes.append(p)
+
+	while True:
+		p = Process(target=embedding_worker, args=(i, embedding_taskqueue))
+		p.start()
+		p.join()
+
+# create a thread
+thread = Thread(target=worker_processes)
+# run the thread
+thread.start()
 
 # exception handlers
 
@@ -321,6 +328,7 @@ async def _(sources: list[UploadFile]):
 
 	# (done, success)
 	result = (manager.Event(), manager.Event())
+	print(f'+++++++++++++++++++Adding task to parsing taskqueue ({parsing_taskqueue.qsize()})', flush=True)
 	parsing_taskqueue.put(([
 		{
 			'filename': s.filename,
@@ -332,6 +340,7 @@ async def _(sources: list[UploadFile]):
 			'provider': s.headers['provider'],
 		} for s in sources
 		], result))
+	print(f'-------------------Added task to parsing taskqueue ({parsing_taskqueue.qsize()})', flush=True)
 
 	# wait for done flag
 	while not result[0].is_set():

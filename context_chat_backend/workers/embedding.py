@@ -7,7 +7,14 @@ from context_chat_backend.vectordb import BaseVectorDB
 def embedding_worker(worker_idx, embedding_taskqueue: Queue):
     from context_chat_backend.controller import vectordb_loader
     db: BaseVectorDB|None = None
+    count = 0
+    print('##############Start embedding worker', flush=True)
+
     while True:
+        count += 1
+        if count > 100:
+            print('##############Ending embedding worker', flush=True)
+            break
         user_id, split_documents, result = embedding_taskqueue.get()
         print('[embedding_worker] Received task from embedding queue')
         if db is None:

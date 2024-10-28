@@ -174,8 +174,9 @@ def _process_sources(
 		if len(split_documents) == 0:
 			continue
 
-		print('Sending task to embedding queue')
+		print(f'++++++++++++++++++++Sending task to embedding taskqueue ({embedding_taskqueue.qsize()})')
 		embedding_taskqueue.put((user_id, split_documents, result))
+		print(f'--------------------Sent task to embedding taskqueue ({embedding_taskqueue.qsize()})')
 		sent = True
 
 	if not sent:
