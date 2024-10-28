@@ -14,9 +14,13 @@ def parsing_worker(worker_idx, parsing_taskqueue: Queue):
     while True:
         sources, result = parsing_taskqueue.get()
         print('[parsing_worker] Received parsing task')
-
         if db is None:
             db = vectordb_loader.load()
+            db.get_objects_from_metadata(
+                'dummy',
+                'source',
+                ['somedumbstuff']
+            )
         if config is None:
             config = get_config(os.environ['CC_CONFIG_PATH'])
 

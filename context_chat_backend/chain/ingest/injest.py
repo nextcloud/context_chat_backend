@@ -124,9 +124,6 @@ def _process_sources(
 	sources: list,
 	result: tuple[multiprocessing.Event, multiprocessing.Event],
 ) -> bool:
-	#print('Waiting for vectordb_lock')
-	#with vectordb_lock:
-	#	print('recevied vectordb_lock')
 	filtered_sources = _filter_sources(sources[0].get('userId'), vectordb, sources)
 
 	if len(filtered_sources) == 0:
