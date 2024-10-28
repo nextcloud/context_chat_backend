@@ -27,4 +27,3 @@ def parsing_worker(worker_idx, parsing_taskqueue: Queue):
             print(e)
             # log error
             result[0].set()# set done flag
-

@@ -148,7 +148,6 @@ def _process_sources(
 
 	sent = False
 	from ...controller import embedding_taskqueue
-	from ...controller import manager
 
 	for user_id, documents in ddocuments.items():
 		split_documents: list[Document] = []
