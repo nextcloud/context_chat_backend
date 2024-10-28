@@ -22,12 +22,9 @@ def parsing_worker(worker_idx, parsing_taskqueue: Queue):
 
         try:
             print('[parsing_worker] Running embed_sources')
-            success = embed_sources(db, config, sources)
+            embed_sources(db, config, sources, result)
         except Exception as e:
             print(e)
             # log error
-            success = False
-        finally:
-            if success:
-                result[1].set()# set success flag
             result[0].set()# set done flag
+

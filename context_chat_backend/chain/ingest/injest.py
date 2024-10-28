@@ -1,3 +1,4 @@
+import multiprocessing
 import multiprocessing as mp
 import re
 from logging import error as log_error
@@ -121,13 +122,17 @@ def _process_sources(
 	vectordb: BaseVectorDB,
 	config: TConfig,
 	sources: list,
+	result: tuple[multiprocessing.Event, multiprocessing.Event],
 ) -> bool:
-	with vectordb_lock:
-		filtered_sources = _filter_sources(sources[0].get('userId'), vectordb, sources)
+	#print('Waiting for vectordb_lock')
+	#with vectordb_lock:
+	#	print('recevied vectordb_lock')
+	filtered_sources = _filter_sources(sources[0].get('userId'), vectordb, sources)
 
 	if len(filtered_sources) == 0:
 		# no new sources to embed
 		print('Filtered all sources, nothing to embed', flush=True)
+		result[0].set()
 		return True
 
 	print('Filtered sources:', [source.get('filename') for source in filtered_sources], flush=True)
@@ -138,9 +143,10 @@ def _process_sources(
 	if len(ddocuments.keys()) == 0:
 		# document(s) were empty, not an error
 		print('All documents were found empty after being processed', flush=True)
+		result[0].set()
 		return True
 
-	success = True
+	sent = False
 	from ...controller import embedding_taskqueue
 	from ...controller import manager
 
@@ -170,23 +176,19 @@ def _process_sources(
 		if len(split_documents) == 0:
 			continue
 
-		# done, success
-		result = (manager.Event(), manager.Event())
 		print('Sending task to embedding queue')
 		embedding_taskqueue.put((user_id, split_documents, result))
-		result[0].wait()
+		sent = True
 
-		print('Added documents to vectordb', flush=True)
-		# does not do per document error checking
-		success &= result[1].is_set()
-
-	return success
+	if not sent:
+		result[0].set()
 
 
 def embed_sources(
 	vectordb: BaseVectorDB,
 	config: TConfig,
-	sources: list
+	sources: list,
+	result: tuple[multiprocessing.Event, multiprocessing.Event]
 ):
 	# either not a file or a file that is allowed
 	sources_filtered = [
@@ -200,4 +202,4 @@ def embed_sources(
 		'\n'.join([f'{source.get("filename")}' for source in sources_filtered]),
 		flush=True,
 	)
-	return _process_sources(vectordb, config, sources_filtered)
+	_process_sources(vectordb, config, sources_filtered, result)

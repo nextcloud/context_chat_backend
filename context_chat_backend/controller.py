@@ -1,3 +1,4 @@
+import asyncio
 import multiprocessing as mp
 import os
 import threading
@@ -298,7 +299,7 @@ def _(providerKey: str = Body(embed=True)):
 
 @app.put('/loadSources')
 @enabled_guard(app)
-def _(sources: list[UploadFile]):
+async def _(sources: list[UploadFile]):
 	if len(sources) == 0:
 		return JSONResponse('No sources provided', 400)
 
@@ -327,7 +328,9 @@ def _(sources: list[UploadFile]):
 		} for s in sources
 		], result))
 
-	result[0].wait()# wait for done flag
+	# wait for done flag
+	while not result[0].is_set():
+		await asyncio.sleep(0.1)
 
 	# check if successful
 	if not result[1].is_set():
