@@ -121,7 +121,7 @@ def enabled_guard(app: FastAPI):
 		'''
 		@wraps(func)
 		def wrapper(*args, **kwargs):
-			disable_aaa = app.extra['CONFIG']['disable_aaa']
+			disable_aaa = app.extra['CONFIG'].disable_aaa
 			if not disable_aaa and not app_enabled.is_set():
 				return JSONResponse('Context Chat is disabled, enable it from AppAPI to use it.', 503)
 
