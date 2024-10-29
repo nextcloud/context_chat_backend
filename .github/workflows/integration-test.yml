@@ -220,4 +220,6 @@ jobs:
           tail data/nextcloud.log
           echo '--------------------------------------------------'
           [ -f context_chat_backend/backend_logs ] && cat context_chat_backend/backend_logs || echo "No backend logs"
+          echo '--------------------------------------------------'
+          [ -f context_chat_backend/embedding_model.log ] && cat context_chat_backend/embedding_model.log || echo "No embedding backend logs"
           
