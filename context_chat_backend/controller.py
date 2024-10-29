@@ -21,7 +21,7 @@ from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, LoaderException, V
 from .models import LlmException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
-from .utils import JSONResponse, update_progress, value_of
+from .utils import JSONResponse, value_of
 from .vectordb import BaseVectorDB, DbException
 
 # setup
@@ -167,8 +167,7 @@ def _():
 @app.post('/init')
 def _(bg_tasks: BackgroundTasks):
 	nc = NextcloudApp()
-	fetch_models_task(nc, models_to_fetch, 0)
-	update_progress(app, 100)
+	bg_tasks.add_task(fetch_models_task, nc, models_to_fetch, 0)
 	return JSONResponse(content={}, status_code=200)
 
 
