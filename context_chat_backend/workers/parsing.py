@@ -31,4 +31,4 @@ def parsing_worker(worker_idx, parsing_taskqueue: Queue):
         except Exception as e:
             print(e)
             # log error
-            result[0].set()# set done flag
+            result.get('done').set()# set done flag

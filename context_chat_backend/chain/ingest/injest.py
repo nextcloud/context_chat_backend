@@ -122,15 +122,15 @@ def _process_sources(
 	vectordb: BaseVectorDB,
 	config: TConfig,
 	sources: list,
-	result: tuple[multiprocessing.Event, multiprocessing.Event],
+	result: dict[multiprocessing.Event],
 ) -> bool:
 	filtered_sources = _filter_sources(sources[0].get('userId'), vectordb, sources)
 
 	if len(filtered_sources) == 0:
 		# no new sources to embed
 		print('Filtered all sources, nothing to embed', flush=True)
-		result[1].set()
-		result[0].set()
+		result.get('success').set()
+		result.get('done').set()
 		return True
 
 	print('Filtered sources:', [source.get('filename') for source in filtered_sources], flush=True)
@@ -141,8 +141,8 @@ def _process_sources(
 	if len(ddocuments.keys()) == 0:
 		# document(s) were empty, not an error
 		print('All documents were found empty after being processed', flush=True)
-		result[1].set()
-		result[0].set()
+		result.get('success').set()
+		result.get('done').set()
 		return True
 
 	sent = False
@@ -180,15 +180,15 @@ def _process_sources(
 		sent = True
 
 	if not sent:
-		result[1].set()
-		result[0].set()
+		result.get('success').set()
+		result.get('done').set()
 
 
 def embed_sources(
 	vectordb: BaseVectorDB,
 	config: TConfig,
 	sources: list,
-	result: tuple[multiprocessing.Event, multiprocessing.Event]
+	result: dict[multiprocessing.Event]
 ):
 	# either not a file or a file that is allowed
 	sources_filtered = [

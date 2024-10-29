@@ -30,5 +30,5 @@ def embedding_worker(worker_idx, embedding_taskqueue: Queue):
                 count = 0
 
         if count == len(split_documents):
-            result[1].set() # set success flag
-        result[0].set()# set done flag
+            result.get('success').set() # set success flag
+        result.get('done').set()# set done flag

@@ -326,8 +326,7 @@ async def _(sources: list[UploadFile]):
 	):
 		return JSONResponse('Invaild/missing headers', 400)
 
-	# (done, success)
-	result = (manager.Event(), manager.Event())
+	result = { 'done': manager.Event(), 'success':manager.Event() }
 	print(f'+++++++++++++++++++Adding task to parsing taskqueue ({parsing_taskqueue.qsize()})', flush=True)
 	parsing_taskqueue.put(([
 		{
@@ -343,11 +342,11 @@ async def _(sources: list[UploadFile]):
 	print(f'-------------------Added task to parsing taskqueue ({parsing_taskqueue.qsize()})', flush=True)
 
 	# wait for done flag
-	while not result[0].is_set():
+	while not result.get('done').is_set():
 		await asyncio.sleep(0.1)
 
 	# check if successful
-	if not result[1].is_set():
+	if not result.get('success').is_set():
 		return JSONResponse('Error: All sources were not loaded, check logs for more info', 500)
 
 	return JSONResponse('All sources loaded')
