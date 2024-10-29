@@ -91,7 +91,6 @@ class VectorDBLoader(Loader):
 	def __init__(self, em_loader: EmbeddingModelLoader, config: TConfig) -> None:
 		self.config = config
 		self.em_loader = em_loader
-		self.vectordb = None
 
 	def load(self) -> BaseVectorDB:
 		try:
@@ -107,10 +106,8 @@ class VectorDBLoader(Loader):
 			raise LoaderException() from e
 
 	def offload(self) -> None:
-		if self.vectordb is not None:
-			self.vectordb = None
 		self.em_loader.offload()
-		gc.collect()
+		clear_cache()
 
 
 class LLMModelLoader(Loader):
