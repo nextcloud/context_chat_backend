@@ -33,15 +33,6 @@ class VectorDB(BaseVectorDB):
 		self.client_kwargs = kwargs
 		# Use connection string from env var if not provided in kwargs
 		self.client_kwargs.update({'connection': str(self.client_kwargs.get('connection', os.environ['CCB_DB_URL']))})
-		# todo
-		self.client_kwargs.update({'connection': 'postgresql+psycopg://ccbuser:ccbpass@localhost:5432/ccb'})
-		print('client kwargs:', self.client_kwargs)
-		print(f'Using connection string: {self.client_kwargs["connection"]}')
-		print('Type of connection string:', type(self.client_kwargs['connection']))
-		engine = sa.create_engine(self.client_kwargs['connection'])
-		with engine.connect() as conn:
-			result = conn.execute(sa.text('select pg_catalog.version()')).fetchall()
-			print(result, flush=True)
 
 	def get_users(self) -> list[str]:
 		engine = sa.create_engine(self.client_kwargs['connection'])

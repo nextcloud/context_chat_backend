@@ -7,12 +7,18 @@ set -e
 # Environment variables
 source "$(dirname $(realpath $0))/env"
 
-# Check if CCB_DB_URL is set
-if [ -n "${CCB_DB_URL}" ]; then
-    echo "CCB_DB_URL is set to: $CCB_DB_URL"
+# Check if EXTERNAL_DB is set
+if [ -n "${EXTERNAL_DB}" ]; then
+    CCB_DB_URL="${EXTERNAL_DB}"
+    echo "Using EXTERNAL_DB, CCB_DB_URL is set to: $CCB_DB_URL"
+
     if [[ "$CCB_DB_URL" != "postgresql+psycopg://"* ]]; then
         echo "CCB_DB_URL must be a PostgreSQL URL and start with 'postgresql+psycopg://'"
         exit 1
+    fi
+
+    if ! grep -q "^export EXTERNAL_DB=" /etc/environment; then
+        echo "export EXTERNAL_DB=\"$EXTERNAL_DB\"" >> /etc/environment
     fi
     exit 0
 fi
@@ -23,7 +29,7 @@ chown -R postgres:postgres "$DATA_DIR"
 
 if [ ! -d "$DATA_DIR/base" ]; then
     echo "Initializing the PostgreSQL database..."
-    sudo -u postgres ${PG_BIN}/initdb -D "$DATA_DIR"
+    sudo -u postgres ${PG_BIN}/initdb -D "$DATA_DIR" -E UTF8
 fi
 
 echo "Starting PostgreSQL..."
@@ -35,6 +41,11 @@ until sudo -u postgres ${PG_SQL} -c "SELECT 1" > /dev/null 2>&1; do
     echo -n "."
 done
 echo "PostgreSQL is up and running."
+
+if [ -n "${CCB_DB_URL}" ]; then
+    echo "CCB_DB_URL is already set. Skipping database setup."
+    exit 0
+fi
 
 # Check if the user exists and create if not
 sudo -u postgres $PG_SQL -c "SELECT 1 FROM pg_user WHERE usename = '$CCB_DB_USER'" | grep -q 1 || \
