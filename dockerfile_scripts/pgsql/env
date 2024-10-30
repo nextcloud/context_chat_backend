@@ -1,5 +1,5 @@
 # Define the PostgreSQL data directory
-BASE_DIR="${APP_PERSISTENT_STORAGE:-/nc_app_context_chat_backend_data}/vector_db_data"
+BASE_DIR="${APP_PERSISTENT_STORAGE:-persistent_storage}/vector_db_data"
 DATA_DIR="${BASE_DIR}/pgsql"
 
 PG_VERSION=17
