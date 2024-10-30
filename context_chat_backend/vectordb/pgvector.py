@@ -1,3 +1,4 @@
+import os
 from logging import error as log_error
 from typing import Any
 
@@ -23,11 +24,24 @@ class VectorDB(BaseVectorDB):
 	def __init__(self, embedding: Embeddings | None = None, **kwargs):
 		if not embedding:
 			raise DbException('Error: embedding model not provided for pgvector')
-		if 'connection' not in kwargs:
-			raise DbException('Error: connection string not provided for pgvector')
+		if os.getenv('CCB_DB_URL') is None and 'connection' not in kwargs:
+			raise DbException(
+				'Error: Either env var CCB_DB_URL or connection string in the config is required for pgvector'
+			)
 
-		self.client_kwargs = kwargs
 		self.embedding = embedding
+		self.client_kwargs = kwargs
+		# Use connection string from env var if not provided in kwargs
+		self.client_kwargs.update({'connection': str(self.client_kwargs.get('connection', os.environ['CCB_DB_URL']))})
+		# todo
+		self.client_kwargs.update({'connection': 'postgresql+psycopg://ccbuser:ccbpass@localhost:5432/ccb'})
+		print('client kwargs:', self.client_kwargs)
+		print(f'Using connection string: {self.client_kwargs["connection"]}')
+		print('Type of connection string:', type(self.client_kwargs['connection']))
+		engine = sa.create_engine(self.client_kwargs['connection'])
+		with engine.connect() as conn:
+			result = conn.execute(sa.text('select pg_catalog.version()')).fetchall()
+			print(result, flush=True)
 
 	def get_users(self) -> list[str]:
 		engine = sa.create_engine(self.client_kwargs['connection'])
