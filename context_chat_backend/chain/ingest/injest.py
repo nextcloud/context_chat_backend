@@ -5,12 +5,12 @@ from logging import error as log_error
 
 from langchain.schema import Document
 
-from .doc_loader import decode_source
-from .doc_splitter import get_splitter_for
-from .mimetype_list import SUPPORTED_MIMETYPES
 from ...config_parser import TConfig
 from ...utils import not_none, to_int
 from ...vectordb import BaseVectorDB
+from .doc_loader import decode_source
+from .doc_splitter import get_splitter_for
+from .mimetype_list import SUPPORTED_MIMETYPES
 
 # only one Process can use the embedding model at a time (vectordb calls it)
 vectordb_lock = mp.Lock()
@@ -123,14 +123,15 @@ def _process_sources(
 	config: TConfig,
 	sources: list,
 	result: dict[multiprocessing.Event],
-) -> bool:
+	embedding_taskqueue: multiprocessing.Queue,
+):
 	filtered_sources = _filter_sources(sources[0].get('userId'), vectordb, sources)
 
 	if len(filtered_sources) == 0:
 		# no new sources to embed
 		print('Filtered all sources, nothing to embed', flush=True)
-		result.get('success').set()
-		result.get('done').set()
+		result['success'].set()
+		result['done'].set()
 		return True
 
 	print('Filtered sources:', [source.get('filename') for source in filtered_sources], flush=True)
@@ -141,12 +142,11 @@ def _process_sources(
 	if len(ddocuments.keys()) == 0:
 		# document(s) were empty, not an error
 		print('All documents were found empty after being processed', flush=True)
-		result.get('success').set()
-		result.get('done').set()
+		result['success'].set()
+		result['done'].set()
 		return True
 
 	sent = False
-	from ...controller import embedding_taskqueue
 
 	for user_id, documents in ddocuments.items():
 		split_documents: list[Document] = []
@@ -180,15 +180,16 @@ def _process_sources(
 		sent = True
 
 	if not sent:
-		result.get('success').set()
-		result.get('done').set()
+		result['success'].set()
+		result['done'].set()
 
 
 def embed_sources(
 	vectordb: BaseVectorDB,
 	config: TConfig,
 	sources: list,
-	result: dict[multiprocessing.Event]
+	result: dict[str, multiprocessing.Event],
+	embedding_taskqueue: multiprocessing.Queue,
 ):
 	# either not a file or a file that is allowed
 	sources_filtered = [
@@ -202,4 +203,4 @@ def embed_sources(
 		'\n'.join([f'{source.get("filename")}' for source in sources_filtered]),
 		flush=True,
 	)
-	_process_sources(vectordb, config, sources_filtered, result)
+	_process_sources(vectordb, config, sources_filtered, result, embedding_taskqueue)

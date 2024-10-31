@@ -3,6 +3,7 @@ import inspect
 import multiprocessing as mp
 import os
 import threading
+import time
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from functools import wraps
@@ -59,10 +60,10 @@ async def lifespan(app: FastAPI):
 		app_enabled.set()
 	print('\n\nApp', 'enabled' if app_enabled.is_set() else 'disabled', 'at startup', flush=True)
 	yield
+	app_enabled.clear()
 	vectordb_loader.offload()
 	embedding_loader.offload()
 	llm_loader.offload()
-
 
 app_config = get_config(os.environ['CC_CONFIG_PATH'])
 app = FastAPI(debug=app_config['debug'], lifespan=lifespan)  # pyright: ignore[reportArgumentType]
@@ -101,16 +102,34 @@ embedding_taskqueue = Queue()
 manager = Manager()
 
 def worker_processes():
-	processes = []
-	for i in range(num_parsing_workers):
-		p = Process(target=parsing_worker, args=(i, parsing_taskqueue))
-		p.start()
-		processes.append(p)
+	parsers = []
+	embedders = []
 
-	while True:
-		p = Process(target=embedding_worker, args=(i, embedding_taskqueue))
+	for i in range(num_parsing_workers):
+		p = Process(name=f'parser{i}', target=parsing_worker, args=(vectordb_loader, parsing_taskqueue, embedding_taskqueue))
 		p.start()
-		p.join()
+		parsers.append(p)
+
+	for i in range(num_embedding_workers):
+		p = Process(name=f'embedder{i}', target=embedding_worker, args=(vectordb_loader, embedding_taskqueue))
+		p.start()
+		embedders.append(p)
+
+	while True and app_enabled.is_set():
+		for p in parsers:
+			if not p.is_alive():
+				p = Process(name=p.name, target=parsing_worker, args=(vectordb_loader, parsing_taskqueue, embedding_taskqueue))
+				p.start()
+				parsers.append(p)
+
+		for p in embedders:
+			if not p.is_alive():
+				p = Process(name=p.name, target=embedding_worker, args=(vectordb_loader, embedding_taskqueue))
+				p.start()
+				embedders.append(p)
+
+		# sleep for 10 seconds
+		time.sleep(10)
 
 # create a thread
 thread = Thread(target=worker_processes)
@@ -318,15 +337,15 @@ async def _(sources: list[UploadFile]):
 			'modified': s.headers['modified'],
 			'provider': s.headers['provider'],
 		} for s in sources
-		], result))
+	], result))
 	print(f'-------------------Added task to parsing taskqueue ({parsing_taskqueue.qsize()})', flush=True)
 
 	# wait for done flag
-	while not result.get('done').is_set():
+	while not result['done'].is_set():
 		await asyncio.sleep(0.1)
 
 	# check if successful
-	if not result.get('success').is_set():
+	if not result['success'].is_set():
 		return JSONResponse('Error: All sources were not loaded, check logs for more info', 500)
 
 	return JSONResponse('All sources loaded')

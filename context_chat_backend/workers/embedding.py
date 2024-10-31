@@ -1,14 +1,16 @@
+import multiprocessing
 from multiprocessing.queues import Queue
 
 from context_chat_backend.chain.ingest.injest import vectordb_lock
+from context_chat_backend.dyn_loader import VectorDBLoader
 from context_chat_backend.vectordb import BaseVectorDB
 
 
-def embedding_worker(worker_idx, embedding_taskqueue: Queue):
-    from context_chat_backend.controller import vectordb_loader
+def embedding_worker(vectordb_loader: VectorDBLoader, embedding_taskqueue: Queue):
     db: BaseVectorDB|None = None
     count = 0
-    print('##############Start embedding worker', flush=True)
+    worker_name = multiprocessing.current_process().name
+    print('##############Start embedding worker %s' % worker_name, flush=True)
 
     while True:
         count += 1
@@ -30,5 +32,5 @@ def embedding_worker(worker_idx, embedding_taskqueue: Queue):
                 count = 0
 
         if count == len(split_documents):
-            result.get('success').set() # set success flag
-        result.get('done').set()# set done flag
+            result['success'].set() # set success flag
+        result['done'].set()# set done flag
