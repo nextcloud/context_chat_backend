@@ -41,7 +41,7 @@ jobs:
       fail-fast: false
       matrix:
         php-versions: [ '8.1' ]
-        databases: [ 'sqlite' ]
+        databases: [ 'pgsql' ]
         server-versions: [ 'master' ]
 
     name: Integration test on ${{ matrix.server-versions }} php@${{ matrix.php-versions }}
@@ -49,6 +49,8 @@ jobs:
     env:
       MYSQL_PORT: 4444
       PGSQL_PORT: 4445
+      # use the same db for ccb and nextcloud
+      CCB_DB_URL: postgresql+psycopg://root:rootpassword@localhost:4445/nextcloud
 
     services:
       mysql:
@@ -59,7 +61,7 @@ jobs:
           MYSQL_ROOT_PASSWORD: rootpassword
         options: --health-cmd="mysqladmin ping" --health-interval 5s --health-timeout 2s --health-retries 5
       postgres:
-        image: postgres
+        image: pgvector/pgvector:pg17
         ports:
           - 4445:5432/tcp
         env:
