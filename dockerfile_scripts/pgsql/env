@@ -1,0 +1,7 @@
+# Define the PostgreSQL data directory
+BASE_DIR="${APP_PERSISTENT_STORAGE:-persistent_storage}/vector_db_data"
+DATA_DIR="${BASE_DIR}/pgsql"
+
+PG_VERSION=17
+PG_BIN="/usr/lib/postgresql/${PG_VERSION}/bin"
+PG_SQL="/usr/lib/postgresql/${PG_VERSION}/bin/psql"

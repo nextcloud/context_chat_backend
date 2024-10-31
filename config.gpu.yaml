@@ -12,15 +12,15 @@ model_download_uri: https://download.nextcloud.com/server/apps/context_chat_back
 
 
 vectordb:
+  pgvector:
+    # 'connection' overrides the env var 'CCB_DB_URL'
+
   chroma:
     is_persistent: true
     # chroma_server_host:
     # chroma_server_http_port:
     # chroma_server_ssl_enabled:
     # chroma_server_api_default_path:
-
-  pgvector:
-    connection: postgresql+psycopg://ccbuser:ccbpass@localhost:5432/ccb
 
   weaviate:
     # auth_client_secret:
