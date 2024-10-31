@@ -28,7 +28,8 @@ def embedding_worker(vectordb_loader: VectorDBLoader, embedding_taskqueue: Queue
             try:
                 user_client = db.get_user_client(user_id)
                 count = len(user_client.add_documents(split_documents))
-            except:
+            except Exception as e:
+                print(e)
                 count = 0
 
         if count == len(split_documents):

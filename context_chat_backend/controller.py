@@ -106,7 +106,11 @@ def worker_processes():
 	embedders = []
 
 	for i in range(num_parsing_workers):
-		p = Process(name=f'parser{i}', target=parsing_worker, args=(vectordb_loader, parsing_taskqueue, embedding_taskqueue))
+		p = Process(
+			name=f'parser{i}',
+			target=parsing_worker,
+			args=(vectordb_loader, parsing_taskqueue, embedding_taskqueue),
+		)
 		p.start()
 		parsers.append(p)
 
@@ -115,10 +119,14 @@ def worker_processes():
 		p.start()
 		embedders.append(p)
 
-	while True and app_enabled.is_set():
+	while app_enabled.is_set():
 		for p in parsers:
 			if not p.is_alive():
-				p = Process(name=p.name, target=parsing_worker, args=(vectordb_loader, parsing_taskqueue, embedding_taskqueue))
+				p = Process(
+					name=p.name,
+					target=parsing_worker,
+					args=(vectordb_loader, parsing_taskqueue, embedding_taskqueue),
+				)
 				p.start()
 				parsers.append(p)
 
@@ -186,8 +194,7 @@ def enabled_guard(app: FastAPI):
 			# Check if the function is asynchronous
 			if inspect.iscoroutinefunction(func):
 				return await func(*args, **kwargs)
-			else:
-				return func(*args, **kwargs)
+			return func(*args, **kwargs)
 
 		return wrapper
 
@@ -327,6 +334,7 @@ async def _(sources: list[UploadFile]):
 
 	result = { 'done': manager.Event(), 'success':manager.Event() }
 	print(f'+++++++++++++++++++Adding task to parsing taskqueue ({parsing_taskqueue.qsize()})', flush=True)
+	print('sources:', sources, flush=True)
 	parsing_taskqueue.put(([
 		{
 			'filename': s.filename,

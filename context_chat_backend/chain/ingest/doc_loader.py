@@ -125,14 +125,10 @@ def decode_source(source) -> str | None:
 			return None
 
 		if _loader_map.get(mimetype):
-			result = _loader_map[mimetype](BytesIO(source.get('content')))
-			return result
+			return _loader_map[mimetype](BytesIO(source.get('content')))
 
-		result = source.get('content').decode('utf-8')
-		return result
+		return source.get('content').decode('utf-8')
 	except Exception:
 		traceback.print_exc()
 		log_error(f'Error decoding source file ({source.get("filename")})')
 		return None
-	finally:
-		source.file.close()  # Ensure file is closed after processing

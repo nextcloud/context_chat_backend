@@ -122,17 +122,16 @@ def _process_sources(
 	vectordb: BaseVectorDB,
 	config: TConfig,
 	sources: list,
-	result: dict[multiprocessing.Event],
+	result: dict[str, multiprocessing.Event],  # pyright: ignore[reportInvalidTypeForm]
 	embedding_taskqueue: multiprocessing.Queue,
-):
+) -> None:
 	filtered_sources = _filter_sources(sources[0].get('userId'), vectordb, sources)
 
 	if len(filtered_sources) == 0:
 		# no new sources to embed
 		print('Filtered all sources, nothing to embed', flush=True)
-		result['success'].set()
 		result['done'].set()
-		return True
+		result['success'].set()
 
 	print('Filtered sources:', [source.get('filename') for source in filtered_sources], flush=True)
 	ddocuments: dict[str, list[Document]] = _sources_to_documents(filtered_sources)
@@ -142,9 +141,8 @@ def _process_sources(
 	if len(ddocuments.keys()) == 0:
 		# document(s) were empty, not an error
 		print('All documents were found empty after being processed', flush=True)
-		result['success'].set()
 		result['done'].set()
-		return True
+		result['success'].set()
 
 	sent = False
 
@@ -180,15 +178,15 @@ def _process_sources(
 		sent = True
 
 	if not sent:
-		result['success'].set()
 		result['done'].set()
+		result['success'].set()
 
 
 def embed_sources(
 	vectordb: BaseVectorDB,
 	config: TConfig,
 	sources: list,
-	result: dict[str, multiprocessing.Event],
+	result: dict[str, multiprocessing.Event],  # pyright: ignore[reportInvalidTypeForm]
 	embedding_taskqueue: multiprocessing.Queue,
 ):
 	# either not a file or a file that is allowed
