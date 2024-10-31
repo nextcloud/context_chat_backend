@@ -134,3 +134,5 @@ def decode_source(source) -> str | None:
 		traceback.print_exc()
 		log_error(f'Error decoding source file ({source.get("filename")})')
 		return None
+	finally:
+		source.file.close()  # Ensure file is closed after processing

@@ -3,21 +3,18 @@ import inspect
 import multiprocessing as mp
 import os
 import threading
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from functools import wraps
 from logging import error as log_error
-from multiprocessing import Process
-from multiprocessing import Queue
-from threading import Event
-from multiprocessing import Manager
-from typing import Annotated, Any, Callable
-from threading import Thread
+from multiprocessing import Manager, Process, Queue
+from threading import Event, Thread
+from typing import Annotated, Any
 
-from fastapi import BackgroundTasks, Body, FastAPI, Request, UploadFile
+from fastapi import Body, FastAPI, Request, UploadFile
 from langchain.llms.base import LLM
-from nc_py_api import NextcloudApp
-from nc_py_api.ex_app import persistent_storage
-from nc_py_api.ex_app.integration_fastapi import fetch_models_task
+from nc_py_api import AsyncNextcloudApp, NextcloudApp
+from nc_py_api.ex_app import persistent_storage, set_handlers
 from pydantic import BaseModel, ValidationInfo, field_validator
 
 from .chain import ContextException, LLMOutput, ScopeType, process_context_query, process_query
@@ -38,17 +35,25 @@ repair_run()
 ensure_config_file()
 
 models_to_fetch = {
-	"https://huggingface.co/Ralriki/multilingual-e5-large-instruct-GGUF/resolve/main/multilingual-e5-large-instruct-q6_k.gguf": {
+	"https://huggingface.co/Ralriki/multilingual-e5-large-instruct-GGUF/resolve/8738f8d3d8f311808479ecd5756607e24c6ca811/multilingual-e5-large-instruct-q6_k.gguf": {  # noqa: E501
 		"save_path": os.path.join(persistent_storage(), 'model_files',  "multilingual-e5-large-instruct-q6_k.gguf")
 	}
 }
 app_enabled = Event()
 
-# disabled for now
-# scheduler = AsyncIOScheduler()
+def enabled_handler(enabled: bool, _: NextcloudApp | AsyncNextcloudApp) -> str:
+	if enabled:
+		app_enabled.set()
+	else:
+		app_enabled.clear()
+
+	print('App', 'enabled' if enabled else 'disabled', flush=True)
+	return ''
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+	set_handlers(app, enabled_handler, models_to_fetch=models_to_fetch)
 	nc = NextcloudApp()
 	if nc.enabled_state:
 		app_enabled.set()
@@ -229,30 +234,6 @@ def _(userId: str, sourceNames: str):
 @app.get('/enabled')
 def _():
 	return JSONResponse(content={'enabled': app_enabled.is_set()}, status_code=200)
-
-@app.put('/enabled')
-def _(enabled: bool):
-
-	if enabled:
-		app_enabled.set()
-	else:
-		app_enabled.clear()
-
-	print('App', 'enabled' if enabled else 'disabled', flush=True)
-	return JSONResponse(content={'error': ''}, status_code=200)
-
-
-@app.get('/heartbeat')
-def _():
-	print('heartbeat_handler: result=ok')
-	return JSONResponse(content={'status': 'ok'}, status_code=200)
-
-
-@app.post('/init')
-def _(bg_tasks: BackgroundTasks):
-	nc = NextcloudApp()
-	bg_tasks.add_task(fetch_models_task, nc, models_to_fetch, 0)
-	return JSONResponse(content={}, status_code=200)
 
 
 @app.post('/deleteSources')
