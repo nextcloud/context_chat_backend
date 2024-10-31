@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import json
 import os
 import signal
 import threading
@@ -68,7 +67,7 @@ if __name__ == '__main__':
 
 	app_config = get_config(os.environ['CC_CONFIG_PATH'])
 	em_conf = app_config.embedding
-	print('Embedder config:\n' + json.dumps(em_conf, indent=2), flush=True)
+	print('Embedder config:\n' + em_conf.model_dump_json(indent=2), flush=True)
 
 	# update model path to be in the persistent storage if it is not already valid
 	if 'model' not in em_conf.llama:
