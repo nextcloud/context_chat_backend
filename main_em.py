@@ -26,7 +26,7 @@ def die_on_time(app_config: TConfig):
 		with last_time_lock:
 			if holding_cnt <= 0 and time.time() - last_time > app_config.embedding.offload_after_mins * 60:
 				print('Killing the embedding server due to inactivity', flush=True)
-				os.kill(os.getpid(), signal.SIGKILL)
+				os.kill(os.getpid(), signal.SIGTERM)
 
 
 class LastAccessMiddleware:

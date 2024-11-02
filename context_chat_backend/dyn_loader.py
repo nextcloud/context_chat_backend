@@ -78,7 +78,8 @@ class EmbeddingModelLoader(Loader):
 				try_ += 1
 				sleep(3)
 
-		raise LoaderException('Error: failed to start the embedding server')
+		print('Error: failed to start the embedding server', flush=True)
+		os.kill(os.getpid(), signal.SIGTERM)
 
 	def offload(self):
 		global pid
@@ -101,7 +102,7 @@ class VectorDBLoader(Loader):
 		try:
 			self.em_loader.load()
 			embedding_model = NetworkEmbeddings(app_config=self.config)
-			return client_klass(embedding_model, **self.config['vectordb'][1])  # type: ignore
+			return client_klass(embedding_model, **self.config.vectordb[1])  # type: ignore
 		except DbException as e:
 			raise LoaderException() from e
 
