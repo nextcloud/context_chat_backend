@@ -1,18 +1,32 @@
-FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
+FROM nvidia/cuda:12.2.2-runtime-ubuntu22.04
 
-ENV DEBIAN_FRONTEND=noninteractive
+ARG CCB_DB_NAME=ccb
+ARG CCB_DB_USER=ccbuser
+ARG CCB_DB_PASS=ccbpass
 
-RUN apt-get update
-RUN apt-get install -y software-properties-common
-RUN add-apt-repository -y ppa:deadsnakes/ppa
-RUN apt-get update
-RUN apt-get install -y --no-install-recommends python3.11 python3.11-venv python3-pip vim git pciutils
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
-RUN apt-get -y clean
-RUN rm -rf /var/lib/apt/lists/*
+ENV CCB_DB_NAME ${CCB_DB_NAME}
+ENV CCB_DB_USER ${CCB_DB_USER}
+ENV CCB_DB_PASS ${CCB_DB_PASS}
+ENV DEBIAN_FRONTEND noninteractive
+ENV NVIDIA_VISIBLE_DEVICES all
+ENV NVIDIA_DRIVER_CAPABILITIES compute
+ENV AA_DOCKER_ENV 1
 
 # Set working directory
 WORKDIR /app
+
+# Install dependencies
+ADD dockerfile_scripts/install_deps.sh dockerfile_scripts/install_deps.sh
+RUN ./dockerfile_scripts/install_deps.sh
+ADD dockerfile_scripts/install_py11.sh dockerfile_scripts/install_py11.sh
+RUN ./dockerfile_scripts/install_py11.sh
+ADD dockerfile_scripts/pgsql dockerfile_scripts/pgsql
+RUN ./dockerfile_scripts/pgsql/install.sh
+RUN apt-get autoclean
+ADD dockerfile_scripts/entrypoint.sh dockerfile_scripts/entrypoint.sh
+
+# Restore interactivity
+ENV DEBIAN_FRONTEND dialog
 
 # Copy requirements files
 COPY requirements.txt .
@@ -23,15 +37,10 @@ RUN python3 -m pip install --no-cache-dir https://github.com/abetlen/llama-cpp-p
 RUN sed -i '/llama_cpp_python/d' requirements.txt
 RUN python3 -m pip install --no-cache-dir -r requirements.txt && python3 -m pip cache purge
 
-ENV NVIDIA_VISIBLE_DEVICES all
-ENV NVIDIA_DRIVER_CAPABILITIES compute
-ENV DEBIAN_FRONTEND dialog
-ENV AA_DOCKER_ENV 1
-
 # Copy application files
 COPY context_chat_backend context_chat_backend
 COPY main.py .
 COPY config.?pu.yaml .
 COPY hwdetect.sh .
 
-ENTRYPOINT ["python3", "main.py"]
+ENTRYPOINT [ "./dockerfile_scripts/entrypoint.sh" ]
