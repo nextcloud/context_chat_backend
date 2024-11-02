@@ -130,8 +130,9 @@ def _process_sources(
 	if len(filtered_sources) == 0:
 		# no new sources to embed
 		print('Filtered all sources, nothing to embed', flush=True)
-		result['done'].set()
 		result['success'].set()
+		result['done'].set()
+		return
 
 	print('Filtered sources:', [source.get('filename') for source in filtered_sources], flush=True)
 	ddocuments: dict[str, list[Document]] = _sources_to_documents(filtered_sources)
@@ -141,8 +142,9 @@ def _process_sources(
 	if len(ddocuments.keys()) == 0:
 		# document(s) were empty, not an error
 		print('All documents were found empty after being processed', flush=True)
-		result['done'].set()
 		result['success'].set()
+		result['done'].set()
+		return
 
 	sent = False
 
@@ -177,9 +179,10 @@ def _process_sources(
 		print(f'--------------------Sent task to embedding taskqueue ({embedding_taskqueue.qsize()})')
 		sent = True
 
+	# all split documents were empty
 	if not sent:
-		result['done'].set()
 		result['success'].set()
+		result['done'].set()
 
 
 def embed_sources(
