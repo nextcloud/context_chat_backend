@@ -8,13 +8,13 @@ from context_chat_backend.vectordb import BaseVectorDB
 
 def embedding_worker(vectordb_loader: VectorDBLoader, embedding_taskqueue: Queue):
     db: BaseVectorDB|None = None
-    count = 0
+    task_count = 0
     worker_name = multiprocessing.current_process().name
     print('##############Start embedding worker %s' % worker_name, flush=True)
 
     while True:
-        count += 1
-        if count > 100:
+        task_count += 1
+        if task_count > 100:
             print('##############Ending embedding worker', flush=True)
             break
         user_id, split_documents, result = embedding_taskqueue.get()
