@@ -45,23 +45,27 @@ class EmbeddingModelLoader(Loader):
 
 	def load(self):
 		global pid
-		# compare with None, as PID can be 0, you never know
-		if pid.value > 0 and psutil.pid_exists(pid.value):
-			return
 
-		proc = subprocess.Popen(
-			['./main_em.py'],  # noqa: S603
-			stdout=self.logfile,
-			stderr=self.logfile,
-			stdin=None,
-			close_fds=True,
-			env=os.environ,
-		)
-		pid.value = proc.pid
+		emconf = self.config.embedding
+
+		# start the embedding server if workers are > 0
+		if emconf.workers > 0:
+			# compare with None, as PID can be 0, you never know
+			if pid.value > 0 and psutil.pid_exists(pid.value):
+				return
+
+			proc = subprocess.Popen(
+				['./main_em.py'],  # noqa: S603
+				stdout=self.logfile,
+				stderr=self.logfile,
+				stdin=None,
+				close_fds=True,
+				env=os.environ,
+			)
+			pid.value = proc.pid
 
 		# poll for heartbeat
 		try_ = 0
-		emconf = self.config.embedding
 		while try_ < 20:
 			with httpx.Client() as client:
 				try:
