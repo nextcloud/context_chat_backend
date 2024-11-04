@@ -73,10 +73,13 @@ vectordb_loader = VectorDBLoader(embedding_loader, app_config)
 llm_loader = LLMModelLoader(app, app_config)
 
 
-# locks
+# locks and semaphores
 
 # sequential prompt processing for in-house LLMs (non-nc_texttotext)
 llm_lock = threading.Lock()
+
+# limit the number of concurrent document parsing
+doc_parse_semaphore = mp.Semaphore(app_config.doc_parser_worker_limit)
 
 
 # middlewares
@@ -223,11 +226,14 @@ def _(sources: list[UploadFile]):
 	):
 		return JSONResponse('Invaild/missing headers', 400)
 
+	doc_parse_semaphore.acquire(block=True, timeout=29*60)  # ~29 minutes
+
 	queue = mp.Queue()
 	p = mp.Process(target=embed_sources, args=(vectordb_loader, app.extra['CONFIG'], sources, queue))
 	p.start()
 	p.join()
 
+	doc_parse_semaphore.release()
 	result = queue.get()
 	if not result:
 		return JSONResponse('Error: All sources were not loaded, check logs for more info', 500)

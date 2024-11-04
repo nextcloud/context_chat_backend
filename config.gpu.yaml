@@ -5,6 +5,7 @@ model_offload_timeout: 15 # 15 minutes
 use_colors: true
 uvicorn_workers: 1
 embedding_chunk_size: 2000
+doc_parser_worker_limit: 10
 
 # model files download configuration
 disable_custom_model_download: false
