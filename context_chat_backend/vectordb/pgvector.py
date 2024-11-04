@@ -32,7 +32,7 @@ class VectorDB(BaseVectorDB):
 		self.embedding = embedding
 		self.client_kwargs = kwargs
 		# Use connection string from env var if not provided in kwargs
-		self.client_kwargs.update({'connection': str(self.client_kwargs.get('connection', os.environ['CCB_DB_URL']))})
+		self.client_kwargs.update({'connection': str(self.client_kwargs.get('connection', os.getenv('CCB_DB_URL')))})
 
 	def get_users(self) -> list[str]:
 		engine = sa.create_engine(self.client_kwargs['connection'])
