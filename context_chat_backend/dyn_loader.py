@@ -17,7 +17,7 @@ from main_em import signal
 
 from .config_parser import TConfig
 from .models import init_model
-from .models.network_em import NetworkEmbeddings
+from .network_em import NetworkEmbeddings
 from .vectordb import get_vector_db
 from .vectordb.base import BaseVectorDB, DbException
 

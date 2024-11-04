@@ -18,6 +18,7 @@ from .chain import ContextException, LLMOutput, ScopeType, embed_sources, proces
 from .config_parser import get_config
 from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, LoaderException, VectorDBLoader
 from .models import LlmException
+from .network_em import EmbeddingException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
 from .utils import JSONResponse, value_of
@@ -113,14 +114,22 @@ async def _(request: Request, exc: ContextException):
 async def _(request: Request, exc: ValueError):
 	log_error(f'Error: {request.url.path}:', exc)
 	# error message is safe
-	return JSONResponse(str(exc), 400)
+	return JSONResponse(str(exc), 500)
 
 
 @app.exception_handler(LlmException)
 async def _(request: Request, exc: LlmException):
 	log_error(f'Llm Error: {request.url.path}:', exc)
 	# error message should be safe
-	return JSONResponse(str(exc), 400)
+	return JSONResponse(str(exc), 500)
+
+
+# todo: exception is thrown in another process
+@app.exception_handler(EmbeddingException)
+async def _(request: Request, exc: EmbeddingException):
+	log_error(f'Error occurred in an embedding request: {request.url.path}:', exc)
+	return JSONResponse('Some error occurred in the request to the embedding server, please check the logs for more info', 500)  # noqa: E501
+
 
 # guards
 

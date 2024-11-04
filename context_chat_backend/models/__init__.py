@@ -4,11 +4,9 @@ from importlib import import_module
 from langchain.llms.base import LLM
 from langchain.schema.embeddings import Embeddings
 
-_embedding_models = ["llama", "hugging_face", "instructor"]
 _llm_models = ["nc_texttotext", "llama", "hugging_face", "ctransformer"]
 
 models = {
-    "embedding": _embedding_models,
     "llm": _llm_models,
 }
 
