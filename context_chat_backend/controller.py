@@ -265,7 +265,7 @@ class Query(BaseModel):
 		return value
 
 
-def execute_query(query: Query) -> LLMOutput:
+def execute_query(query: Query, in_proc: bool = True) -> LLMOutput:
 	llm: LLM = llm_loader.load()
 	template = app.extra.get('LLM_TEMPLATE')
 	no_ctx_template = app.extra['LLM_NO_CTX_TEMPLATE']
@@ -273,31 +273,33 @@ def execute_query(query: Query) -> LLMOutput:
 	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
 
 	if query.useContext:
-		return exec_in_proc(
-			target=process_context_query,
-			args=(
-				query.userId,
-				vectordb_loader,
-				llm,
-				app_config,
-				query.query,
-				query.ctxLimit,
-				template,
-				end_separator,
-				query.scopeType,
-				query.scopeList,
-			),
+		target = process_context_query
+		args=(
+			query.userId,
+			vectordb_loader,
+			llm,
+			app_config,
+			query.query,
+			query.ctxLimit,
+			template,
+			end_separator,
+			query.scopeType,
+			query.scopeList,
 		)
-	return exec_in_proc(
-		target=process_query,
+	else:
+		target=process_query
 		args=(
 			llm,
 			app_config,
 			query.query,
 			no_ctx_template,
 			end_separator,
-		),
-	)
+		)
+
+	if in_proc:
+		return exec_in_proc(target=target, args=args)
+
+	return target(*args)  # pyright: ignore
 
 
 @app.post('/query')
@@ -309,4 +311,4 @@ def _(query: Query) -> LLMOutput:
 		return execute_query(query)
 
 	with llm_lock:
-		return execute_query(query)
+		return execute_query(query, in_proc=False)
