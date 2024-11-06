@@ -1,4 +1,3 @@
-import multiprocessing as mp
 import re
 from logging import error as log_error
 
@@ -181,8 +180,7 @@ def embed_sources(
 	vectordb_loader: VectorDBLoader,
 	config: TConfig,
 	sources: list[UploadFile],
-	result_queue: mp.Queue,
-):
+) -> bool:
 	# either not a file or a file that is allowed
 	sources_filtered = [
 		source for source in sources
@@ -197,4 +195,4 @@ def embed_sources(
 	)
 
 	vectordb = vectordb_loader.load()
-	result_queue.put(_process_sources(vectordb, config, sources_filtered))
+	return _process_sources(vectordb, config, sources_filtered)

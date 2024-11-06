@@ -1,4 +1,10 @@
+import multiprocessing as mp
+import traceback
+from collections.abc import Callable
+from functools import partial
 from logging import error as log_error
+from multiprocessing.connection import Connection
+from multiprocessing.pool import rebuild_exc  # pyright: ignore[reportAttributeAccessIssue]
 from os import getenv
 from typing import Any, TypeGuard, TypeVar
 
@@ -74,3 +80,34 @@ def update_progress(app: FastAPI, progress: int):
 		)
 	except Exception as e:
 		log_error(f'Error: Failed to update progress: {e}')
+
+
+def exception_wrap(fun: Callable | None, *args, resconn: Connection, **kwargs):
+	try:
+		if fun is None:
+			return resconn.send({ 'value': None, 'error': None })
+		resconn.send({ 'value': fun(*args, **kwargs), 'error': None })
+	except Exception as e:
+		tb = traceback.format_exc()
+		resconn.send({ 'value': None, 'error': e, 'traceback': tb })
+
+
+def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daemon=None):  # noqa: B006
+	pconn, cconn = mp.Pipe()
+	kwargs['resconn'] = cconn
+	p = mp.Process(
+		group=group,
+		target=partial(exception_wrap, target),
+		name=name,
+		args=args,
+		kwargs=kwargs,
+		daemon=daemon,
+	)
+	p.start()
+	p.join()
+
+	result = pconn.recv()
+	if result['error'] is not None:
+		raise rebuild_exc(result['error'], result['traceback'])
+
+	return result['value']

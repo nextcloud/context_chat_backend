@@ -15,13 +15,14 @@ from nc_py_api.ex_app import persistent_storage, set_handlers
 from pydantic import BaseModel, ValidationInfo, field_validator
 
 from .chain import ContextException, LLMOutput, ScopeType, embed_sources, process_context_query, process_query
+from .chain.ingest.delete import delete_by_provider, delete_by_source, delete_for_all_users
 from .config_parser import get_config
 from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, LoaderException, VectorDBLoader
 from .models import LlmException
 from .network_em import EmbeddingException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
-from .utils import JSONResponse, value_of
+from .utils import JSONResponse, exec_in_proc, value_of
 from .vectordb import BaseVectorDB, DbException
 
 # setup
@@ -175,9 +176,7 @@ def _(userId: Annotated[str, Body()], sourceNames: Annotated[list[str], Body()])
 	if len(sourceNames) == 0:
 		return JSONResponse('No sources provided', 400)
 
-	db: BaseVectorDB = vectordb_loader.load()
-	res = db.delete(userId, 'source', sourceNames)
-
+	res = exec_in_proc(target=delete_by_source, args=(vectordb_loader, userId, sourceNames))
 	if res is False:
 		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
 
@@ -192,9 +191,7 @@ def _(userId: Annotated[str, Body()], providerKey: Annotated[str, Body()]):
 	if value_of(providerKey) is None:
 		return JSONResponse('Invalid provider key provided', 400)
 
-	db: BaseVectorDB = vectordb_loader.load()
-	res = db.delete(userId, 'provider', [providerKey])
-
+	res = exec_in_proc(target=delete_by_provider, args=(vectordb_loader, userId, providerKey))
 	if res is False:
 		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
 
@@ -209,9 +206,7 @@ def _(providerKey: str = Body(embed=True)):
 	if value_of(providerKey) is None:
 		return JSONResponse('Invalid provider key provided', 400)
 
-	db: BaseVectorDB = vectordb_loader.load()
-	res = db.delete_for_all_users('provider', [providerKey])
-
+	res = exec_in_proc(target=delete_for_all_users, args=(vectordb_loader, providerKey))
 	if res is False:
 		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
 
@@ -236,14 +231,9 @@ def _(sources: list[UploadFile]):
 		return JSONResponse('Invaild/missing headers', 400)
 
 	doc_parse_semaphore.acquire(block=True, timeout=29*60)  # ~29 minutes
-
-	queue = mp.Queue()
-	p = mp.Process(target=embed_sources, args=(vectordb_loader, app.extra['CONFIG'], sources, queue))
-	p.start()
-	p.join()
-
+	result = exec_in_proc(target=embed_sources, args=(vectordb_loader, app.extra['CONFIG'], sources))
 	doc_parse_semaphore.release()
-	result = queue.get()
+
 	if not result:
 		return JSONResponse('Error: All sources were not loaded, check logs for more info', 500)
 
@@ -282,14 +272,11 @@ def execute_query(query: Query) -> LLMOutput:
 	# todo: array
 	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
 
-	queue = mp.Queue()
-
 	if query.useContext:
 		db: BaseVectorDB = vectordb_loader.load()
-		p = mp.Process(
+		return exec_in_proc(
 			target=process_context_query,
 			args=(
-				queue,
 				query.userId,
 				db,
 				llm,
@@ -302,23 +289,16 @@ def execute_query(query: Query) -> LLMOutput:
 				query.scopeList,
 			),
 		)
-	else:
-		p = mp.Process(
-			target=process_query,
-			args=(
-				queue,
-				llm,
-				app_config,
-				query.query,
-				no_ctx_template,
-				end_separator,
-			),
-		)
-
-	p.start()
-	p.join()
-
-	return queue.get()
+	return exec_in_proc(
+		target=process_query,
+		args=(
+			llm,
+			app_config,
+			query.query,
+			no_ctx_template,
+			end_separator,
+		),
+	)
 
 
 @app.post('/query')

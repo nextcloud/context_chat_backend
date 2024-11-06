@@ -1,4 +1,3 @@
-import multiprocessing as mp
 
 from langchain.llms.base import LLM
 from typing_extensions import TypedDict
@@ -21,7 +20,6 @@ class LLMOutput(TypedDict):
 
 
 def process_query(
-	result_queue: mp.Queue,
 	llm: LLM,
 	app_config: TConfig,
 	query: str,
@@ -40,11 +38,10 @@ def process_query(
 		stop=stop,
 	).strip()
 
-	result_queue.put(LLMOutput(output=output, sources=[]))
+	return LLMOutput(output=output, sources=[])
 
 
 def process_context_query(
-	result_queue: mp.Queue,
 	user_id: str,
 	vectordb: BaseVectorDB,
 	llm: LLM,
@@ -75,4 +72,4 @@ def process_context_query(
 	).strip()
 	unique_sources: list[str] = list({source for d in context_docs if (source := d.metadata.get('source'))})
 
-	result_queue.put(LLMOutput(output=output, sources=unique_sources))
+	return LLMOutput(output=output, sources=unique_sources)
