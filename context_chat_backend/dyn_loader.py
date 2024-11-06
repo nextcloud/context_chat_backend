@@ -1,28 +1,25 @@
-import gc
-from abc import ABC, abstractmethod
-from time import time
+#ruff: noqa: I001
 
+import gc
+import multiprocessing as mp
+import os
+import subprocess
+from abc import ABC, abstractmethod
+from time import sleep, time
+from typing import Any
+
+import httpx
+import psutil
 import torch
 from fastapi import FastAPI
 from langchain.llms.base import LLM
-from langchain.schema.embeddings import Embeddings
+from main_em import signal
 
 from .config_parser import TConfig
 from .models import init_model
+from .network_em import NetworkEmbeddings
 from .vectordb import get_vector_db
 from .vectordb.base import BaseVectorDB, DbException
-
-"""
-app.extra params:
-- EMBEDDING_MODEL: Embeddings
-- VECTOR_DB: BaseVectorDB
-- LLM_MODEL: LLM
-- LLM_TEMPLATE: str
-- LLM_NO_CTX_TEMPLATE: str
-- LLM_END_SEPARATOR: str
-- LLM_LAST_ACCESSED: timestamp
-- EM_LAST_ACCESSED: timestamp
-"""
 
 
 class LoaderException(Exception):
@@ -30,74 +27,105 @@ class LoaderException(Exception):
 
 
 class Loader(ABC):
-	def __init__(self, app: FastAPI, config: TConfig) -> None:
-		self.app = app
-		self.config = config
-
 	@abstractmethod
-	def load(self) -> BaseVectorDB | Embeddings | LLM:
+	def load(self) -> Any:
 		...
 
 	@abstractmethod
 	def offload(self):
 		...
 
+pid = mp.Value('i', 0)
+
+class EmbeddingModelLoader(Loader):
+	def __init__(self, config: TConfig):
+		self.config = config
+		# todo: temp measure
+		self.logfile = open('embedding_model.log', 'a+')
+
+	def load(self):
+		global pid
+
+		emconf = self.config.embedding
+
+		# start the embedding server if workers are > 0
+		if emconf.workers > 0:
+			# compare with None, as PID can be 0, you never know
+			if pid.value > 0 and psutil.pid_exists(pid.value):
+				return
+
+			proc = subprocess.Popen(
+				['./main_em.py'],  # noqa: S603
+				stdout=self.logfile,
+				stderr=self.logfile,
+				stdin=None,
+				close_fds=True,
+				env=os.environ,
+			)
+			pid.value = proc.pid
+
+		# poll for heartbeat
+		try_ = 0
+		while try_ < 20:
+			with httpx.Client() as client:
+				try:
+					# test the server is up
+					response = client.post(
+						f'{emconf.protocol}://{emconf.host}:{emconf.port}/v1/embeddings',
+						json={'input': 'hello'},
+						timeout=20, # seconds
+					)
+					if response.status_code == 200:
+						return
+				except Exception:
+					print(f'Try {try_} failed in exception')
+				try_ += 1
+				sleep(3)
+
+		print('Error: failed to start the embedding server', flush=True)
+		os.kill(os.getpid(), signal.SIGTERM)
+
+	def offload(self):
+		global pid
+		if pid.value > 0 and psutil.pid_exists(pid.value):
+			os.kill(pid.value, signal.SIGTERM)
+		self.logfile.close()
+
 
 class VectorDBLoader(Loader):
-	def load(self) -> BaseVectorDB:
-		if self.app.extra.get('VECTOR_DB') is not None:
-			return self.app.extra['VECTOR_DB']
+	def __init__(self, em_loader: EmbeddingModelLoader, config: TConfig) -> None:
+		self.config = config
+		self.em_loader = em_loader
 
+	def load(self) -> BaseVectorDB:
 		try:
-			client_klass = get_vector_db(self.config['vectordb'][0])
+			client_klass = get_vector_db(self.config.vectordb[0])
 		except (AssertionError, ImportError) as e:
 			raise LoaderException() from e
 
 		try:
-			embedding_model = EmbeddingModelLoader(self.app, self.config).load()
-			self.app.extra['VECTOR_DB'] = client_klass(embedding_model, **self.config['vectordb'][1])  # type: ignore
+			self.em_loader.load()
+			embedding_model = NetworkEmbeddings(app_config=self.config)
+			return client_klass(embedding_model, **self.config.vectordb[1])  # type: ignore
 		except DbException as e:
 			raise LoaderException() from e
 
-		return self.app.extra['VECTOR_DB']
-
 	def offload(self) -> None:
-		if self.app.extra.get('VECTOR_DB') is not None:
-			del self.app.extra['VECTOR_DB']
-		gc.collect()
-
-
-class EmbeddingModelLoader(Loader):
-	def load(self) -> Embeddings:
-		if self.app.extra.get('EMBEDDING_MODEL') is not None:
-			self.app.extra['EM_LAST_ACCESSED'] = time()
-			return self.app.extra['EMBEDDING_MODEL']
-
-		try:
-			model = init_model('embedding', self.config['embedding'])
-		except AssertionError as e:
-			raise LoaderException() from e
-
-		if not isinstance(model, Embeddings):
-			raise LoaderException(f'Error: {model} does not implement "embedding" type or has returned an invalid object')  # noqa: E501
-
-		self.app.extra['EMBEDDING_MODEL'] = model
-		self.app.extra['EM_LAST_ACCESSED'] = time()
-		return model
-
-	def offload(self) -> None:
-		if self.app.extra.get('EMBEDDING_MODEL') is not None:
-			del self.app.extra['EMBEDDING_MODEL']
+		self.em_loader.offload()
 		clear_cache()
 
 
 class LLMModelLoader(Loader):
+	def __init__(self, app: FastAPI, config: TConfig) -> None:
+		self.config = config
+		self.app = app
+
 	def load(self) -> LLM:
 		if self.app.extra.get('LLM_MODEL') is not None:
 			self.app.extra['LLM_LAST_ACCESSED'] = time()
 			return self.app.extra['LLM_MODEL']
 
-		llm_name, llm_config = self.config['llm']
+		llm_name, llm_config = self.config.llm
 		self.app.extra['LLM_TEMPLATE'] = llm_config.pop('template', '')
 		self.app.extra['LLM_NO_CTX_TEMPLATE'] = llm_config.pop('no_ctx_template', '')
 		self.app.extra['LLM_END_SEPARATOR'] = llm_config.pop('end_separator', '')

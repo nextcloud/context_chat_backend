@@ -1,18 +1,17 @@
 import re
-import threading
 from logging import error as log_error
 
 from fastapi.datastructures import UploadFile
 from langchain.schema import Document
 
 from ...config_parser import TConfig
+from ...dyn_loader import VectorDBLoader
 from ...utils import not_none, to_int
 from ...vectordb import BaseVectorDB
 from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
 from .mimetype_list import SUPPORTED_MIMETYPES
 
-embed_lock = threading.Lock()
 
 def _allowed_file(file: UploadFile) -> bool:
 	return file.headers.get('type', default='') in SUPPORTED_MIMETYPES
@@ -72,6 +71,7 @@ def _sources_to_documents(sources: list[UploadFile]) -> dict[str, list[Document]
 	documents = {}
 
 	for source in sources:
+		print('processing source:', source.filename, flush=True)
 		user_id = source.headers.get('userId')
 		if user_id is None:
 			log_error(f'userId not found in headers for source: {source.filename}')
@@ -81,6 +81,8 @@ def _sources_to_documents(sources: list[UploadFile]) -> dict[str, list[Document]
 		content = decode_source(source)
 		if content is None or content == '':
 			continue
+
+		print('decoded non empty source:', source.filename, flush=True)
 
 		metadata = {
 			'source': source.filename,
@@ -114,17 +116,26 @@ def _bucket_by_type(documents: list[Document]) -> dict[str, list[Document]]:
 	return bucketed_documents
 
 
-def _process_sources(vectordb: BaseVectorDB, config: TConfig, sources: list[UploadFile]) -> bool:
+def _process_sources(
+	vectordb: BaseVectorDB,
+	config: TConfig,
+	sources: list[UploadFile],
+) -> bool:
 	filtered_sources = _filter_sources(sources[0].headers['userId'], vectordb, sources)
 
 	if len(filtered_sources) == 0:
 		# no new sources to embed
+		print('Filtered all sources, nothing to embed', flush=True)
 		return True
 
+	print('Filtered sources:', [source.filename for source in filtered_sources], flush=True)
 	ddocuments: dict[str, list[Document]] = _sources_to_documents(filtered_sources)
+
+	print('Converted sources to documents')
 
 	if len(ddocuments.keys()) == 0:
 		# document(s) were empty, not an error
+		print('All documents were found empty after being processed', flush=True)
 		return True
 
 	success = True
@@ -135,7 +146,7 @@ def _process_sources(vectordb: BaseVectorDB, config: TConfig, sources: list[Uplo
 		type_bucketed_docs = _bucket_by_type(documents)
 
 		for _type, _docs in type_bucketed_docs.items():
-			text_splitter = get_splitter_for(config['embedding_chunk_size'], _type)
+			text_splitter = get_splitter_for(config.embedding_chunk_size, _type)
 			split_docs = text_splitter.split_documents(_docs)
 			split_documents.extend(split_docs)
 
@@ -150,13 +161,15 @@ def _process_sources(vectordb: BaseVectorDB, config: TConfig, sources: list[Uplo
 		# filter out empty documents
 		split_documents = list(filter(lambda doc: doc.page_content != '', split_documents))
 
+		print('split documents count:', len(split_documents), flush=True)
+
 		if len(split_documents) == 0:
 			continue
 
-		with embed_lock:
-			user_client = vectordb.get_user_client(user_id)
-			doc_ids = user_client.add_documents(split_documents)
+		user_client = vectordb.get_user_client(user_id)
+		doc_ids = user_client.add_documents(split_documents)
 
+		print('Added documents to vectordb', flush=True)
 		# does not do per document error checking
 		success &= len(split_documents) == len(doc_ids)
 
@@ -164,7 +177,7 @@ def _process_sources(vectordb: BaseVectorDB, config: TConfig, sources: list[Uplo
 
 
 def embed_sources(
-	vectordb: BaseVectorDB,
+	vectordb_loader: VectorDBLoader,
 	config: TConfig,
 	sources: list[UploadFile],
 ) -> bool:
@@ -177,7 +190,9 @@ def embed_sources(
 
 	print(
 		'Embedding sources:\n' +
-		'\n'.join([f'{source.filename} ({source.headers.get("title", "")})' for source in sources_filtered]),
+		'\n'.join([f'{source.filename} ({source.headers["title"]})' for source in sources_filtered]),
 		flush=True,
 	)
+
+	vectordb = vectordb_loader.load()
 	return _process_sources(vectordb, config, sources_filtered)

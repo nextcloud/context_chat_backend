@@ -35,7 +35,7 @@ COPY requirements.txt .
 RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel
 RUN python3 -m pip install --no-cache-dir https://github.com/abetlen/llama-cpp-python/releases/download/v0.2.84-cu122/llama_cpp_python-0.2.84-cp311-cp311-linux_x86_64.whl
 RUN sed -i '/llama_cpp_python/d' requirements.txt
-RUN python3 -m pip install --no-cache-dir --no-deps -r requirements.txt
+RUN python3 -m pip install --no-cache-dir -r requirements.txt && python3 -m pip cache purge
 
 # Copy application files
 COPY context_chat_backend context_chat_backend
