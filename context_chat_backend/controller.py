@@ -23,7 +23,7 @@ from .network_em import EmbeddingException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
 from .utils import JSONResponse, exec_in_proc, value_of
-from .vectordb import BaseVectorDB, DbException
+from .vectordb import DbException
 
 # setup
 
@@ -273,12 +273,11 @@ def execute_query(query: Query) -> LLMOutput:
 	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
 
 	if query.useContext:
-		db: BaseVectorDB = vectordb_loader.load()
 		return exec_in_proc(
 			target=process_context_query,
 			args=(
 				query.userId,
-				db,
+				vectordb_loader,
 				llm,
 				app_config,
 				query.query,

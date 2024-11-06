@@ -3,7 +3,7 @@ from langchain.llms.base import LLM
 from typing_extensions import TypedDict
 
 from ..config_parser import TConfig
-from ..vectordb import BaseVectorDB
+from ..dyn_loader import VectorDBLoader
 from .context import ContextException, ScopeType, get_context_chunks, get_context_docs
 from .query_proc import get_pruned_query
 
@@ -43,7 +43,7 @@ def process_query(
 
 def process_context_query(
 	user_id: str,
-	vectordb: BaseVectorDB,
+	vectordb_loader: VectorDBLoader,
 	llm: LLM,
 	app_config: TConfig,
 	query: str,
@@ -59,7 +59,8 @@ def process_context_query(
 	ValueError
 		If the context length is too small to fit the query
 	"""
-	context_docs = get_context_docs(user_id, query, vectordb, ctx_limit, scope_type, scope_list)
+	db = vectordb_loader.load()
+	context_docs = get_context_docs(user_id, query, db, ctx_limit, scope_type, scope_list)
 	if len(context_docs) == 0:
 		raise ContextException('No documents retrieved, please index a few documents first to use context-aware mode')
 
