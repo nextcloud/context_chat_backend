@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 4.0.0-beta - 2024-11-07
+
+Documents will be reindexed in this version. They will be reindexed again in the stable 4.0.0 release.
+This version is not recommended for production use.
+
+### Fixed
+- Better error and context handling (#83) @kyteinsky
+- Remove null bytes out of document texts (#86) @kyteinsky
+- Add title to header validation in load docs (#87) @kyteinsky
+- Memory leak fixes and marker tests (#89) @marcelklehr
+- Download model in background task (#96) @kyteinsky @marcelklehr
+- Isolate doc ingestion with a llama http server (#90) @kyteinsky
+
+### Added
+- Add postgresql vectordb support (#84) @kyteinsky
+- Use multilingual embedding model (#81) @marcelklehr
+- Install postgresql in the docker container (#95) @kyteinsky
+
+
 ## 3.1.0 - 2024-09-30
 
 ### Changed
