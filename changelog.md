@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 4.0.0-beta2 - 2024-11-11
+
+### Fixed
+
+- reset the vector db in favour of a new embedding model (#98) @kyteinsky
+
+
 ## 4.0.0-beta - 2024-11-07
 
 Documents will be reindexed in this version. They will be reindexed again in the stable 4.0.0 release.
