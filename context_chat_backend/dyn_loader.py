@@ -3,6 +3,7 @@
 import gc
 import multiprocessing as mp
 import os
+import signal
 import subprocess
 from abc import ABC, abstractmethod
 from time import sleep, time
@@ -13,7 +14,6 @@ import psutil
 import torch
 from fastapi import FastAPI
 from langchain.llms.base import LLM
-from main_em import signal
 
 from .config_parser import TConfig
 from .models import init_model
