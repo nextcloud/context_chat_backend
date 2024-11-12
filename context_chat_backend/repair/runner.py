@@ -9,16 +9,16 @@ def get_previous_version(version_info_path: str) -> tuple[int, bool]:
 	'''
 	'+' at the end of the patch version indicates that repairs have been run.
 	'''
-	if os.path.exists(version_info_path):
-		with open(version_info_path) as f:
-			version_string = f.read()
-	else:
-		version_string = os.environ['APP_VERSION']
+	if not os.path.exists(version_info_path):
+		return (0, False)
+
+	with open(version_info_path) as f:
+		version_string = f.read()
 
 	major, minor, patch = version_string.split('.')
-	current_repairs_run = patch.endswith('+') and version_string.rstrip('+') == os.environ['APP_VERSION']
+	repairs_pending = not (patch.endswith('+') and version_string.rstrip('+') == os.environ['APP_VERSION'])
 
-	return (int(major + minor.zfill(3)), current_repairs_run)
+	return (int(major + minor.zfill(3)), repairs_pending)
 
 
 def main():
@@ -35,10 +35,10 @@ def main():
 	repair_filenames = [f for f in all_filenames if f.startswith('repair') and f.endswith('.py')]
 	repair_filenames.sort(reverse=True)
 
-	(previous_app_version, current_repairs_run) = get_previous_version(version_info_path)
+	(previous_app_version, repairs_pending) = get_previous_version(version_info_path)
 
-	if current_repairs_run:
-		print('Repairs have already been run.', flush=True)
+	if not repairs_pending:
+		print('No repairs are required.', flush=True)
 		return
 
 	for repair_filename in repair_filenames:
