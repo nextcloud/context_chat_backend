@@ -1,6 +1,7 @@
+from typing import Literal, TypedDict
+
 import httpx
 from langchain_core.embeddings import Embeddings
-from llama_cpp.llama_types import CreateEmbeddingResponse
 from pydantic import BaseModel
 
 from .config_parser import TConfig
@@ -8,6 +9,26 @@ from .config_parser import TConfig
 
 class EmbeddingException(Exception):
 	...
+
+
+# Copied from llama_cpp/llama_types.py
+
+class EmbeddingUsage(TypedDict):
+	prompt_tokens: int
+	total_tokens: int
+
+
+class Embedding(TypedDict):
+	index: int
+	object: str
+	embedding: list[float] | list[list[float]]
+
+
+class CreateEmbeddingResponse(TypedDict):
+	object: Literal["list"]
+	model: str
+	data: list[Embedding]
+	usage: EmbeddingUsage
 
 
 class NetworkEmbeddings(Embeddings, BaseModel):
