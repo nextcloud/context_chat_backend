@@ -40,6 +40,7 @@ RUN python3 -m pip install --no-cache-dir -r requirements.txt && python3 -m pip 
 # Copy application files
 COPY context_chat_backend context_chat_backend
 COPY main.py .
+COPY main_em.py .
 COPY config.?pu.yaml .
 COPY hwdetect.sh .
 

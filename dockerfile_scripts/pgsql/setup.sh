@@ -7,6 +7,12 @@ set -e
 # Environment variables
 source "$(dirname $(realpath $0))/env"
 
+if [ x"$1" == "xstop" ]; then
+    echo -n Stopping PostgreSQL...
+    sudo -u postgres ${PG_BIN}/pg_ctl -D "$DATA_DIR" -l "${DATA_DIR}/logfile" -o "-p ${PG_PORT}" stop
+    exit 0
+fi
+
 # Check if EXTERNAL_DB is set
 if [ -n "${EXTERNAL_DB}" ]; then
     CCB_DB_URL="${EXTERNAL_DB}"
@@ -33,7 +39,7 @@ if [ ! -d "$DATA_DIR/base" ]; then
 fi
 
 echo "Starting PostgreSQL..."
-sudo -u postgres ${PG_BIN}/pg_ctl -D "$DATA_DIR" -l "${DATA_DIR}/logfile" start
+sudo -u postgres ${PG_BIN}/pg_ctl -D "$DATA_DIR" -l "${DATA_DIR}/logfile" -o "-p ${PG_PORT}" start
 
 echo "Waiting for PostgreSQL to start..."
 until sudo -u postgres ${PG_SQL} -c "SELECT 1" > /dev/null 2>&1; do
@@ -60,5 +66,5 @@ sudo -u postgres $PG_SQL -c "CREATE DATABASE $CCB_DB_NAME OWNER $CCB_DB_USER;"
 sudo -u postgres $PG_SQL -c "CREATE EXTENSION IF NOT EXISTS vector"
 
 if ! grep -q "^export CCB_DB_URL=" /etc/environment; then
-    echo "export CCB_DB_URL=\"postgresql+psycopg://$CCB_DB_USER:$CCB_DB_PASS@localhost:5432/$CCB_DB_NAME\"" >> /etc/environment
+    echo "export CCB_DB_URL=\"postgresql+psycopg://$CCB_DB_USER:$CCB_DB_PASS@localhost:${PG_PORT}/$CCB_DB_NAME\"" >> /etc/environment
 fi
