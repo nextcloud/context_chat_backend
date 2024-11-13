@@ -1,6 +1,6 @@
 [project]
 name = "context_chat_backend"
-version = "4.0.0-beta3"
+version = "4.0.0-beta4"
 requires-python = ">=3.11"
 authors = [
 	{ name = "Anupam Kumar", email = "kyteinsky@gmail.com" }
