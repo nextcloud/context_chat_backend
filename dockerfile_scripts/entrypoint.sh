@@ -2,8 +2,10 @@
 
 set -e
 
-source /etc/environment
-"$(dirname $(realpath $0))/pgsql/setup.sh"
-source /etc/environment
+source /etc/environment;
+"$(dirname $(realpath $0))/pgsql/setup.sh";
+source /etc/environment;
 
-python3 -u "$(dirname $(dirname $(realpath $0)))/main.py"
+python3 -u ./main.py;
+
+"$(dirname $(realpath $0))/pgsql/setup.sh" stop
