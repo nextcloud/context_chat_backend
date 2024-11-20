@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 4.0.0-beta5 - 2024-11-20
+
+### Fixed
+
+- selective context args (#105) @kyteinsky
+- print the original traceback of the exception (#106) @kyteinsky
+
+
 ## 4.0.0-beta4 - 2024-11-14
 
 ### Fixed
