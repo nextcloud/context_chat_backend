@@ -4,7 +4,6 @@ from collections.abc import Callable
 from functools import partial
 from logging import error as log_error
 from multiprocessing.connection import Connection
-from multiprocessing.pool import rebuild_exc  # pyright: ignore[reportAttributeAccessIssue]
 from os import getenv
 from typing import Any, TypeGuard, TypeVar
 
@@ -108,6 +107,7 @@ def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daem
 
 	result = pconn.recv()
 	if result['error'] is not None:
-		raise rebuild_exc(result['error'], result['traceback'])
+		print('original traceback:', result['traceback'], flush=True)
+		raise result['error']
 
 	return result['value']
