@@ -281,10 +281,10 @@ def execute_query(query: Query, in_proc: bool = True) -> LLMOutput:
 			app_config,
 			query.query,
 			query.ctxLimit,
-			template,
-			end_separator,
 			query.scopeType,
 			query.scopeList,
+			template,
+			end_separator,
 		)
 	else:
 		target=process_query
