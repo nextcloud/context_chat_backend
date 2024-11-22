@@ -145,10 +145,7 @@ class VectorDB(BaseVectorDB):
 				.filter(client.EmbeddingStore.cmetadata[metadata_key].in_([sa.cast(f'"{v}"', JSONB) for v in values]))
 			)
 
-			result = session.execute(stmt)
+			session.execute(stmt)
 			session.commit()
-
-			if result.rowcount == 0:
-				return False
 
 		return True
