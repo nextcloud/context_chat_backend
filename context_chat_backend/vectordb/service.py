@@ -1,6 +1,6 @@
 from ..dyn_loader import VectorDBLoader
-from . import DbException
-from .base import BaseVectorDB, UpdateAccessOp
+from .base import BaseVectorDB
+from .types import DbException, UpdateAccessOp
 
 
 # todo: return source ids that were successfully deleted

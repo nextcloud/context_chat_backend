@@ -1,17 +1,7 @@
-from enum import Enum
-
 from langchain.schema import Document
 
 from ..vectordb import BaseVectorDB
-
-
-class ScopeType(Enum):
-	PROVIDER = 'provider'
-	SOURCE = 'source'
-
-
-class ContextException(Exception):
-	...
+from .types import ContextException, ScopeType
 
 
 def get_context_docs(

@@ -1,22 +1,16 @@
-
 from langchain.llms.base import LLM
-from typing_extensions import TypedDict
 
-from ..config_parser import TConfig
 from ..dyn_loader import VectorDBLoader
-from .context import ContextException, ScopeType, get_context_chunks, get_context_docs
+from ..types import TConfig
+from .context import get_context_chunks, get_context_docs
 from .query_proc import get_pruned_query
+from .types import ContextException, LLMOutput, ScopeType
 
 _LLM_TEMPLATE = '''Answer based only on this context and do not add any imaginative details. Make sure to use the same language as the question in your answer.
 {context}
 
 {question}
 ''' # noqa: E501
-
-
-class LLMOutput(TypedDict):
-	output: str
-	sources: list[str]
 
 
 def process_query(

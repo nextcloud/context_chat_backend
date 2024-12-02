@@ -1,3 +1,7 @@
+from .chain.types import ContextException, LLMOutput, ScopeType # isort:skip
+from .vectordb.types import DbException, UpdateAccessOp # isort:skip
+from .types import LoaderException, EmbeddingException # isort:skip
+
 import multiprocessing as mp
 import os
 import threading
@@ -14,15 +18,13 @@ from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import persistent_storage, set_handlers
 from pydantic import BaseModel, ValidationInfo, field_validator
 
-from .chain import ContextException, LLMOutput, ScopeType, embed_sources, process_context_query, process_query
+from .chain import embed_sources, process_context_query, process_query
 from .config_parser import get_config
-from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, LoaderException, VectorDBLoader
+from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, VectorDBLoader
 from .models import LlmException
-from .network_em import EmbeddingException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
 from .utils import JSONResponse, exec_in_proc, is_valid_source_id, value_of
-from .vectordb import DbException, UpdateAccessOp
 from .vectordb.service import decl_update_access, delete_by_provider, delete_by_source, update_access
 
 # setup

@@ -4,12 +4,7 @@ import httpx
 from langchain_core.embeddings import Embeddings
 from pydantic import BaseModel
 
-from .config_parser import TConfig
-
-
-class EmbeddingException(Exception):
-	...
-
+from .types import EmbeddingException, TConfig
 
 # Copied from llama_cpp/llama_types.py
 

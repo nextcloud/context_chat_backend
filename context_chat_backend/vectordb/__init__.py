@@ -1,6 +1,7 @@
 from importlib import import_module
 
-from .base import BaseVectorDB, DbException, MetadataFilter, TSearchDict, TSearchObject, UpdateAccessOp
+from .base import BaseVectorDB
+from .types import DbException, MetadataFilter, UpdateAccessOp
 
 vector_dbs = ['pgvector']
 
@@ -8,8 +9,6 @@ __all__ = [
 	'BaseVectorDB',
 	'DbException',
 	'MetadataFilter',
-	'TSearchDict',
-	'TSearchObject',
 	'UpdateAccessOp',
 	'get_vector_db',
 	'vector_dbs',

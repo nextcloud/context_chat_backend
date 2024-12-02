@@ -3,11 +3,12 @@ import re
 from fastapi.datastructures import UploadFile
 from langchain.schema import Document
 
-from ...config_parser import TConfig
 from ...dyn_loader import VectorDBLoader
+from ...types import TConfig
 from ...utils import is_valid_source_id, to_int
-from ...vectordb import BaseVectorDB, DbException
-from . import InDocument
+from ...vectordb import BaseVectorDB
+from ...vectordb.types import DbException
+from ..types import InDocument
 from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
 from .mimetype_list import SUPPORTED_MIMETYPES

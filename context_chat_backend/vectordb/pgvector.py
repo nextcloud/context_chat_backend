@@ -11,9 +11,9 @@ from langchain.vectorstores import VectorStore
 from langchain_core.embeddings import Embeddings
 from langchain_postgres.vectorstores import Base, PGVector
 
-from ..chain.context import ScopeType
-from ..chain.ingest import InDocument
-from .base import BaseVectorDB, DbException, MetadataFilter, UpdateAccessOp
+from ..chain.types import InDocument, ScopeType
+from .base import BaseVectorDB
+from .types import DbException, MetadataFilter, UpdateAccessOp
 
 load_dotenv()
 

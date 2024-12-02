@@ -11,8 +11,8 @@ from typing import Any, TypeGuard, TypeVar
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse as FastAPIJSONResponse
 
-from .config_parser import TConfig
 from .ocs_utils import ocs_call
+from .types import TConfig
 
 T = TypeVar('T')
 

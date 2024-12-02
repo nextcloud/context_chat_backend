@@ -1,35 +1,13 @@
 from abc import ABC, abstractmethod
-from enum import Enum
-from typing import Any, TypedDict
+from typing import Any
 
 from fastapi import UploadFile
 from langchain.schema import Document
 from langchain.schema.embeddings import Embeddings
 from langchain.schema.vectorstore import VectorStore
 
-from ..chain.context import ScopeType
-from ..chain.ingest import InDocument
-
-
-class DbException(Exception):
-	...
-
-
-class TSearchObject(TypedDict):
-	id: str
-	modified: str
-
-TSearchDict = dict[str, TSearchObject]
-
-
-class MetadataFilter(TypedDict):
-	metadata_key: str
-	values: list[str]
-
-
-class UpdateAccessOp(Enum):
-	allow = 'allow'
-	deny = 'deny'
+from ..chain.types import InDocument, ScopeType
+from .types import MetadataFilter, UpdateAccessOp
 
 
 class BaseVectorDB(ABC):
