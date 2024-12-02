@@ -1,5 +1,6 @@
 from .ingest import embed_sources
-from .one_shot import ContextException, LLMOutput, ScopeType, process_context_query, process_query
+from .one_shot import process_context_query, process_query
+from .types import ContextException, LLMOutput, ScopeType
 
 __all__ = [
 	'ContextException',

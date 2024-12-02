@@ -1,4 +1,5 @@
 import multiprocessing as mp
+import re
 import traceback
 from collections.abc import Callable
 from functools import partial
@@ -10,8 +11,8 @@ from typing import Any, TypeGuard, TypeVar
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse as FastAPIJSONResponse
 
-from .config_parser import TConfig
 from .ocs_utils import ocs_call
+from .types import TConfig
 
 T = TypeVar('T')
 
@@ -111,3 +112,7 @@ def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daem
 		raise result['error']
 
 	return result['value']
+
+
+def is_valid_source_id(source_id: str) -> bool:
+	return re.match(r'^[a-zA-Z0-9_-]+__[a-zA-Z0-9_-]+: \d+$', source_id) is not None
