@@ -15,15 +15,15 @@ from nc_py_api.ex_app import persistent_storage, set_handlers
 from pydantic import BaseModel, ValidationInfo, field_validator
 
 from .chain import ContextException, LLMOutput, ScopeType, embed_sources, process_context_query, process_query
-from .chain.ingest.delete import delete_by_provider, delete_by_source, delete_for_all_users
 from .config_parser import get_config
 from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, LoaderException, VectorDBLoader
 from .models import LlmException
 from .network_em import EmbeddingException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
-from .utils import JSONResponse, exec_in_proc, value_of
-from .vectordb import DbException
+from .utils import JSONResponse, exec_in_proc, is_valid_source_id, value_of
+from .vectordb import DbException, UpdateAccessOp
+from .vectordb.service import decl_update_access, delete_by_provider, delete_by_source, update_access
 
 # setup
 
@@ -166,39 +166,61 @@ def _():
 	return JSONResponse(content={'enabled': app_enabled.is_set()}, status_code=200)
 
 
+@app.post('/updateAccessDeclarative')
+@enabled_guard(app)
+def _(
+	op: Annotated[UpdateAccessOp, Body()],
+	user_ids: Annotated[list[str], Body()],
+	source_id: Annotated[str, Body()],
+):
+	if len(user_ids) == 0:
+		return JSONResponse('Invalid list of user ids', 400)
+
+	if is_valid_source_id(source_id):
+		return JSONResponse('Invalid source id', 400)
+
+	exec_in_proc(target=decl_update_access, args=(vectordb_loader, user_ids, source_id))
+
+	return JSONResponse('Access updated')
+
+
+@app.post('/updateAccess')
+@enabled_guard(app)
+def _(
+	op: Annotated[UpdateAccessOp, Body()],
+	user_id: Annotated[str, Body()],
+	source_id: Annotated[str, Body()],
+):
+	if not value_of(user_id):
+		return JSONResponse('Invalid user id', 400)
+
+	if is_valid_source_id(source_id):
+		return JSONResponse('Invalid source id', 400)
+
+	exec_in_proc(target=update_access, args=(vectordb_loader, op, user_id, source_id))
+
+	return JSONResponse('Access updated')
+
+
+# todo: update call in php to not include user_ids
 @app.post('/deleteSources')
 @enabled_guard(app)
-def _(userId: Annotated[str, Body()], sourceNames: Annotated[list[str], Body()]):
-	print('Delete sources request:', userId, sourceNames)
+def _(sourceNames: Annotated[list[str], Body()]):
+	print('Delete sources request:', sourceNames)
 
 	sourceNames = [source.strip() for source in sourceNames if source.strip() != '']
 
 	if len(sourceNames) == 0:
 		return JSONResponse('No sources provided', 400)
 
-	res = exec_in_proc(target=delete_by_source, args=(vectordb_loader, userId, sourceNames))
+	res = exec_in_proc(target=delete_by_source, args=(vectordb_loader, sourceNames))
 	if res is False:
 		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
 
 	return JSONResponse('All valid sources deleted')
 
 
-@app.post('/deleteSourcesByProvider')
-@enabled_guard(app)
-def _(userId: Annotated[str, Body()], providerKey: Annotated[str, Body()]):
-	print('Delete sources by provider request:', userId, providerKey)
-
-	if value_of(providerKey) is None:
-		return JSONResponse('Invalid provider key provided', 400)
-
-	res = exec_in_proc(target=delete_by_provider, args=(vectordb_loader, userId, providerKey))
-	if res is False:
-		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
-
-	return JSONResponse('All valid sources deleted')
-
-
-@app.post('/deleteSourcesByProviderForAllUsers')
+@app.post('/deleteProvider')
 @enabled_guard(app)
 def _(providerKey: str = Body(embed=True)):
 	print('Delete sources by provider for all users request:', providerKey)
@@ -206,9 +228,7 @@ def _(providerKey: str = Body(embed=True)):
 	if value_of(providerKey) is None:
 		return JSONResponse('Invalid provider key provided', 400)
 
-	res = exec_in_proc(target=delete_for_all_users, args=(vectordb_loader, providerKey))
-	if res is False:
-		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
+	exec_in_proc(target=delete_by_provider, args=(vectordb_loader, providerKey))
 
 	return JSONResponse('All valid sources deleted')
 
@@ -219,25 +239,33 @@ def _(sources: list[UploadFile]):
 	if len(sources) == 0:
 		return JSONResponse('No sources provided', 400)
 
-	# TODO: headers validation using pydantic
-	if not (
-		value_of(source.headers.get('userId'))
-		and value_of(source.headers.get('title'))
-		and value_of(source.headers.get('type'))
-		and value_of(source.headers.get('modified'))
-		and value_of(source.headers.get('provider'))
-		for source in sources
-	):
-		return JSONResponse('Invaild/missing headers', 400)
+	for source in sources:
+		if not (
+			value_of(source.headers.get('userIds'))
+			and value_of(source.headers.get('title'))
+			and value_of(source.headers.get('type'))
+			and value_of(source.headers.get('modified'))
+			and value_of(source.headers.get('provider'))
+		):
+			return JSONResponse(f'Invaild/missing headers for: {source.filename}', 400)
+
+		if not value_of(source.filename):
+			return JSONResponse(f'Invalid source filename for: {source.headers.get("title")}', 400)
 
 	doc_parse_semaphore.acquire(block=True, timeout=29*60)  # ~29 minutes
-	result = exec_in_proc(target=embed_sources, args=(vectordb_loader, app.extra['CONFIG'], sources))
+	added_sources = exec_in_proc(target=embed_sources, args=(vectordb_loader, app.extra['CONFIG'], sources))
 	doc_parse_semaphore.release()
 
-	if not result:
-		return JSONResponse('Error: All sources were not loaded, check logs for more info', 500)
+	if len(added_sources) != len(sources):
+		print(
+			'Error: All sources were not loaded.'
+			'Successfully loaded:', len(added_sources),
+			'/', len(sources),
+			'\nSuccessful sources:', added_sources,
+			flush=True,
+		)
 
-	return JSONResponse('All sources loaded')
+	return JSONResponse({'loaded_sources': added_sources})
 
 
 class Query(BaseModel):

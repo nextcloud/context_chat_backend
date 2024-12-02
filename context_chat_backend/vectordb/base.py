@@ -1,9 +1,14 @@
 from abc import ABC, abstractmethod
-from logging import error as log_error
+from enum import Enum
 from typing import Any, TypedDict
 
+from fastapi import UploadFile
+from langchain.schema import Document
 from langchain.schema.embeddings import Embeddings
 from langchain.schema.vectorstore import VectorStore
+
+from ..chain.context import ScopeType
+from ..chain.ingest import InDocument
 
 
 class DbException(Exception):
@@ -20,6 +25,11 @@ TSearchDict = dict[str, TSearchObject]
 class MetadataFilter(TypedDict):
 	metadata_key: str
 	values: list[str]
+
+
+class UpdateAccessOp(Enum):
+	allow = 'allow'
+	deny = 'deny'
 
 
 class BaseVectorDB(ABC):
@@ -51,20 +61,12 @@ class BaseVectorDB(ABC):
 		'''
 
 	@abstractmethod
-	def get_user_client(
-			self,
-			user_id: str,
-			embedding: Embeddings | None = None  # Use this embedding if not None or use global embedding
-		) -> VectorStore:
+	def get_instance(self) -> VectorStore:
 		'''
-		Creates and returns the langchain vectordb client object for the given user_id.
+		Creates and returns the langchain vectordb client object.
 
 		Args
 		----
-		user_id: str
-			User ID for which to create the client object.
-		embedding: Embeddings | None
-			Embeddings object to use for embedding documents.
 
 		Returns
 		-------
@@ -77,22 +79,19 @@ class BaseVectorDB(ABC):
 		'''
 
 	@abstractmethod
-	def setup_schema(self, user_id: str) -> None:
+	def add_indocuments(self, indocuments: list[InDocument]) -> list[str]:
 		'''
-		Sets up the schema for the VectorDB
+		Adds the given indocuments to the vectordb and updates the docs + access tables.
 
 		Args
 		----
-		user_id: str
-			User ID for which to setup the schema.
+		indocuments: list[InDocument]
+			List of InDocument objects to add.
 
 		Returns
 		-------
-		None
-
-		Raises
-		------
-		DbException
+		list[str]
+			List of source ids that were successfully added.
 		'''
 
 	@abstractmethod
@@ -112,33 +111,45 @@ class BaseVectorDB(ABC):
 		'''
 
 	@abstractmethod
-	def get_objects_from_metadata(
+	def sources_to_embed(
 		self,
-		user_id: str,
-		metadata_key: str,
-		values: list[str],
-	) -> TSearchDict:
+		sources: list[UploadFile],
+	) -> list[str]:
 		'''
-		Get all objects with the given metadata key and values.
-		(Only gets the following fields: [id, 'metadata_key', modified])
+		Returns a list of source ids that need to be embedded.
 
 		Args
 		----
-		user_id: str
-			User ID for whose database to get the sources.
-		metadata_key: str
-			Metadata key to get.
-		values: list[str]
-			List of metadata names to get.
+		sources: list[UploadFile]
+			List of source ids to check.
 
 		Returns
 		-------
-		TSearchDict
-
-		Raises
-		------
-		DbException
+		list[str]
+			List of source ids to embed.
 		'''
+
+	@abstractmethod
+	def update_access(
+		self,
+		op: UpdateAccessOp,
+		user_id: str,
+		source_id: str,
+	):
+		'''
+		Updates the access for the given user and source.
+		This is used to allow or deny access to sources.
+
+		Args
+		----
+		op: UpdateAccessOp
+			Operation to perform.
+		user_id: str
+			User ID to update access for.
+		source_id: str
+			Source ID to update access for.
+		'''
+		...
 
 	@abstractmethod
 	def delete(self, user_id: str, metadata_key: str, values: list[str]) -> bool:
@@ -161,72 +172,73 @@ class BaseVectorDB(ABC):
 			False otherwise
 		'''
 
-	def delete_by_ids(self, user_id: str, ids: list[str]) -> bool:
+	@abstractmethod
+	def delete_source_ids(self, source_ids: list[str]):
 		'''
-		Deletes all documents with the given ids for the given user.
+		Deletes all documents with the given source ids.
+
+		Args
+		----
+		ids: list[str]
+			List of source ids to delete.
+		'''
+		...
+
+	@abstractmethod
+	def delete_provider(self, provider_key: str):
+		'''
+		Delete all documents with the given provider key.
+
+		Args
+		----
+		provider_key: str
+			Provider key to delete by.
+		'''
+		...
+
+	@abstractmethod
+	def decl_update_access(
+		self,
+		user_ids: list[str],
+		source_id: str,
+	):
+		'''
+		Updates the absolute user access for the given source.
+		This is used to allow or deny access to sources.
+
+		Args
+		----
+		user_ids: list[str]
+			User IDs to grant access to.
+		source_id: str
+			Source ID to update access for.
+		'''
+		...
+
+	@abstractmethod
+	def doc_search(
+		self,
+		user_id: str,
+		query: str,
+		k: int,
+		scope_type: ScopeType | None = None,
+		scope_list: list[str] | None = None,
+	) -> list[Document]:
+		'''
+		Searches for documents in the vectordb.
 
 		Args
 		----
 		user_id: str
-			User ID from whose database to delete the documents.
-		ids: list[str]
-			List of document ids to delete.
+			User ID to search for.
+		query: str
+			Query to search for.
+		k: int
+			Number of results to return.
 
 		Returns
 		-------
-		bool
-			True if deletion is successful,
-			False otherwise
+		list[Document]
+			List of Document objects.
 		'''
-		if len(ids) == 0:
-			return True
-
-		try:
-			user_client = self.get_user_client(user_id)
-		except DbException as e:
-			log_error(e)
-			return False
-
-		res = user_client.delete(ids)
-
-		# NOTE: None should have meant an error but it didn't in the case of
-		# weaviate maybe because of the way weaviate wrapper is implemented (langchain's api does not take
-		# class name as input, which will be required in future versions of weaviate)
-		if res is None:
-			print('Deletion query returned "None". This can happen even if the deletion was \
-successful, therefore not considered an error.')
-			return True
-
-		return res
-
-	def delete_for_all_users(self, metadata_key: str, values: list[str]) -> bool:
-		'''
-		Deletes all documents with the matching values for the given metadata key for all users.
-
-		Args
-		----
-		metadata_key: str
-			Metadata key to delete by.
-		values: list[str]
-			List of metadata values to match.
-
-		Returns
-		-------
-		bool
-			True if deletion is successful,
-			False otherwise
-		'''
-		if len(values) == 0:
-			return True
-
-		try:
-			users = self.get_users()
-		except DbException as e:
-			log_error(e)
-			return False
-
-		success = True
-		for user_id in users:
-			success &= self.delete(user_id, metadata_key, values)
-
-		return success
+		...

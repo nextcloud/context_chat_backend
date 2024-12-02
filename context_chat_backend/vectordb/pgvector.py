@@ -1,23 +1,88 @@
 import os
+from datetime import datetime
 from logging import error as log_error
-from typing import Any
 
 import sqlalchemy as sa
+import sqlalchemy.orm as orm
 from dotenv import load_dotenv
+from fastapi import UploadFile
+from langchain.schema import Document
 from langchain.vectorstores import VectorStore
 from langchain_core.embeddings import Embeddings
-from langchain_postgres import PGVector
+from langchain_postgres.vectorstores import Base, PGVector
 
-from . import get_collection_name, get_user_id_from_collection
-from .base import BaseVectorDB, DbException, MetadataFilter, TSearchDict
+from ..chain.context import ScopeType
+from ..chain.ingest import InDocument
+from .base import BaseVectorDB, DbException, MetadataFilter, UpdateAccessOp
 
 load_dotenv()
 
+COLLECTION_NAME = 'ccb_store'
+DOCUMENTS_TABLE_NAME = 'docs'
+ACCESS_LIST_TABLE_NAME = 'access_list'
 
-class JSONB(sa.sql.sqltypes.Indexable, sa.sql.sqltypes.TypeEngine[Any]):  # pyright: ignore[reportAttributeAccessIssue]
-	__visit_name__ = "JSONB"
 
-	hashable = False
+# we're responsible for keeping this in sync with the langchain_postgres table
+class DocumentsStore(Base):
+	"""Documents table that links to chunks."""
+
+	__tablename__ = DOCUMENTS_TABLE_NAME
+
+	source_id: orm.Mapped[str] = orm.mapped_column(nullable=False, primary_key=True, index=True)
+	provider: orm.Mapped[str] = orm.mapped_column(nullable=False)
+	# complete id including the provider
+	modified: orm.Mapped[datetime] = orm.mapped_column(
+		sa.DateTime,
+		server_default=sa.func.now(),
+		nullable=False,
+	)
+	chunks: orm.Mapped[list[sa.UUID]] = orm.mapped_column(
+		sa.ARRAY(sa.UUID(as_uuid=True)),
+		nullable=False,
+	)
+
+	__table_args__ = (
+		sa.Index(
+			'provider_idx',
+			'provider',
+		),
+		sa.Index(
+			'source_id_modified_idx',
+			'source_id',
+			'modified',
+			unique=True,
+		),
+	)
+
+
+class AccessListStore(Base):
+	"""User access list."""
+
+	__tablename__ = ACCESS_LIST_TABLE_NAME
+
+	id: orm.Mapped[int] = orm.mapped_column(primary_key=True, autoincrement=True)
+
+	uid: orm.Mapped[str] = orm.mapped_column(nullable=False)
+	source_id: orm.Mapped[str] = orm.mapped_column(
+		sa.ForeignKey(
+			# NOTE: lookout for changes in this table name or generally in langchain_postgres
+			f'{DOCUMENTS_TABLE_NAME}.source_id',
+			ondelete='CASCADE',
+		),
+	)
+
+	__table_args__ = (
+		sa.Index(
+			'uid_chunk_id_idx',
+			'uid',
+			'source_id',
+			unique=True,
+		),
+	)
+
+	@classmethod
+	def get_all(cls, session: sa.orm.Session) -> list[str]:
+		return [r.uid for r in session.query(cls.uid).distinct().all()]
 
 
 class VectorDB(BaseVectorDB):
@@ -29,31 +94,19 @@ class VectorDB(BaseVectorDB):
 				'Error: Either env var CCB_DB_URL or connection string in the config is required for pgvector'
 			)
 
-		self.embedding = embedding
-		self.client_kwargs = kwargs
 		# Use connection string from env var if not provided in kwargs
-		self.client_kwargs.update({'connection': str(self.client_kwargs.get('connection', os.getenv('CCB_DB_URL')))})
+		if 'connection' not in kwargs:
+			kwargs['connection'] = os.environ['CCB_DB_URL']
+
+		# setup langchain db + our access list table
+		self.client = PGVector(embedding, collection_name=COLLECTION_NAME, **kwargs)
 
 	def get_users(self) -> list[str]:
-		engine = sa.create_engine(self.client_kwargs['connection'])
-		with engine.connect() as conn:
-			result = conn.execute(sa.text('select name from langchain_pg_collection')).fetchall()
-			return [get_user_id_from_collection(r[0]) for r in result]
+		with self.client._make_sync_session() as session:
+			return AccessListStore.get_all(session)
 
-	def setup_schema(self, user_id: str) -> None:
-		...
-
-	def get_user_client(
-		self,
-		user_id: str,
-		embedding: Embeddings | None = None  # Use this embedding if not None or use global embedding
-	) -> VectorStore:
-		# todo: get rid of embedding param here and make it not None in __init__
-		emb = self.embedding or embedding
-		if not emb:
-			raise DbException('Error: embedding model not provided for pgvector')
-
-		return PGVector(emb, collection_name=get_collection_name(user_id), **self.client_kwargs)
+	def get_instance(self) -> VectorStore:
+		return self.client
 
 	def get_metadata_filter(self, filters: list[MetadataFilter]) -> dict | None:
 		if len(filters) == 0:
@@ -69,83 +122,222 @@ class VectorDB(BaseVectorDB):
 				} for f in filters]
 			}
 		except (KeyError, IndexError) as e:
-			log_error(e)
+			log_error('Error building a metadata filter:', e)
 			return None
 
-	def get_objects_from_metadata(
-		self,
-		user_id: str,
-		metadata_key: str,
-		values: list[str],
-	) -> TSearchDict:
-		data_filter = self.get_metadata_filter([{
-			'metadata_key': metadata_key,
-			'values': values,
-		}])
+	def add_indocuments(self, indocuments: list[InDocument]) -> list[str]:
+		added_sources = []
 
-		if data_filter is None:
-			raise DbException('Error: PGVector metadata filter error')
+		with self.client._make_sync_session() as session:
+			for indoc in indocuments:
+				try:
+					chunk_ids = self.client.add_documents(indoc.documents)
 
-		try:
-			client = PGVector(self.embedding, collection_name=get_collection_name(user_id), **self.client_kwargs)
-			with client._make_sync_session() as session:
-				collection = client.get_collection(session)
-				filter_by = [
-					client.EmbeddingStore.collection_id == collection.uuid,
-					client._create_filter_clause(data_filter)
-				]
-				stmt = (
-						sa.select(
-								client.EmbeddingStore.id,
-								client.EmbeddingStore.cmetadata,
+					doc = DocumentsStore(
+						source_id=indoc.source_id,
+						provider=indoc.provider,
+						modified=indoc.modified,
+						chunks=chunk_ids,
+					)
+
+					access = [
+						AccessListStore(
+							uid=user_id,
+							source_id=indoc.source_id,
 						)
-						.filter(*filter_by)
-				)
+						for user_id in indoc.userIds
+					]
 
-				results = session.execute(stmt).fetchall()
+					session.add(doc)
+					session.commit()
+					session.add_all(access)
+					session.commit()
 
-			if len(results) == 0:
-				return {}
-		except Exception as e:
-			raise DbException('Error: PGVector query error') from e
+					added_sources.append(indoc.source_id)
+				except Exception as e:
+					log_error('Error adding documents to vectordb:', e)
+					continue
 
-		try:
-			output = {}
-			for r in results:
-				meta = r.cmetadata
-				output[meta[metadata_key]] = {
-					'id': r.id,
-					'modified': meta['modified'],
-				}
-		except (KeyError, IndexError) as e:
-			raise DbException('Error: PGVector metadata parsing error') from e
+		return added_sources
 
-		return output
-
-	def delete(self, user_id: str, metadata_key: str, values: list[str]) -> bool:
-		if len(values) == 0:
-			return True
-
-		metadata_filter = self.get_metadata_filter([{
-			'metadata_key': metadata_key,
-			'values': values,
-		}])
-		if metadata_filter is None:
-			raise DbException('Error: PGVector metadata filter error')
-
-		client = PGVector(self.embedding, collection_name=get_collection_name(user_id), **self.client_kwargs)
-		with client._make_sync_session() as session:
-			collection = client.get_collection(session)
-
+	def sources_to_embed(self, sources: list[UploadFile]) -> list[str]:
+		with self.client._make_sync_session() as session:
 			stmt = (
-				sa.delete(
-					client.EmbeddingStore,
-				)
-				.filter(client.EmbeddingStore.collection_id == collection.uuid)
-				.filter(client.EmbeddingStore.cmetadata[metadata_key].in_([sa.cast(f'"{v}"', JSONB) for v in values]))
+				sa.select(DocumentsStore.source_id)
+				.filter(DocumentsStore.source_id.in_([source.filename for source in sources]))
 			)
 
-			session.execute(stmt)
+			results = session.execute(stmt).fetchall()
+			existing_sources = {r.source_id for r in results}
+			to_embed = [source.filename for source in sources if source.filename not in existing_sources]
+
+			to_delete = []
+
+			# todo: test doc updates
+			for source in sources:
+				stmt = (
+					sa.select(DocumentsStore.source_id)
+					.filter(DocumentsStore.source_id == source.filename)
+					.filter(DocumentsStore.modified < source.headers['modified'])
+				)
+
+				result = session.execute(stmt).fetchone()
+				if result is not None:
+					to_embed.append(result.source_id)
+					to_delete.append(result.source_id)
+
+			if len(to_delete) > 0:
+				stmt = (
+					sa.delete(DocumentsStore)
+					.filter(DocumentsStore.source_id.in_(to_delete))
+				)
+				session.execute(stmt)
+				session.commit()
+
+			# the pyright issue stems from source.filename, which has already been validated
+			return to_embed  # pyright: ignore[reportReturnType]
+
+	def decl_update_access(self, user_ids: list[str], source_id: str, session_: orm.Session | None = None):
+		session = session_ or self.client._make_sync_session()
+
+		# check if source_id exists
+		stmt = (
+			sa.select(DocumentsStore.source_id)
+			.filter(DocumentsStore.source_id == source_id)
+		)
+		result = session.execute(stmt).fetchone()
+		if result is None:
+			raise DbException('Error: source id not found')
+
+		stmt = (
+			sa.delete(AccessListStore)
+			.filter(AccessListStore.source_id == source_id)
+		)
+		session.execute(stmt)
+
+		access = [
+			AccessListStore(
+				uid=user_id,
+				source_id=source_id,
+			)
+			for user_id in user_ids
+		]
+		session.add_all(access)
+		session.commit()
+
+		if session_ is None:
+			session.close()
+
+	def update_access(self, op: UpdateAccessOp, user_id: str, source_id: str):
+		with self.client._make_sync_session() as session:
+			# check if source_id exists
+			stmt = (
+				sa.select(DocumentsStore.source_id)
+				.filter(DocumentsStore.source_id == source_id)
+			)
+			result = session.execute(stmt).fetchone()
+			if result is None:
+				raise DbException('Error: source id not found')
+
+			match op:
+				case UpdateAccessOp.allow:
+					access = AccessListStore(
+						uid=user_id,
+						source_id=source_id,
+					)
+					session.add(access)
+				case UpdateAccessOp.deny:
+					stmt = (
+						sa.delete(AccessListStore)
+						.filter(AccessListStore.uid == user_id)
+						.filter(AccessListStore.source_id == source_id)
+					)
+					session.execute(stmt)
+				case _:
+					raise DbException('Error: invalid access operation')
+
 			session.commit()
 
-		return True
+	def delete_source_ids(self, source_ids: list[str]):
+		with self.client._make_sync_session() as session:
+			collection = self.client.get_collection(session)
+
+			stmt_doc = (
+				sa.delete(DocumentsStore)
+				.filter(DocumentsStore.source_id.in_(source_ids))
+				.returning(DocumentsStore.chunks)
+			)
+
+			doc_result = session.execute(stmt_doc)
+			chunks_to_delete = [c for res in doc_result.chunks for c in res]
+
+			stmt_chunks = (
+				sa.delete(self.client.EmbeddingStore)
+				.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
+				.filter(self.client.EmbeddingStore.id.in_(chunks_to_delete))
+			)
+
+			session.execute(stmt_chunks)
+			session.commit()
+
+	def delete_provider(self, provider_key: str):
+		with self.client._make_sync_session() as session:
+			collection = self.client.get_collection(session)
+
+			stmt = (
+				sa.delete(DocumentsStore)
+				.filter(DocumentsStore.provider == provider_key)
+				.returning(DocumentsStore.chunks)
+			)
+
+			doc_result = session.execute(stmt)
+			chunks_to_delete = [c for res in doc_result.chunks for c in res]
+
+			stmt = (
+				sa.delete(self.client.EmbeddingStore)
+				.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
+				.filter(self.client.EmbeddingStore.id.in_(chunks_to_delete))
+			)
+
+			session.commit()
+
+	def doc_search(
+		self,
+		user_id: str,
+		query: str,
+		k: int,
+		scope_type: ScopeType | None = None,
+		scope_list: list[str] | None = None,
+	) -> list[Document]:
+		if scope_type is not None and scope_list is None:
+			raise DbException('Error: scope_list is required when scope_type is provided')
+
+		with self.client._make_sync_session() as session:
+			# get user's access list
+			stmt = (
+				sa.select(AccessListStore.source_id)
+				.filter(AccessListStore.uid == user_id)
+			)
+			result = session.execute(stmt).fetchall()
+			source_ids = [r.source_id for r in result]
+
+			doc_filters = [DocumentsStore.source_id.in_(source_ids)]
+			match scope_type:
+				case ScopeType.PROVIDER:
+					doc_filters.append(DocumentsStore.provider.in_(scope_list))  # pyright: ignore[reportArgumentType]
+				case ScopeType.SOURCE:
+					doc_filters.append(DocumentsStore.source_id.in_(scope_list))  # pyright: ignore[reportArgumentType]
+
+			# get chunks associated with the source_ids
+			stmt = (
+				sa.select(DocumentsStore.chunks)
+				.filter(*doc_filters)
+			)
+			result = session.execute(stmt).fetchall()
+			chunk_ids = [c for res in result.chunks for c in res]
+
+			# get embeddings
+			filter_ = {
+				'id': { '$in': chunk_ids }
+			}
+			return self.client.similarity_search(query, k=k, filter=filter_)
