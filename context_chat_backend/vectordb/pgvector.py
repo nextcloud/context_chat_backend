@@ -136,7 +136,7 @@ class VectorDB(BaseVectorDB):
 					doc = DocumentsStore(
 						source_id=indoc.source_id,
 						provider=indoc.provider,
-						modified=indoc.modified,
+						modified=datetime.fromtimestamp(indoc.modified),
 						chunks=chunk_ids,
 					)
 
@@ -178,7 +178,10 @@ class VectorDB(BaseVectorDB):
 				stmt = (
 					sa.select(DocumentsStore.source_id)
 					.filter(DocumentsStore.source_id == source.filename)
-					.filter(DocumentsStore.modified < source.headers['modified'])
+					.filter(DocumentsStore.modified < sa.cast(
+						datetime.fromtimestamp(int(source.headers['modified'])),
+						sa.DateTime,
+					))
 				)
 
 				result = session.execute(stmt).fetchone()
