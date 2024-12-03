@@ -18,10 +18,11 @@ from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import persistent_storage, set_handlers
 from pydantic import BaseModel, ValidationInfo, field_validator
 
-from .chain import embed_sources, process_context_query, process_query
+from .chain.ingest.injest import embed_sources
+from .chain.one_shot import process_context_query, process_query
 from .config_parser import get_config
 from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, VectorDBLoader
-from .models import LlmException
+from .models.types import LlmException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
 from .utils import JSONResponse, exec_in_proc, is_valid_source_id, value_of
@@ -171,17 +172,16 @@ def _():
 @app.post('/updateAccessDeclarative')
 @enabled_guard(app)
 def _(
-	op: Annotated[UpdateAccessOp, Body()],
-	user_ids: Annotated[list[str], Body()],
-	source_id: Annotated[str, Body()],
+	userIds: Annotated[list[str], Body()],
+	sourceId: Annotated[str, Body()],
 ):
-	if len(user_ids) == 0:
+	if len(userIds) == 0:
 		return JSONResponse('Invalid list of user ids', 400)
 
-	if is_valid_source_id(source_id):
+	if is_valid_source_id(sourceId):
 		return JSONResponse('Invalid source id', 400)
 
-	exec_in_proc(target=decl_update_access, args=(vectordb_loader, user_ids, source_id))
+	exec_in_proc(target=decl_update_access, args=(vectordb_loader, userIds, sourceId))
 
 	return JSONResponse('Access updated')
 
@@ -190,16 +190,16 @@ def _(
 @enabled_guard(app)
 def _(
 	op: Annotated[UpdateAccessOp, Body()],
-	user_id: Annotated[str, Body()],
-	source_id: Annotated[str, Body()],
+	userId: Annotated[str, Body()],
+	sourceId: Annotated[str, Body()],
 ):
-	if not value_of(user_id):
+	if not value_of(userId):
 		return JSONResponse('Invalid user id', 400)
 
-	if is_valid_source_id(source_id):
+	if is_valid_source_id(sourceId):
 		return JSONResponse('Invalid source id', 400)
 
-	exec_in_proc(target=update_access, args=(vectordb_loader, op, user_id, source_id))
+	exec_in_proc(target=update_access, args=(vectordb_loader, op, userId, sourceId))
 
 	return JSONResponse('Access updated')
 
@@ -247,6 +247,7 @@ def _(sources: list[UploadFile]):
 			and value_of(source.headers.get('title'))
 			and value_of(source.headers.get('type'))
 			and value_of(source.headers.get('modified'))
+			and source.headers['modified'].isdigit()
 			and value_of(source.headers.get('provider'))
 		):
 			return JSONResponse(f'Invaild/missing headers for: {source.filename}', 400)
@@ -260,10 +261,9 @@ def _(sources: list[UploadFile]):
 
 	if len(added_sources) != len(sources):
 		print(
-			'Error: All sources were not loaded.'
-			'Successfully loaded:', len(added_sources),
+			'Count of newly loaded sources:', len(added_sources),
 			'/', len(sources),
-			'\nSuccessful sources:', added_sources,
+			'\nSources:', added_sources,
 			flush=True,
 		)
 

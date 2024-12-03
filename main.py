@@ -26,5 +26,6 @@ if __name__ == '__main__':
 		timeout_keep_alive=120,
 		h11_max_incomplete_event_size=5 * 1024 * 1024,  # 5MiB
 		# todo: on-demand instantiation of the resources for multi-worker mode
+		# todo: ^^ what does this mean?
 		workers=app_config.uvicorn_workers,
 	)

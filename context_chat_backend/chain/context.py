@@ -1,6 +1,6 @@
 from langchain.schema import Document
 
-from ..vectordb import BaseVectorDB
+from ..vectordb.base import BaseVectorDB
 from .types import ContextException, ScopeType
 
 

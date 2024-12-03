@@ -6,7 +6,7 @@ from langchain.schema import Document
 from ...dyn_loader import VectorDBLoader
 from ...types import TConfig
 from ...utils import is_valid_source_id, to_int
-from ...vectordb import BaseVectorDB
+from ...vectordb.base import BaseVectorDB
 from ...vectordb.types import DbException
 from ..types import InDocument
 from .doc_loader import decode_source

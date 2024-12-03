@@ -130,27 +130,6 @@ class BaseVectorDB(ABC):
 		...
 
 	@abstractmethod
-	def delete(self, user_id: str, metadata_key: str, values: list[str]) -> bool:
-		'''
-		Deletes all documents with the matching values for the given metadata key.
-
-		Args
-		----
-		user_id: str
-			User ID from whose database to delete the documents.
-		metadata_key: str
-			Metadata key to delete by.
-		values: list[str]
-			List of metadata values to match.
-
-		Returns
-		-------
-		bool
-			True if deletion is successful,
-			False otherwise
-		'''
-
-	@abstractmethod
 	def delete_source_ids(self, source_ids: list[str]):
 		'''
 		Deletes all documents with the given source ids.

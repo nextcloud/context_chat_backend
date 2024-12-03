@@ -15,11 +15,11 @@ import torch
 from fastapi import FastAPI
 from langchain.llms.base import LLM
 
-from .models import init_model
+from .models.loader import init_model
 from .network_em import NetworkEmbeddings
 from .types import LoaderException, TConfig
-from .vectordb import get_vector_db
 from .vectordb.base import BaseVectorDB
+from .vectordb.loader import get_vector_db
 from .vectordb.types import DbException
 
 

@@ -1,8 +1,8 @@
 from ruamel.yaml import YAML
 
-from .models import models
+from .models.loader import models
 from .types import TConfig
-from .vectordb import vector_dbs
+from .vectordb.loader import vector_dbs
 
 
 def _first_in_list(

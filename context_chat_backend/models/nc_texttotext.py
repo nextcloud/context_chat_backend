@@ -7,7 +7,7 @@ from langchain_core.language_models.llms import LLM
 from nc_py_api import Nextcloud
 from pydantic import BaseModel, ValidationError
 
-from . import LlmException
+from .types import LlmException
 
 
 def get_model_for(model_type: str, model_config: dict):
