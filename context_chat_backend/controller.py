@@ -319,6 +319,7 @@ def execute_query(query: Query, in_proc: bool = True) -> LLMOutput:
 	else:
 		target=process_query
 		args=(
+			query.userId,
 			llm,
 			app_config,
 			query.query,

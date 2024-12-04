@@ -14,6 +14,7 @@ _LLM_TEMPLATE = '''Answer based only on this context and do not add any imaginat
 
 
 def process_query(
+	user_id: str,
 	llm: LLM,
 	app_config: TConfig,
 	query: str,
@@ -30,6 +31,7 @@ def process_query(
 	output = llm.invoke(
 		(query, get_pruned_query(llm, app_config, query, no_ctx_template, []))[no_ctx_template is not None],  # pyright: ignore[reportArgumentType]
 		stop=stop,
+		userid=user_id,
 	).strip()
 
 	return LLMOutput(output=output, sources=[])
@@ -56,7 +58,7 @@ def process_context_query(
 	db = vectordb_loader.load()
 	context_docs = get_context_docs(user_id, query, db, ctx_limit, scope_type, scope_list)
 	if len(context_docs) == 0:
-		raise ContextException('No documents retrieved, please index a few documents first to use context-aware mode')
+		raise ContextException('No documents retrieved, please index a few documents first')
 
 	context_chunks = get_context_chunks(context_docs)
 	print('len(context_chunks)', len(context_chunks), flush=True)
@@ -64,6 +66,7 @@ def process_context_query(
 	output = llm.invoke(
 		get_pruned_query(llm, app_config, query, template or _LLM_TEMPLATE, context_chunks),
 		stop=[end_separator],
+		userid=user_id,
 	).strip()
 	unique_sources: list[str] = list({source for d in context_docs if (source := d.metadata.get('source'))})
 

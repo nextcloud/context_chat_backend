@@ -4,7 +4,7 @@ from typing import Any
 
 from langchain_core.callbacks.manager import CallbackManagerForLLMRun
 from langchain_core.language_models.llms import LLM
-from nc_py_api import Nextcloud
+from nc_py_api import NextcloudApp
 from pydantic import BaseModel, ValidationError
 
 from .types import LlmException
@@ -56,7 +56,10 @@ class CustomLLM(LLM):
         Returns:
             The model output as a string. Actual completions SHOULD NOT include the prompt.
         """
-        nc = Nextcloud()
+        nc = NextcloudApp()
+
+        if kwargs.get('userid') is not None:
+            nc.set_user(kwargs['userid'])
 
         print(json.dumps(prompt))
 
