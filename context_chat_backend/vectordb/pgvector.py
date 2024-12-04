@@ -12,6 +12,7 @@ from langchain_core.embeddings import Embeddings
 from langchain_postgres.vectorstores import Base, PGVector
 
 from ..chain.types import InDocument, ScopeType
+from ..utils import timed
 from .base import BaseVectorDB
 from .types import DbException, MetadataFilter, UpdateAccessOp
 
@@ -231,7 +232,7 @@ class VectorDB(BaseVectorDB):
 		if session_ is None:
 			session.close()
 
-	def update_access(self, op: UpdateAccessOp, user_id: str, source_id: str):
+	def update_access(self, op: UpdateAccessOp, user_ids: list[str], source_id: str):
 		with self.client._make_sync_session() as session:
 			# check if source_id exists
 			stmt = (
@@ -244,15 +245,18 @@ class VectorDB(BaseVectorDB):
 
 			match op:
 				case UpdateAccessOp.allow:
-					access = AccessListStore(
-						uid=user_id,
-						source_id=source_id,
-					)
-					session.add(access)
+					access = [
+						AccessListStore(
+							uid=user_id,
+							source_id=source_id,
+						)
+						for user_id in user_ids
+					]
+					session.add_all(access)
 				case UpdateAccessOp.deny:
 					stmt = (
 						sa.delete(AccessListStore)
-						.filter(AccessListStore.uid == user_id)
+						.filter(AccessListStore.uid.in_(user_ids))
 						.filter(AccessListStore.source_id == source_id)
 					)
 					session.execute(stmt)
@@ -272,7 +276,7 @@ class VectorDB(BaseVectorDB):
 			)
 
 			doc_result = session.execute(stmt_doc)
-			chunks_to_delete = [c for res in doc_result.chunks for c in res]
+			chunks_to_delete = [str(c) for res in doc_result for c in res.chunks]
 
 			stmt_chunks = (
 				sa.delete(self.client.EmbeddingStore)
@@ -294,7 +298,7 @@ class VectorDB(BaseVectorDB):
 			)
 
 			doc_result = session.execute(stmt)
-			chunks_to_delete = [c for res in doc_result.chunks for c in res]
+			chunks_to_delete = [str(c) for res in doc_result for c in res.chunks]
 
 			stmt = (
 				sa.delete(self.client.EmbeddingStore)
@@ -304,6 +308,7 @@ class VectorDB(BaseVectorDB):
 
 			session.commit()
 
+	@timed
 	def doc_search(
 		self,
 		user_id: str,
@@ -337,10 +342,48 @@ class VectorDB(BaseVectorDB):
 				.filter(*doc_filters)
 			)
 			result = session.execute(stmt).fetchall()
-			chunk_ids = [c for res in result.chunks for c in res]
+			chunk_ids = [str(c) for res in result for c in res.chunks]
 
 			# get embeddings
-			filter_ = {
-				'id': { '$in': chunk_ids }
-			}
-			return self.client.similarity_search(query, k=k, filter=filter_)
+			return self._similarity_search(session, query, chunk_ids, k)
+
+	# modified from langchain_postgres.vectorstores
+	def _similarity_search(
+		self,
+		session: orm.Session,
+		query: str,
+		chunk_ids: list[str],
+		k: int = 4,
+	) -> list[Document]:
+		embedding = self.client.embeddings.embed_query(query)
+		collection = self.client.get_collection(session)
+		if not collection:
+			raise ValueError('Collection not found')
+
+		filter_by = [
+			self.client.EmbeddingStore.collection_id == collection.uuid,
+			self.client.EmbeddingStore.id.in_(chunk_ids),
+		]
+
+		results = (
+			session.query(
+				self.client.EmbeddingStore,
+				self.client.distance_strategy(embedding).label('distance'),
+			)
+			.filter(*filter_by)
+			.order_by(sa.asc('distance'))
+			.join(
+				self.client.CollectionStore,
+				self.client.EmbeddingStore.collection_id == self.client.CollectionStore.uuid,
+			)
+			.limit(k)
+			.all()
+		)
+
+		return [
+			Document(
+				id=str(result.EmbeddingStore.id),
+				page_content=result.EmbeddingStore.document,
+				metadata=result.EmbeddingStore.cmetadata,
+			) for result in results
+		]

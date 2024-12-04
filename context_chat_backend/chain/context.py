@@ -25,7 +25,6 @@ def get_context_docs(
 def get_context_chunks(context_docs: list[Document]) -> list[str]:
 	context_chunks = []
 	for doc in context_docs:
-		# todo: just the filename perhaps?
 		if title := doc.metadata.get('title'):
 			context_chunks.append(title)
 		context_chunks.append(doc.page_content)

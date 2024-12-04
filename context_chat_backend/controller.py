@@ -176,7 +176,7 @@ def _(
 	sourceId: Annotated[str, Body()],
 ):
 	if len(userIds) == 0:
-		return JSONResponse('Invalid list of user ids', 400)
+		return JSONResponse('Empty list of user ids', 400)
 
 	if is_valid_source_id(sourceId):
 		return JSONResponse('Invalid source id', 400)
@@ -190,16 +190,16 @@ def _(
 @enabled_guard(app)
 def _(
 	op: Annotated[UpdateAccessOp, Body()],
-	userId: Annotated[str, Body()],
+	userIds: Annotated[list[str], Body()],
 	sourceId: Annotated[str, Body()],
 ):
-	if not value_of(userId):
-		return JSONResponse('Invalid user id', 400)
+	if len(userIds) == 0:
+		return JSONResponse('Empty list of user ids', 400)
 
 	if is_valid_source_id(sourceId):
 		return JSONResponse('Invalid source id', 400)
 
-	exec_in_proc(target=update_access, args=(vectordb_loader, op, userId, sourceId))
+	exec_in_proc(target=update_access, args=(vectordb_loader, op, userIds, sourceId))
 
 	return JSONResponse('Access updated')
 

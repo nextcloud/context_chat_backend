@@ -2,10 +2,11 @@ import multiprocessing as mp
 import re
 import traceback
 from collections.abc import Callable
-from functools import partial
+from functools import partial, wraps
 from logging import error as log_error
 from multiprocessing.connection import Connection
 from os import getenv
+from time import perf_counter
 from typing import Any, TypeGuard, TypeVar
 
 from fastapi import FastAPI
@@ -116,3 +117,18 @@ def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daem
 
 def is_valid_source_id(source_id: str) -> bool:
 	return re.match(r'^[a-zA-Z0-9_-]+__[a-zA-Z0-9_-]+: \d+$', source_id) is not None
+
+
+def timed(func: Callable):
+	'''
+	Decorator to time a function
+	'''
+	@wraps(func)
+	def wrapper(*args, **kwargs):
+		start = perf_counter()
+		res = func(*args, **kwargs)
+		end = perf_counter()
+		print(f'{func.__name__} took {end - start:.4f} seconds', flush=True)
+		return res
+
+	return wrapper

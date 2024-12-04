@@ -1,0 +1,3 @@
+__all__ = ['LlmException']
+
+class LlmException(Exception): ...

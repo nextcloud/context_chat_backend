@@ -7,6 +7,7 @@ from langchain.schema.embeddings import Embeddings
 from langchain.schema.vectorstore import VectorStore
 
 from ..chain.types import InDocument, ScopeType
+from ..utils import timed
 from .types import MetadataFilter, UpdateAccessOp
 
 
@@ -111,7 +112,7 @@ class BaseVectorDB(ABC):
 	def update_access(
 		self,
 		op: UpdateAccessOp,
-		user_id: str,
+		user_ids: list[str],
 		source_id: str,
 	):
 		'''
@@ -122,8 +123,8 @@ class BaseVectorDB(ABC):
 		----
 		op: UpdateAccessOp
 			Operation to perform.
-		user_id: str
-			User ID to update access for.
+		user_ids: list[str]
+			User IDs to grant/deny access to.
 		source_id: str
 			Source ID to update access for.
 		'''
@@ -172,6 +173,7 @@ class BaseVectorDB(ABC):
 		'''
 		...
 
+	@timed
 	@abstractmethod
 	def doc_search(
 		self,

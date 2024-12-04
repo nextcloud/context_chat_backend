@@ -70,6 +70,7 @@ def _sources_to_indocuments(config: TConfig, sources: list[UploadFile]) -> list[
 		print('decoded non empty source:', source.filename, flush=True)
 
 		metadata = {
+			'source': source.filename,
 			'title': source.headers['title'],
 			'type': source.headers['type'],
 		}
