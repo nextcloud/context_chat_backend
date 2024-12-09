@@ -183,10 +183,12 @@ def _(
 	userIds: Annotated[list[str], Body()],
 	sourceId: Annotated[str, Body()],
 ):
+	print('Update access declarative request:', userIds, sourceId)
+
 	if len(userIds) == 0:
 		return JSONResponse('Empty list of user ids', 400)
 
-	if is_valid_source_id(sourceId):
+	if not is_valid_source_id(sourceId):
 		return JSONResponse('Invalid source id', 400)
 
 	exec_in_proc(target=decl_update_access, args=(vectordb_loader, userIds, sourceId))
@@ -201,10 +203,12 @@ def _(
 	userIds: Annotated[list[str], Body()],
 	sourceId: Annotated[str, Body()],
 ):
+	print('Update access request:', op, userIds, sourceId)
+
 	if len(userIds) == 0:
 		return JSONResponse('Empty list of user ids', 400)
 
-	if is_valid_source_id(sourceId):
+	if not is_valid_source_id(sourceId):
 		return JSONResponse('Invalid source id', 400)
 
 	exec_in_proc(target=update_access, args=(vectordb_loader, op, userIds, sourceId))
@@ -219,10 +223,12 @@ def _(
 	userIds: Annotated[list[str], Body()],
 	providerId: Annotated[str, Body()],
 ):
+	print('Update access by provider request:', op, userIds, providerId)
+
 	if len(userIds) == 0:
 		return JSONResponse('Empty list of user ids', 400)
 
-	if is_valid_provider_id(providerId):
+	if not is_valid_provider_id(providerId):
 		return JSONResponse('Invalid provider id', 400)
 
 	exec_in_proc(target=update_access, args=(vectordb_loader, op, userIds, providerId))
