@@ -4,9 +4,9 @@ from os import getenv
 
 import uvicorn
 
+from context_chat_backend.types import TConfig  # isort: skip
 from context_chat_backend.controller import app  # isort: skip
 from context_chat_backend.utils import to_int  # isort: skip
-from context_chat_backend.config_parser import TConfig  # isort: skip
 
 if __name__ == '__main__':
 	app_config: TConfig = app.extra['CONFIG']
@@ -26,5 +26,6 @@ if __name__ == '__main__':
 		timeout_keep_alive=120,
 		h11_max_incomplete_event_size=5 * 1024 * 1024,  # 5MiB
 		# todo: on-demand instantiation of the resources for multi-worker mode
+		# todo: ^^ what does this mean?
 		workers=app_config.uvicorn_workers,
 	)

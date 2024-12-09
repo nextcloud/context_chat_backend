@@ -1,10 +1,9 @@
-from langchain.text_splitter import (
-	MarkdownTextSplitter,
-	RecursiveCharacterTextSplitter,
-	TextSplitter,
-)
+from functools import lru_cache
+
+from langchain.text_splitter import MarkdownTextSplitter, RecursiveCharacterTextSplitter, TextSplitter
 
 
+@lru_cache(maxsize=32)
 def get_splitter_for(chunk_size: int, mimetype: str = 'text/plain') -> TextSplitter:
 	kwargs = {
 		'chunk_size': chunk_size,
