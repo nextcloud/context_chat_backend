@@ -56,7 +56,7 @@ class EmbeddingModelLoader(Loader):
 				return
 
 			proc = subprocess.Popen(
-				['./main_em.py'],  # noqa: S603
+				['./main_em.py'],
 				stdout=self.logfile,
 				stderr=self.logfile,
 				stdin=None,
