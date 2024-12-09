@@ -14,7 +14,7 @@ from langchain_postgres.vectorstores import Base, PGVector
 from ..chain.types import InDocument, ScopeType
 from ..utils import timed
 from .base import BaseVectorDB
-from .types import DbException, MetadataFilter, UpdateAccessOp
+from .types import DbException, SafeDbException, UpdateAccessOp
 
 load_dotenv()
 
@@ -103,33 +103,16 @@ class VectorDB(BaseVectorDB):
 		self.client = PGVector(embedding, collection_name=COLLECTION_NAME, **kwargs)
 
 	def get_users(self) -> list[str]:
-		with self.client._make_sync_session() as session:
+		with self.client.session_maker() as session:
 			return AccessListStore.get_all(session)
 
 	def get_instance(self) -> VectorStore:
 		return self.client
 
-	def get_metadata_filter(self, filters: list[MetadataFilter]) -> dict | None:
-		if len(filters) == 0:
-			raise DbException('Error: PGVector metadata filter received empty filters')
-
-		try:
-			if len(filters) == 1:
-				return { filters[0]['metadata_key']: { '$in': filters[0]['values'] } }
-
-			return {
-				'$or': [{
-					f['metadata_key']: { '$in': f['values'] }
-				} for f in filters]
-			}
-		except (KeyError, IndexError) as e:
-			log_error('Error building a metadata filter:', e)
-			return None
-
 	def add_indocuments(self, indocuments: list[InDocument]) -> list[str]:
 		added_sources = []
 
-		with self.client._make_sync_session() as session:
+		with self.client.session_maker() as session:
 			for indoc in indocuments:
 				try:
 					chunk_ids = self.client.add_documents(indoc.documents)
@@ -162,7 +145,7 @@ class VectorDB(BaseVectorDB):
 		return added_sources
 
 	def sources_to_embed(self, sources: list[UploadFile]) -> list[str]:
-		with self.client._make_sync_session() as session:
+		with self.client.session_maker() as session:
 			stmt = (
 				sa.select(DocumentsStore.source_id)
 				.filter(DocumentsStore.source_id.in_([source.filename for source in sources]))
@@ -202,7 +185,7 @@ class VectorDB(BaseVectorDB):
 			return to_embed  # pyright: ignore[reportReturnType]
 
 	def decl_update_access(self, user_ids: list[str], source_id: str, session_: orm.Session | None = None):
-		session = session_ or self.client._make_sync_session()
+		session = session_ or self.client.session_maker()
 
 		# check if source_id exists
 		stmt = (
@@ -211,7 +194,7 @@ class VectorDB(BaseVectorDB):
 		)
 		result = session.execute(stmt).fetchone()
 		if result is None:
-			raise DbException('Error: source id not found')
+			raise SafeDbException('Error: source id not found', 404)
 
 		stmt = (
 			sa.delete(AccessListStore)
@@ -232,43 +215,109 @@ class VectorDB(BaseVectorDB):
 		if session_ is None:
 			session.close()
 
-	def update_access(self, op: UpdateAccessOp, user_ids: list[str], source_id: str):
-		with self.client._make_sync_session() as session:
-			# check if source_id exists
+	def update_access(
+		self,
+		op: UpdateAccessOp,
+		user_ids: list[str],
+		source_id: str,
+		session_: orm.Session | None = None,
+	):
+		session = session_ or self.client.session_maker()
+
+		# check if source_id exists
+		stmt = (
+			sa.select(DocumentsStore.source_id)
+			.filter(DocumentsStore.source_id == source_id)
+		)
+		result = session.execute(stmt).fetchone()
+		if result is None:
+			if session_ is None:
+				session.close()
+			raise SafeDbException('Error: source id not found', 404)
+
+		match op:
+			case UpdateAccessOp.allow:
+				access = [
+					AccessListStore(
+						uid=user_id,
+						source_id=source_id,
+					)
+					for user_id in user_ids
+				]
+				session.add_all(access)
+				session.commit()
+
+			case UpdateAccessOp.deny:
+				stmt = (
+					sa.delete(AccessListStore)
+					.filter(AccessListStore.uid.in_(user_ids))
+					.filter(AccessListStore.source_id == source_id)
+				)
+				session.execute(stmt)
+				session.commit()
+
+				# check if all entries related to the source were deleted
+				self._cleanup_if_orphaned([source_id], session)
+			case _:
+				if session_ is None:
+					session.close()
+				raise SafeDbException('Error: invalid access operation', 400)
+
+		if session_ is None:
+			session.close()
+
+	def update_access_provider(
+		self,
+		op: UpdateAccessOp,
+		user_ids: list[str],
+		provider_id: str,
+	):
+		with self.client.session_maker() as session:
 			stmt = (
 				sa.select(DocumentsStore.source_id)
-				.filter(DocumentsStore.source_id == source_id)
+				.filter(DocumentsStore.provider == provider_id)
 			)
-			result = session.execute(stmt).fetchone()
-			if result is None:
-				raise DbException('Error: source id not found')
+			result = session.execute(stmt).fetchall()
+			source_ids = [str(r.source_id) for r in result]
 
-			match op:
-				case UpdateAccessOp.allow:
-					access = [
-						AccessListStore(
-							uid=user_id,
-							source_id=source_id,
-						)
-						for user_id in user_ids
-					]
-					session.add_all(access)
-				case UpdateAccessOp.deny:
-					stmt = (
-						sa.delete(AccessListStore)
-						.filter(AccessListStore.uid.in_(user_ids))
-						.filter(AccessListStore.source_id == source_id)
-					)
-					session.execute(stmt)
-				case _:
-					raise DbException('Error: invalid access operation')
+			# painful process
+			for source_id in source_ids:
+				self.update_access(op, user_ids, source_id, session)
 
-			session.commit()
+	def _cleanup_if_orphaned(self, source_ids: list[str], session_: orm.Session | None = None):
+		if len(source_ids) == 0:
+			return
 
-	def delete_source_ids(self, source_ids: list[str]):
-		with self.client._make_sync_session() as session:
+		filter_ = [
+			AccessListStore.source_id.in_(source_ids) if len(source_ids) > 1
+			else AccessListStore.source_id == source_ids[0]
+		]
+
+		session = session_ or self.client.session_maker()
+
+		stmt = (
+			sa.select(AccessListStore.source_id)
+			.filter(*filter_)
+			.distinct()
+		)
+		result = session.execute(stmt).fetchall()
+
+		existing_links = [str(r.source_id) for r in result]
+		to_delete = [source_id for source_id in source_ids if source_id not in existing_links]
+
+		if len(to_delete) > 0:
+			self.delete_source_ids(to_delete, session_)
+
+		if session_ is None:
+			session.close()
+
+	def delete_source_ids(self, source_ids: list[str], session_: orm.Session | None = None):
+		session = session_ or self.client.session_maker()
+
+		try:
 			collection = self.client.get_collection(session)
 
+			# entry from "AccessListStore" is deleted automatically due to the foreign key constraint
 			stmt_doc = (
 				sa.delete(DocumentsStore)
 				.filter(DocumentsStore.source_id.in_(source_ids))
@@ -277,7 +326,12 @@ class VectorDB(BaseVectorDB):
 
 			doc_result = session.execute(stmt_doc)
 			chunks_to_delete = [str(c) for res in doc_result for c in res.chunks]
+		except Exception as e:
+			if session_ is None:
+				session.close()
+			raise e
 
+		try:
 			stmt_chunks = (
 				sa.delete(self.client.EmbeddingStore)
 				.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
@@ -286,9 +340,18 @@ class VectorDB(BaseVectorDB):
 
 			session.execute(stmt_chunks)
 			session.commit()
+		except Exception as e:
+			log_error('Error deleting chunks, rolling back documents store deletion for source ids')
+			session.rollback()
+			raise DbException(
+				'Error: deleting chunks, rolling back documents store deletion for source ids'
+			) from e
+		finally:
+			if session_ is None:
+				session.close()
 
 	def delete_provider(self, provider_key: str):
-		with self.client._make_sync_session() as session:
+		with self.client.session_maker() as session:
 			collection = self.client.get_collection(session)
 
 			stmt = (
@@ -300,13 +363,33 @@ class VectorDB(BaseVectorDB):
 			doc_result = session.execute(stmt)
 			chunks_to_delete = [str(c) for res in doc_result for c in res.chunks]
 
+			try:
+				stmt = (
+					sa.delete(self.client.EmbeddingStore)
+					.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
+					.filter(self.client.EmbeddingStore.id.in_(chunks_to_delete))
+				)
+				session.execute(stmt)
+				session.commit()
+			except Exception as e:
+				log_error('Error deleting chunks, rolling back documents store deletion for provider')
+				session.rollback()
+				raise DbException(
+					'Error: deleting chunks, rolling back documents store deletion for provider'
+				) from e
+
+	def delete_user(self, user_id: str):
+		with self.client.session_maker() as session:
 			stmt = (
-				sa.delete(self.client.EmbeddingStore)
-				.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
-				.filter(self.client.EmbeddingStore.id.in_(chunks_to_delete))
+				sa.delete(AccessListStore)
+				.filter(AccessListStore.uid == user_id)
+				.returning(AccessListStore.source_id)
 			)
 
-			session.commit()
+			result = session.execute(stmt)
+			source_ids = {str(r.source_id) for r in result}
+
+			self._cleanup_if_orphaned(list(source_ids), session)
 
 	@timed
 	def doc_search(
@@ -318,9 +401,9 @@ class VectorDB(BaseVectorDB):
 		scope_list: list[str] | None = None,
 	) -> list[Document]:
 		if scope_type is not None and scope_list is None:
-			raise DbException('Error: scope_list is required when scope_type is provided')
+			raise SafeDbException('Error: scope_list is required when scope_type is provided', 400)
 
-		with self.client._make_sync_session() as session:
+		with self.client.session_maker() as session:
 			# get user's access list
 			stmt = (
 				sa.select(AccessListStore.source_id)

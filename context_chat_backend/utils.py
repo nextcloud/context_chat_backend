@@ -119,6 +119,10 @@ def is_valid_source_id(source_id: str) -> bool:
 	return re.match(r'^[a-zA-Z0-9_-]+__[a-zA-Z0-9_-]+: \d+$', source_id) is not None
 
 
+def is_valid_provider_id(provider_id: str) -> bool:
+	return re.match(r'^[a-zA-Z0-9_-]+__[a-zA-Z0-9_-]+$', provider_id) is not None
+
+
 def timed(func: Callable):
 	'''
 	Decorator to time a function

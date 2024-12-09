@@ -17,6 +17,11 @@ def delete_by_provider(vectordb_loader: VectorDBLoader, provider_key: str):
 	db.delete_provider(provider_key)
 
 
+def delete_user(vectordb_loader: VectorDBLoader, user_id: str):
+	db: BaseVectorDB = vectordb_loader.load()
+	db.delete_user(user_id)
+
+
 def update_access(
 	vectordb_loader: VectorDBLoader,
 	op: UpdateAccessOp,
@@ -25,6 +30,16 @@ def update_access(
 ):
 	db: BaseVectorDB = vectordb_loader.load()
 	db.update_access(op, user_ids, source_id)
+
+
+def update_access_provider(
+	vectordb_loader: VectorDBLoader,
+	op: UpdateAccessOp,
+	user_ids: list[str],
+	provider_id: str,
+):
+	db: BaseVectorDB = vectordb_loader.load()
+	db.update_access_provider(op, user_ids, provider_id)
 
 
 def decl_update_access(

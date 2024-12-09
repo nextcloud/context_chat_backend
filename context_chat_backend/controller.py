@@ -1,5 +1,5 @@
 from .chain.types import ContextException, LLMOutput, ScopeType # isort:skip
-from .vectordb.types import DbException, UpdateAccessOp # isort:skip
+from .vectordb.types import DbException, SafeDbException, UpdateAccessOp # isort:skip
 from .types import LoaderException, EmbeddingException # isort:skip
 
 import multiprocessing as mp
@@ -25,8 +25,8 @@ from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, VectorDBLoader
 from .models.types import LlmException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
-from .utils import JSONResponse, exec_in_proc, is_valid_source_id, value_of
-from .vectordb.service import decl_update_access, delete_by_provider, delete_by_source, update_access
+from .utils import JSONResponse, exec_in_proc, is_valid_provider_id, is_valid_source_id, value_of
+from .vectordb.service import decl_update_access, delete_by_provider, delete_by_source, delete_user, update_access
 
 # setup
 
@@ -99,6 +99,14 @@ if not app_config.disable_aaa:
 async def _(request: Request, exc: DbException):
 	log_error(f'Db Error: {request.url.path}:', exc)
 	return JSONResponse('Vector DB is facing some issues, please check the logs for more info', 500)
+
+
+@app.exception_handler(SafeDbException)
+async def _(request: Request, exc: SafeDbException):
+	log_error(f'Safe Db Error (user facing): {request.url.path}:', exc)
+	if len(exc.args) > 1:
+		return JSONResponse(exc.args[0], exc.args[1])
+	return JSONResponse(str(exc), 400)
 
 
 @app.exception_handler(LoaderException)
@@ -204,18 +212,35 @@ def _(
 	return JSONResponse('Access updated')
 
 
-# todo: update call in php to not include user_ids
+@app.post('/updateAccessProvider')
+@enabled_guard(app)
+def _(
+	op: Annotated[UpdateAccessOp, Body()],
+	userIds: Annotated[list[str], Body()],
+	providerId: Annotated[str, Body()],
+):
+	if len(userIds) == 0:
+		return JSONResponse('Empty list of user ids', 400)
+
+	if is_valid_provider_id(providerId):
+		return JSONResponse('Invalid provider id', 400)
+
+	exec_in_proc(target=update_access, args=(vectordb_loader, op, userIds, providerId))
+
+	return JSONResponse('Access updated')
+
+
 @app.post('/deleteSources')
 @enabled_guard(app)
-def _(sourceNames: Annotated[list[str], Body()]):
-	print('Delete sources request:', sourceNames)
+def _(sourceIds: Annotated[list[str], Body()]):
+	print('Delete sources request:', sourceIds)
 
-	sourceNames = [source.strip() for source in sourceNames if source.strip() != '']
+	sourceIds = [source.strip() for source in sourceIds if source.strip() != '']
 
-	if len(sourceNames) == 0:
+	if len(sourceIds) == 0:
 		return JSONResponse('No sources provided', 400)
 
-	res = exec_in_proc(target=delete_by_source, args=(vectordb_loader, sourceNames))
+	res = exec_in_proc(target=delete_by_source, args=(vectordb_loader, sourceIds))
 	if res is False:
 		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
 
@@ -233,6 +258,19 @@ def _(providerKey: str = Body(embed=True)):
 	exec_in_proc(target=delete_by_provider, args=(vectordb_loader, providerKey))
 
 	return JSONResponse('All valid sources deleted')
+
+
+@app.post('/deleteUser')
+@enabled_guard(app)
+def _(userId: str = Body(embed=True)):
+	print('Remove access list for user, and orphaned sources:', userId)
+
+	if value_of(userId) is None:
+		return JSONResponse('Invalid userId provided', 400)
+
+	exec_in_proc(target=delete_user, args=(vectordb_loader, userId))
+
+	return JSONResponse('User deleted')
 
 
 @app.put('/loadSources')

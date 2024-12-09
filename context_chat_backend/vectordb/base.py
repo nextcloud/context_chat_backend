@@ -8,7 +8,7 @@ from langchain.schema.vectorstore import VectorStore
 
 from ..chain.types import InDocument, ScopeType
 from ..utils import timed
-from .types import MetadataFilter, UpdateAccessOp
+from .types import UpdateAccessOp
 
 
 class BaseVectorDB(ABC):
@@ -74,22 +74,6 @@ class BaseVectorDB(ABC):
 		'''
 
 	@abstractmethod
-	def get_metadata_filter(self, filters: list[MetadataFilter]) -> dict | None:
-		'''
-		Returns the metadata filter for the given filters.
-
-		Args
-		----
-		filters: tuple[MetadataFilter]
-			Tuple of metadata filters.
-
-		Returns
-		-------
-		dict
-			Metadata filter dictionary.
-		'''
-
-	@abstractmethod
 	def sources_to_embed(
 		self,
 		sources: list[UploadFile],
@@ -116,7 +100,7 @@ class BaseVectorDB(ABC):
 		source_id: str,
 	):
 		'''
-		Updates the access for the given user and source.
+		Updates the access for the given users and source.
 		This is used to allow or deny access to sources.
 
 		Args
@@ -127,6 +111,37 @@ class BaseVectorDB(ABC):
 			User IDs to grant/deny access to.
 		source_id: str
 			Source ID to update access for.
+
+		Raises
+		------
+		SafeDbException
+		'''
+		...
+
+	@abstractmethod
+	def update_access_provider(
+		self,
+		op: UpdateAccessOp,
+		user_ids: list[str],
+		provider_id: str,
+	):
+		'''
+		Update the access for the given users and provider.
+		This is used to allow or deny access to sources from a provider.
+
+		Args
+		----
+		op: UpdateAccessOp
+			Operation to perform.
+		user_ids: list[str]
+			User IDs to grant/deny access to.
+		source_id: str
+			Source ID to update access for.
+
+		Raises
+		------
+		# todo
+		SafeDbException
 		'''
 		...
 
@@ -170,6 +185,23 @@ class BaseVectorDB(ABC):
 			User IDs to grant access to.
 		source_id: str
 			Source ID to update access for.
+
+		Raises
+		------
+		SafeDbException
+		'''
+		...
+
+	@abstractmethod
+	def delete_user(self, user_id: str):
+		'''
+		Deletes access for the given user.
+		And deletes all documents that no longer have any users with access.
+
+		Args
+		----
+		user_id: str
+			User ID to delete.
 		'''
 		...
 
@@ -199,5 +231,9 @@ class BaseVectorDB(ABC):
 		-------
 		list[Document]
 			List of Document objects.
+
+		Raises
+		------
+		SafeDbException
 		'''
 		...
