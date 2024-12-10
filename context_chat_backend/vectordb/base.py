@@ -74,12 +74,15 @@ class BaseVectorDB(ABC):
 		'''
 
 	@abstractmethod
-	def sources_to_embed(
+	def check_sources(
 		self,
 		sources: list[UploadFile],
-	) -> list[str]:
+	) -> tuple[list[str], list[str]]:
 		'''
-		Returns a list of source ids that need to be embedded.
+		Checks the sources in the vectordb if they are already embedded
+			and are up to date.
+		Also deletes the existing sources that are older than the given sources
+			to make room for the new sources.
 
 		Args
 		----
@@ -88,8 +91,8 @@ class BaseVectorDB(ABC):
 
 		Returns
 		-------
-		list[str]
-			List of source ids to embed.
+		tuple[list[str], list[str]]
+			Tuple of the existing sources and the sources that need to be embedded.
 		'''
 
 	@abstractmethod

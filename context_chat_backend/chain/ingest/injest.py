@@ -7,7 +7,7 @@ from ...dyn_loader import VectorDBLoader
 from ...types import TConfig
 from ...utils import is_valid_source_id, to_int
 from ...vectordb.base import BaseVectorDB
-from ...vectordb.types import DbException
+from ...vectordb.types import DbException, UpdateAccessOp
 from ..types import InDocument
 from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
@@ -21,26 +21,27 @@ def _allowed_file(file: UploadFile) -> bool:
 def _filter_sources(
 	vectordb: BaseVectorDB,
 	sources: list[UploadFile]
-) -> list[UploadFile]:
+) -> tuple[list[UploadFile], list[UploadFile]]:
 	'''
-	Returns a filtered list of sources that are not already in the vectordb
-	or have been modified since they were last added.
-	It also deletes the old documents to prevent duplicates.
-
-	Raises
-	------
-	DbException
+	Returns
+	-------
+	tuple[list[str], list[UploadFile]]
+		First value is a list of sources that already exist in the vectordb.
+		Second value is a list of sources that are new and should be embedded.
 	'''
 
 	try:
-		new_sources = vectordb.sources_to_embed(sources)
+		existing_sources, new_sources = vectordb.check_sources(sources)
 	except Exception as e:
 		raise DbException('Error: Vectordb sources_to_embed error') from e
 
-	return [
+	return ([
+		source for source in sources
+		if source.filename in existing_sources
+	], [
 		source for source in sources
 		if source.filename in new_sources
-	]
+	])
 
 
 def _sources_to_indocuments(config: TConfig, sources: list[UploadFile]) -> list[InDocument]:
@@ -99,7 +100,18 @@ def _process_sources(
 	Processes the sources and adds them to the vectordb.
 	Returns the list of source ids that were successfully added.
 	'''
-	filtered_sources = _filter_sources(vectordb, sources)
+	existing_sources, filtered_sources = _filter_sources(vectordb, sources)
+
+	# update userIds for existing sources
+	# allow the userIds as additional users, not as the only users
+	if len(existing_sources) > 0:
+		print('Increasing access for existing sources:', [source.filename for source in existing_sources], flush=True)
+		for source in existing_sources:
+			vectordb.update_access(
+				UpdateAccessOp.allow,
+				source.headers['userIds'].split(','),
+				source.filename,  # pyright: ignore[reportArgumentType]
+			)
 
 	if len(filtered_sources) == 0:
 		# no new sources to embed

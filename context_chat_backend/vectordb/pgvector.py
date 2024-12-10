@@ -144,7 +144,7 @@ class VectorDB(BaseVectorDB):
 
 		return added_sources
 
-	def sources_to_embed(self, sources: list[UploadFile]) -> list[str]:
+	def check_sources(self, sources: list[UploadFile]) -> tuple[list[str], list[str]]:
 		with self.client.session_maker() as session:
 			stmt = (
 				sa.select(DocumentsStore.source_id)
@@ -182,7 +182,7 @@ class VectorDB(BaseVectorDB):
 				session.commit()
 
 			# the pyright issue stems from source.filename, which has already been validated
-			return to_embed  # pyright: ignore[reportReturnType]
+			return list(existing_sources), to_embed  # pyright: ignore[reportReturnType]
 
 	def decl_update_access(self, user_ids: list[str], source_id: str, session_: orm.Session | None = None):
 		session = session_ or self.client.session_maker()
