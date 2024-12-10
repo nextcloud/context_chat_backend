@@ -238,7 +238,7 @@ def _(
 
 @app.post('/deleteSources')
 @enabled_guard(app)
-def _(sourceIds: Annotated[list[str], Body()]):
+def _(sourceIds: Annotated[list[str], Body(embed=True)]):
 	print('Delete sources request:', sourceIds)
 
 	sourceIds = [source.strip() for source in sourceIds if source.strip() != '']
