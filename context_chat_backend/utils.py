@@ -6,7 +6,7 @@ from functools import partial, wraps
 from logging import error as log_error
 from multiprocessing.connection import Connection
 from os import getenv
-from time import perf_counter
+from time import perf_counter_ns
 from typing import Any, TypeGuard, TypeVar
 
 from fastapi import FastAPI
@@ -129,10 +129,10 @@ def timed(func: Callable):
 	'''
 	@wraps(func)
 	def wrapper(*args, **kwargs):
-		start = perf_counter()
+		start = perf_counter_ns()
 		res = func(*args, **kwargs)
-		end = perf_counter()
-		print(f'{func.__name__} took {end - start:.4f} seconds', flush=True)
+		end = perf_counter_ns()
+		print(f'{func.__name__} took {(end - start)/1e6:.2f}ms', flush=True)
 		return res
 
 	return wrapper
