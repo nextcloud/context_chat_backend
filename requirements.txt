@@ -4,7 +4,6 @@ ctransformers
 epub2txt
 fastapi
 httpx
-InstructorEmbedding
 langchain
 langchain-community
 langchain-postgres
@@ -33,6 +32,5 @@ torchvision
 transformers
 unstructured @ git+https://github.com/kyteinsky/unstructured@d3a404cfb541dae8e16956f096bac99fc05c985b
 unstructured-client
-weaviate-client
 wheel
 xlrd

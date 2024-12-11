@@ -11,7 +11,8 @@ from llama_cpp.server.settings import ModelSettings, ServerSettings
 from starlette.datastructures import URL
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from context_chat_backend.config_parser import TConfig, get_config  # isort: skip
+from context_chat_backend.types import TConfig  # isort: skip
+from context_chat_backend.config_parser import get_config  # isort: skip
 from context_chat_backend.setup_functions import ensure_config_file, setup_env_vars  # isort: skip
 
 

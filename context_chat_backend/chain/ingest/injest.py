@@ -1,190 +1,147 @@
 import re
-from logging import error as log_error
 
 from fastapi.datastructures import UploadFile
 from langchain.schema import Document
 
-from ...config_parser import TConfig
 from ...dyn_loader import VectorDBLoader
-from ...utils import not_none, to_int
-from ...vectordb import BaseVectorDB
+from ...types import TConfig
+from ...utils import is_valid_source_id, to_int
+from ...vectordb.base import BaseVectorDB
+from ...vectordb.types import DbException, UpdateAccessOp
+from ..types import InDocument
 from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
 from .mimetype_list import SUPPORTED_MIMETYPES
 
 
 def _allowed_file(file: UploadFile) -> bool:
-	return file.headers.get('type', default='') in SUPPORTED_MIMETYPES
+	return file.headers['type'] in SUPPORTED_MIMETYPES
 
 
 def _filter_sources(
-	user_id: str,
 	vectordb: BaseVectorDB,
 	sources: list[UploadFile]
-) -> list[UploadFile]:
+) -> tuple[list[UploadFile], list[UploadFile]]:
 	'''
-	Returns a filtered list of sources that are not already in the vectordb
-	or have been modified since they were last added.
-	It also deletes the old documents to prevent duplicates.
-
-	Raises
-	------
-	DbException
+	Returns
+	-------
+	tuple[list[str], list[UploadFile]]
+		First value is a list of sources that already exist in the vectordb.
+		Second value is a list of sources that are new and should be embedded.
 	'''
-	to_delete = {}
 
-	input_sources = {}
-	for source in sources:
-		if not not_none(source.filename) or not not_none(source.headers.get('modified')):
-			continue
-		input_sources[source.filename] = source.headers.get('modified')
+	try:
+		existing_sources, new_sources = vectordb.check_sources(sources)
+	except Exception as e:
+		raise DbException('Error: Vectordb sources_to_embed error') from e
 
-	existing_objects = vectordb.get_objects_from_metadata(
-		user_id,
-		'source',
-		list(input_sources.keys())
-	)
-
-	for source, existing_meta in existing_objects.items():
-		# recently modified files are re-embedded
-		if to_int(input_sources.get(source)) > to_int(existing_meta.get('modified')):
-			to_delete[source] = existing_meta.get('id')
-
-	# delete old sources
-	vectordb.delete_by_ids(user_id, list(to_delete.values()))
-
-	# sources not already in the vectordb + the ones that were deleted
-	new_sources = set(input_sources.keys()) \
-		.difference(set(existing_objects))
-	new_sources.update(set(to_delete.keys()))
-
-	return [
+	return ([
+		source for source in sources
+		if source.filename in existing_sources
+	], [
 		source for source in sources
 		if source.filename in new_sources
-	]
+	])
 
 
-def _sources_to_documents(sources: list[UploadFile]) -> dict[str, list[Document]]:
-	'''
-	Converts a list of sources to a dictionary of documents with the user_id as the key.
-	'''
-	documents = {}
+def _sources_to_indocuments(config: TConfig, sources: list[UploadFile]) -> list[InDocument]:
+	indocuments = []
 
 	for source in sources:
 		print('processing source:', source.filename, flush=True)
-		user_id = source.headers.get('userId')
-		if user_id is None:
-			log_error(f'userId not found in headers for source: {source.filename}')
-			continue
 
 		# transform the source to have text data
 		content = decode_source(source)
+
 		if content is None or content == '':
+			print('decoded empty source:', source.filename, flush=True)
+			continue
+
+		# replace more than two newlines with two newlines (also blank spaces, more than 4)
+		content = re.sub(r'((\r)?\n){3,}', '\n\n', content)
+		# NOTE: do not use this with all docs when programming files are added
+		content = re.sub(r'(\s){5,}', r'\g<1>', content)
+		# filter out null bytes
+		content = content.replace('\0', '')
+
+		if content is None or content == '':
+			print('decoded empty source after cleanup:', source.filename, flush=True)
 			continue
 
 		print('decoded non empty source:', source.filename, flush=True)
 
 		metadata = {
 			'source': source.filename,
-			'title': source.headers.get('title'),
-			'type': source.headers.get('type'),
-			'modified': source.headers.get('modified'),
-			'provider': source.headers.get('provider'),
+			'title': source.headers['title'],
+			'type': source.headers['type'],
 		}
+		doc = Document(page_content=content, metadata=metadata)
 
-		document = Document(page_content=content, metadata=metadata)
+		splitter = get_splitter_for(config.embedding_chunk_size, source.headers['type'])
+		split_docs = splitter.split_documents([doc])
 
-		if documents.get(user_id) is not None:
-			documents[user_id].append(document)
-		else:
-			documents[user_id] = [document]
+		indocuments.append(InDocument(
+			documents=split_docs,
+			userIds=source.headers['userIds'].split(','),
+			source_id=source.filename,  # pyright: ignore[reportArgumentType]
+			provider=source.headers['provider'],
+			modified=to_int(source.headers['modified']),
+		))
 
-	return documents
-
-
-def _bucket_by_type(documents: list[Document]) -> dict[str, list[Document]]:
-	bucketed_documents = {}
-
-	for doc in documents:
-		doc_type = doc.metadata.get('type')
-
-		if bucketed_documents.get(doc_type) is not None:
-			bucketed_documents[doc_type].append(doc)
-		else:
-			bucketed_documents[doc_type] = [doc]
-
-	return bucketed_documents
+	return indocuments
 
 
 def _process_sources(
 	vectordb: BaseVectorDB,
 	config: TConfig,
 	sources: list[UploadFile],
-) -> bool:
-	filtered_sources = _filter_sources(sources[0].headers['userId'], vectordb, sources)
+) -> list[str]:
+	'''
+	Processes the sources and adds them to the vectordb.
+	Returns the list of source ids that were successfully added.
+	'''
+	existing_sources, filtered_sources = _filter_sources(vectordb, sources)
+
+	# update userIds for existing sources
+	# allow the userIds as additional users, not as the only users
+	if len(existing_sources) > 0:
+		print('Increasing access for existing sources:', [source.filename for source in existing_sources], flush=True)
+		for source in existing_sources:
+			vectordb.update_access(
+				UpdateAccessOp.allow,
+				source.headers['userIds'].split(','),
+				source.filename,  # pyright: ignore[reportArgumentType]
+			)
 
 	if len(filtered_sources) == 0:
 		# no new sources to embed
 		print('Filtered all sources, nothing to embed', flush=True)
-		return True
+		return []
 
 	print('Filtered sources:', [source.filename for source in filtered_sources], flush=True)
-	ddocuments: dict[str, list[Document]] = _sources_to_documents(filtered_sources)
+	indocuments = _sources_to_indocuments(config, filtered_sources)
 
 	print('Converted sources to documents')
 
-	if len(ddocuments.keys()) == 0:
+	if len(indocuments) == 0:
 		# document(s) were empty, not an error
 		print('All documents were found empty after being processed', flush=True)
-		return True
+		return []
 
-	success = True
-
-	for user_id, documents in ddocuments.items():
-		split_documents: list[Document] = []
-
-		type_bucketed_docs = _bucket_by_type(documents)
-
-		for _type, _docs in type_bucketed_docs.items():
-			text_splitter = get_splitter_for(config.embedding_chunk_size, _type)
-			split_docs = text_splitter.split_documents(_docs)
-			split_documents.extend(split_docs)
-
-		# replace more than two newlines with two newlines (also blank spaces, more than 4)
-		for doc in split_documents:
-			doc.page_content = re.sub(r'((\r)?\n){3,}', '\n\n', doc.page_content)
-			# NOTE: do not use this with all docs when programming files are added
-			doc.page_content = re.sub(r'(\s){5,}', r'\g<1>', doc.page_content)
-			# filter out null bytes
-			doc.page_content = doc.page_content.replace('\0', '')
-
-		# filter out empty documents
-		split_documents = list(filter(lambda doc: doc.page_content != '', split_documents))
-
-		print('split documents count:', len(split_documents), flush=True)
-
-		if len(split_documents) == 0:
-			continue
-
-		user_client = vectordb.get_user_client(user_id)
-		doc_ids = user_client.add_documents(split_documents)
-
-		print('Added documents to vectordb', flush=True)
-		# does not do per document error checking
-		success &= len(split_documents) == len(doc_ids)
-
-	return success
+	added_sources = vectordb.add_indocuments(indocuments)
+	print('Added documents to vectordb', flush=True)
+	return added_sources
 
 
 def embed_sources(
 	vectordb_loader: VectorDBLoader,
 	config: TConfig,
 	sources: list[UploadFile],
-) -> bool:
+) -> list[str]:
 	# either not a file or a file that is allowed
 	sources_filtered = [
 		source for source in sources
-		if (source.filename is not None and not source.filename.startswith('files__default: '))
+		if is_valid_source_id(source.filename)  # pyright: ignore[reportArgumentType]
 		or _allowed_file(source)
 	]
 

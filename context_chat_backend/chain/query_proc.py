@@ -1,6 +1,6 @@
 from langchain.llms.base import LLM
 
-from ..config_parser import TConfig
+from ..types import TConfig
 
 
 def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, text_chunks: list[str]) -> str:

@@ -1,33 +1,8 @@
-
-from pydantic import BaseModel
 from ruamel.yaml import YAML
 
-from .models import models
-from .vectordb import vector_dbs
-
-
-class TEmbedding(BaseModel):
-	protocol: str
-	host: str
-	port: int
-	workers: int
-	offload_after_mins: int
-	request_timeout: int
-	llama: dict
-
-
-class TConfig(BaseModel):
-	debug: bool
-	disable_aaa: bool
-	httpx_verify_ssl: bool
-	use_colors: bool
-	uvicorn_workers: int
-	embedding_chunk_size: int
-	doc_parser_worker_limit: int
-
-	vectordb: tuple[str, dict]
-	embedding: TEmbedding
-	llm: tuple[str, dict]
+from .models.loader import models
+from .types import TConfig
+from .vectordb.loader import vector_dbs
 
 
 def _first_in_list(
