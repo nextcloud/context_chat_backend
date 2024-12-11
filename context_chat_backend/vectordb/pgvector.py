@@ -144,6 +144,7 @@ class VectorDB(BaseVectorDB):
 
 		return added_sources
 
+	@timed
 	def check_sources(self, sources: list[UploadFile]) -> tuple[list[str], list[str]]:
 		with self.client.session_maker() as session:
 			stmt = (
@@ -157,7 +158,6 @@ class VectorDB(BaseVectorDB):
 
 			to_delete = []
 
-			# todo: test doc updates
 			for source in sources:
 				stmt = (
 					sa.select(DocumentsStore.source_id)
@@ -174,15 +174,16 @@ class VectorDB(BaseVectorDB):
 					to_delete.append(result.source_id)
 
 			if len(to_delete) > 0:
-				stmt = (
-					sa.delete(DocumentsStore)
-					.filter(DocumentsStore.source_id.in_(to_delete))
-				)
-				session.execute(stmt)
-				session.commit()
+				self.delete_source_ids(to_delete, session)
+
+			still_existing_sources = [
+				source
+				for source in existing_sources
+				if source not in to_delete
+			]
 
 			# the pyright issue stems from source.filename, which has already been validated
-			return list(existing_sources), to_embed  # pyright: ignore[reportReturnType]
+			return list(still_existing_sources), to_embed  # pyright: ignore[reportReturnType]
 
 	def decl_update_access(self, user_ids: list[str], source_id: str, session_: orm.Session | None = None):
 		session = session_ or self.client.session_maker()
@@ -440,7 +441,7 @@ class VectorDB(BaseVectorDB):
 		session: orm.Session,
 		query: str,
 		chunk_ids: list[str],
-		k: int = 4,
+		k: int = 20,
 	) -> list[Document]:
 		embedding = self.client.embeddings.embed_query(query)
 		collection = self.client.get_collection(session)

@@ -73,6 +73,7 @@ class BaseVectorDB(ABC):
 			List of source ids that were successfully added.
 		'''
 
+	@timed
 	@abstractmethod
 	def check_sources(
 		self,
