@@ -7,7 +7,7 @@ from ...dyn_loader import VectorDBLoader
 from ...types import TConfig
 from ...utils import is_valid_source_id, to_int
 from ...vectordb.base import BaseVectorDB
-from ...vectordb.types import DbException, UpdateAccessOp
+from ...vectordb.types import DbException, SafeDbException, UpdateAccessOp
 from ..types import InDocument
 from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
@@ -107,11 +107,15 @@ def _process_sources(
 	if len(existing_sources) > 0:
 		print('Increasing access for existing sources:', [source.filename for source in existing_sources], flush=True)
 		for source in existing_sources:
-			vectordb.update_access(
-				UpdateAccessOp.allow,
-				source.headers['userIds'].split(','),
-				source.filename,  # pyright: ignore[reportArgumentType]
-			)
+			try:
+				vectordb.update_access(
+					UpdateAccessOp.allow,
+					source.headers['userIds'].split(','),
+					source.filename,  # pyright: ignore[reportArgumentType]
+				)
+			except SafeDbException as e:
+				print('Failed to update access for source (', source.filename, '):', e.args[0], flush=True)
+				continue
 
 	if len(filtered_sources) == 0:
 		# no new sources to embed
