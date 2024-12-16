@@ -4,6 +4,8 @@
 -->
 # Nextcloud Assistant Context Chat Backend
 
+[![REUSE status](https://api.reuse.software/badge/github.com/nextcloud/context_chat_backend)](https://api.reuse.software/info/github.com/nextcloud/context_chat_backend)
+
 > [!NOTE]
 > This is a beta software. Expect breaking changes.
 >
