@@ -9,10 +9,10 @@ from pydantic import BaseModel
 from typing_extensions import TypedDict
 
 __all__ = [
-	'InDocument',
-	'ScopeType',
 	'ContextException',
+	'InDocument',
 	'LLMOutput',
+	'ScopeType',
 ]
 
 

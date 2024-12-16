@@ -5,10 +5,10 @@
 from pydantic import BaseModel
 
 __all__ = [
-	'TEmbedding',
-	'TConfig',
-	'LoaderException',
 	'EmbeddingException',
+	'LoaderException',
+	'TConfig',
+	'TEmbedding',
 ]
 
 class TEmbedding(BaseModel):

@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 from .repair import runner
 
-__all__ = ['setup_env_vars', 'repair_run', 'ensure_config_file']
+__all__ = ['ensure_config_file', 'repair_run', 'setup_env_vars']
 
 
 def ensure_config_file():
