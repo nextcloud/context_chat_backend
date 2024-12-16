@@ -1,3 +1,7 @@
+#
+# SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 from functools import lru_cache
 
 from langchain.text_splitter import MarkdownTextSplitter, RecursiveCharacterTextSplitter, TextSplitter

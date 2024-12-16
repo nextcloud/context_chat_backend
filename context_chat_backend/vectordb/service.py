@@ -1,3 +1,7 @@
+#
+# SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 from ..dyn_loader import VectorDBLoader
 from .base import BaseVectorDB
 from .types import DbException, UpdateAccessOp
