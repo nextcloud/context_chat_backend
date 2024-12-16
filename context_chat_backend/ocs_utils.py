@@ -1,3 +1,7 @@
+#
+# SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 import json
 from base64 import b64decode, b64encode
 from logging import error as log_error

@@ -1,6 +1,8 @@
 #!/bin/bash
-
-# Stolen from https://github.com/cloud-py-api/flow
+#
+# SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 
 set -e
 
