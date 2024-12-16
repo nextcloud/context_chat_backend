@@ -1,3 +1,7 @@
+#
+# SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 from os import getenv, path
 
 from langchain_community.llms.huggingface_pipeline import HuggingFacePipeline

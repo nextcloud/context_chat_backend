@@ -1,5 +1,8 @@
 #!/usr/bin/env sh
-
+#
+# SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 parts=(${APP_VERSION//./ })
 repair_filename="repair${parts[0]}$(printf %03d ${parts[1]})_date$(date +%Y%m%d%H%M%S).py"
 
