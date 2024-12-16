@@ -55,7 +55,7 @@ class EmbeddingModelLoader(Loader):
 			if pid.value > 0 and psutil.pid_exists(pid.value):
 				return
 
-			proc = subprocess.Popen(
+			proc = subprocess.Popen(  # noqa: S603
 				['./main_em.py'],
 				stdout=self.logfile,
 				stderr=self.logfile,
