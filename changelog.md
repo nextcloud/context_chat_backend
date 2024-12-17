@@ -8,6 +8,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 4.0.0 - 2024-12-17
+
+### Changed
+- database schema change for no data duplication (#108) @kyteinsky
+- remove support for Chroma DB and Weaviate (#108) @kyteinsky
+
+### Fixed
+- consider delete successful if doc was not in db (#107) @kyteinsky
+- catch exceptions in update_access loop (#109) @kyteinsky
+
+### Added
+- add reuse compliance (#111) @AndyScherzinger
+
+
 ## 4.0.0-beta5 - 2024-11-20
 
 ### Fixed
