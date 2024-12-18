@@ -36,7 +36,6 @@ def main():
 
 	all_filenames = os.listdir('context_chat_backend/repair')
 	repair_filenames = [f for f in all_filenames if f.startswith('repair') and f.endswith('.py')]
-	repair_filenames.sort(reverse=True)
 
 	(previous_app_version, repairs_pending) = get_previous_version(version_info_path)
 
@@ -55,7 +54,7 @@ def main():
 
 		if introduced_version < previous_app_version:
 			print(f'No repairs to run for version {introduced_version}.', flush=True)
-			break
+			continue
 
 		print(f'Running repair {repair_filename}...', flush=True, end='')
 
