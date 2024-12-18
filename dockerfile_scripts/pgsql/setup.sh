@@ -33,6 +33,8 @@ fi
 
 # Ensure the directory exists and has the correct permissions
 mkdir -p "$DATA_DIR"
+chmod +rx "${APP_PERSISTENT_STORAGE:-persistent_storage}"
+chmod +rx "$BASE_DIR"
 chown -R postgres:postgres "$DATA_DIR"
 
 if [ ! -d "$DATA_DIR/base" ]; then
