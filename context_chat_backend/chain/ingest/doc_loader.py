@@ -122,10 +122,10 @@ def decode_source(source: UploadFile) -> str | None:
 	try:
 		# .pot files are powerpoint templates but also plain text files,
 		# so we skip them to prevent decoding errors
-		if source.headers.get('title', '').endswith('.pot'):
+		if source.headers['title'].endswith('.pot'):
 			return None
 
-		mimetype = source.headers.get('type')
+		mimetype = source.headers['type']
 		if mimetype is None:
 			return None
 
