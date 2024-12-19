@@ -44,7 +44,7 @@ def _verify_signature(headers: Headers) -> str | None:
 		)
 		return None
 
-	auth_aa = b64decode(headers.get('AUTHORIZATION-APP-API', '')).decode('UTF-8')
+	auth_aa = b64decode(headers.get('AUTHORIZATION-APP-API', '')).decode('UTF-8', 'ignore')
 	username, app_secret = auth_aa.split(':', maxsplit=1)
 
 	if app_secret != getenv('APP_SECRET'):

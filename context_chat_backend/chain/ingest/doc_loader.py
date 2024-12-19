@@ -31,7 +31,7 @@ def _temp_file_wrapper(file: BinaryIO, loader: Callable, sep: str = '\n') -> str
 			os.remove(tmp.name)
 
 	if isinstance(docs, str) or isinstance(docs, bytes):
-		return docs.decode('utf-8') if isinstance(docs, bytes) else docs  # pyright: ignore[reportReturnType]
+		return docs.decode('utf-8', 'ignore') if isinstance(docs, bytes) else docs  # pyright: ignore[reportReturnType]
 
 	return sep.join(d.page_content for d in docs)
 
@@ -64,11 +64,11 @@ def _load_ppt_x(file: BinaryIO) -> str:
 
 
 def _load_rtf(file: BinaryIO) -> str:
-	return striprtf.rtf_to_text(file.read().decode('utf-8')).strip()
+	return striprtf.rtf_to_text(file.read().decode('utf-8', 'ignore')).strip()
 
 
 def _load_xml(file: BinaryIO) -> str:
-	data = file.read().decode('utf-8')
+	data = file.read().decode('utf-8', 'ignore')
 	data = re.sub(r'</.+>', '', data)
 	return data.strip()
 
@@ -134,7 +134,7 @@ def decode_source(source: UploadFile) -> str | None:
 			source.file.close()
 			return result
 
-		result = source.file.read().decode('utf-8')
+		result = source.file.read().decode('utf-8', 'ignore')
 		source.file.close()
 		return result
 	except Exception:
