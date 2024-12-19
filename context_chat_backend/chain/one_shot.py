@@ -10,10 +10,29 @@ from .context import get_context_chunks, get_context_docs
 from .query_proc import get_pruned_query
 from .types import ContextException, LLMOutput, ScopeType
 
-_LLM_TEMPLATE = '''Answer based only on this context and do not add any imaginative details. Make sure to use the same language as the question in your answer.
-{context}
+_LLM_TEMPLATE = '''
+You're an AI assistant named Nextcloud Assistant, good at finding relevant context from documents to answer questions provided by the user.
+Use the following documents as context to answer the question at the end. REMEMBER to exercise source criticism as the documents are returned by a search provider that can return unrelated documents.
+If you don't know the answer or are unsure, just say that you don't know, don't try to make up an answer. Don't mention the context in your answer but rather just answer the question directly. Detect the language of the question and make sure to use the same language that was used in the question to answer the question.
+Don't mention which language was used, but just answer the question directly in the same langauge.
+
+QUESTION:
+-----------------
 
 {question}
+
+-----------------
+END OF QUESTION
+
+CONTEXT:
+-----------------
+
+{context}
+
+-----------------
+END OF CONTEXT
+
+Let's think this step-by-step. Answer the question:
 ''' # noqa: E501
 
 
