@@ -15,5 +15,10 @@ vector_db_path = os.path.join(
 )
 
 if os.path.exists(vector_db_path):
-	shutil.rmtree(vector_db_path)
-	os.makedirs(vector_db_path, mode=0o770)
+	for n in os.listdir(vector_db_path):
+		if n == 'pgsql':
+			continue
+		if os.path.isdir(os.path.join(vector_db_path, n)):
+			shutil.rmtree(os.path.join(vector_db_path, n))
+		else:
+			os.remove(os.path.join(vector_db_path, n))
