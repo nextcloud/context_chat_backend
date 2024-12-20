@@ -76,7 +76,7 @@ def _sources_to_indocuments(config: TConfig, sources: list[UploadFile]) -> list[
 
 		metadata = {
 			'source': source.filename,
-			'title': source.headers['title'],
+			'title': _decode_latin_1(source.headers['title']),
 			'type': source.headers['type'],
 		}
 		doc = Document(page_content=content, metadata=metadata)
@@ -86,7 +86,7 @@ def _sources_to_indocuments(config: TConfig, sources: list[UploadFile]) -> list[
 
 		indocuments.append(InDocument(
 			documents=split_docs,
-			userIds=source.headers['userIds'].split(','),
+			userIds=list(map(_decode_latin_1, source.headers['userIds'].split(','))),
 			source_id=source.filename,  # pyright: ignore[reportArgumentType]
 			provider=source.headers['provider'],
 			modified=to_int(source.headers['modified']),
@@ -114,7 +114,7 @@ def _process_sources(
 			try:
 				vectordb.update_access(
 					UpdateAccessOp.allow,
-					source.headers['userIds'].split(','),
+					list(map(_decode_latin_1, source.headers['userIds'].split(','))),
 					source.filename,  # pyright: ignore[reportArgumentType]
 				)
 			except SafeDbException as e:
@@ -141,6 +141,14 @@ def _process_sources(
 	return added_sources
 
 
+def _decode_latin_1(s: str) -> str:
+	try:
+		return s.encode('latin-1').decode('utf-8')
+	except UnicodeDecodeError:
+		print('Failed to decode latin-1:', s, flush=True)
+		return s
+
+
 def embed_sources(
 	vectordb_loader: VectorDBLoader,
 	config: TConfig,
@@ -155,7 +163,7 @@ def embed_sources(
 
 	print(
 		'Embedding sources:\n' +
-		'\n'.join([f'{source.filename} ({source.headers["title"]})' for source in sources_filtered]),
+		'\n'.join([f'{source.filename} ({_decode_latin_1(source.headers["title"])})' for source in sources_filtered]),
 		flush=True,
 	)
 
