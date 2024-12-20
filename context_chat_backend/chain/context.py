@@ -29,10 +29,10 @@ def get_context_docs(
 def get_context_chunks(context_docs: list[Document]) -> list[str]:
 	context_chunks = []
 	for doc in context_docs:
-		chunk = 'Start of document'
+		chunk = '\n\nSTART OF DOCUMENT'
 		if title := doc.metadata.get('title'):
 			chunk += '\nDocument: ' + title
-		chunk += "\n\n" + doc.page_content + "\n\nEnd of document"
+		chunk += "\n\n" + doc.page_content + "\n\nEND OF DOCUMENT"
 		context_chunks.append(chunk)
 
 	return context_chunks

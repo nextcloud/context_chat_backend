@@ -16,14 +16,6 @@ Use the following documents as context to answer the question at the end. REMEMB
 If you don't know the answer or are unsure, just say that you don't know, don't try to make up an answer. Don't mention the context in your answer but rather just answer the question directly. Detect the language of the question and make sure to use the same language that was used in the question to answer the question.
 Don't mention which language was used, but just answer the question directly in the same langauge.
 
-QUESTION:
------------------
-
-{question}
-
------------------
-END OF QUESTION
-
 CONTEXT:
 -----------------
 
@@ -32,7 +24,15 @@ CONTEXT:
 -----------------
 END OF CONTEXT
 
-Let's think this step-by-step. Answer the question:
+QUESTION:
+-----------------
+
+{question}
+
+-----------------
+END OF QUESTION
+
+Let's think this step-by-step. Answer the question in the same language as the question:
 ''' # noqa: E501
 
 
