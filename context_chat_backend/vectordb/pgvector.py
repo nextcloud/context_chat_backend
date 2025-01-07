@@ -127,20 +127,10 @@ class VectorDB(BaseVectorDB):
 						modified=datetime.fromtimestamp(indoc.modified),
 						chunks=chunk_ids,
 					)
-
-					access = [
-						AccessListStore(
-							uid=user_id,
-							source_id=indoc.source_id,
-						)
-						for user_id in indoc.userIds
-					]
-
 					session.add(doc)
 					session.commit()
-					session.add_all(access)
-					session.commit()
 
+					self.decl_update_access(indoc.userIds, indoc.source_id, session)
 					added_sources.append(indoc.source_id)
 				except Exception as e:
 					log_error('Error adding documents to vectordb:', e)
@@ -206,6 +196,7 @@ class VectorDB(BaseVectorDB):
 			.filter(AccessListStore.source_id == source_id)
 		)
 		session.execute(stmt)
+		session.commit()
 
 		access = [
 			AccessListStore(
