@@ -81,7 +81,7 @@ class CustomLLM(LLM):
             i = 0
             # wait for 30 minutes
             while task.status != "STATUS_SUCCESSFUL" and task.status != "STATUS_FAILED" and i < 60 * 6:
-                if int(i/180) == 0:
+                if i < 60 * 3:
                     time.sleep(5)
                     i += 1
                 else:
