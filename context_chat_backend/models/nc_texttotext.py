@@ -6,9 +6,10 @@ import json
 import time
 from typing import Any
 
+import httpx
 from langchain_core.callbacks.manager import CallbackManagerForLLMRun
 from langchain_core.language_models.llms import LLM
-from nc_py_api import NextcloudApp
+from nc_py_api import NextcloudApp, NextcloudException
 from pydantic import BaseModel, ValidationError
 
 from .types import LlmException
@@ -75,16 +76,42 @@ class CustomLLM(LLM):
 
         try:
             task = Response.model_validate(response).task
-            print(task)
+            print("Initial task schedule response:", task)
 
             i = 0
             # wait for 30 minutes
             while task.status != "STATUS_SUCCESSFUL" and task.status != "STATUS_FAILED" and i < 60 * 6:
-                time.sleep(5)
-                i += 1
-                response = nc.ocs("GET", f"/ocs/v1.php/taskprocessing/task/{task.id}")
+                if i < 60 * 3:
+                    time.sleep(5)
+                    i += 1
+                else:
+                    # pool every 10 secs in the second half
+                    time.sleep(10)
+                    i += 2
+
+                try:
+                    response = nc.ocs("GET", f"/ocs/v1.php/taskprocessing/task/{task.id}")
+                except (
+                    httpx.RemoteProtocolError,
+                    httpx.ReadError,
+                    httpx.LocalProtocolError,
+                    httpx.PoolTimeout,
+                ) as e:
+                    print("Ignored error during task polling:", e)
+                    time.sleep(5)
+                    i += 1
+                    continue
+                except NextcloudException as e:
+                    if e.status_code == 429:
+                        print("Rate limited during task polling, waiting 10s more")
+                        time.sleep(10)
+                        i += 2
+                        continue
+                    print('NextcloudException:', e)
+                    raise LlmException("Failed to poll Nextcloud TaskProcessing task") from e
+
                 task = Response.model_validate(response).task
-                print(task)
+                print(f"Task poll ({i * 5}s) response: {task}")
         except ValidationError as e:
             raise LlmException("Failed to parse Nextcloud TaskProcessing task result") from e
 
