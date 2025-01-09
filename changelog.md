@@ -8,6 +8,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 4.0.2 - 2025-01-09
+
+### Fixed
+- fix utf-8 encoding fixes (#118) @kyteinsky
+- decl access update in doc indexing (#125) @kyteinsky
+- ignore temp exceptions during task polling (#127) @kyteinsky
+
+
 ## 4.0.1 - 2024-12-19
 
 ### Fixed
