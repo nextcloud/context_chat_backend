@@ -319,7 +319,10 @@ def _(sources: list[UploadFile]):
 		):
 			return JSONResponse(f'Invaild/missing headers for: {source.filename}', 400)
 
-	doc_parse_semaphore.acquire(block=True, timeout=29*60)  # ~29 minutes
+	# wait for 10 minutes before failing the request
+	semres = doc_parse_semaphore.acquire(block=True, timeout=10*60)
+	if not semres:
+		return JSONResponse('Document parser worker limit reached, try again in some time', 503)
 	added_sources = exec_in_proc(target=embed_sources, args=(vectordb_loader, app.extra['CONFIG'], sources))
 	doc_parse_semaphore.release()
 
