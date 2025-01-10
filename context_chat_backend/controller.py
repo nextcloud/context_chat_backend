@@ -322,7 +322,11 @@ def _(sources: list[UploadFile]):
 	# wait for 10 minutes before failing the request
 	semres = doc_parse_semaphore.acquire(block=True, timeout=10*60)
 	if not semres:
-		return JSONResponse('Document parser worker limit reached, try again in some time', 503)
+		return JSONResponse(
+			'Document parser worker limit reached, try again in some time',
+			503,
+			headers={'cc-retry': 'true'}
+		)
 	added_sources = exec_in_proc(target=embed_sources, args=(vectordb_loader, app.extra['CONFIG'], sources))
 	doc_parse_semaphore.release()
 
