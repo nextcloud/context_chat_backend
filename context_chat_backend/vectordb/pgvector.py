@@ -198,14 +198,18 @@ class VectorDB(BaseVectorDB):
 		session.execute(stmt)
 		session.commit()
 
-		access = [
-			AccessListStore(
-				uid=user_id,
-				source_id=source_id,
-			)
-			for user_id in user_ids
-		]
-		session.add_all(access)
+		stmt = (
+			sa.dialects.postgresql.insert(AccessListStore)
+			.values([
+				{
+					'uid': user_id,
+					'source_id': source_id,
+				}
+				for user_id in user_ids
+			])
+			.on_conflict_do_nothing(index_elements=['uid', 'source_id'])
+		)
+		session.execute(stmt)
 		session.commit()
 
 		if session_ is None:
