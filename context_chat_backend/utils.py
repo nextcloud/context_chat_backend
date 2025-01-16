@@ -7,17 +7,11 @@ import re
 import traceback
 from collections.abc import Callable
 from functools import partial, wraps
-from logging import error as log_error
 from multiprocessing.connection import Connection
-from os import getenv
 from time import perf_counter_ns
 from typing import Any, TypeGuard, TypeVar
 
-from fastapi import FastAPI
 from fastapi.responses import JSONResponse as FastAPIJSONResponse
-
-from .ocs_utils import ocs_call
-from .types import TConfig
 
 T = TypeVar('T')
 
@@ -68,23 +62,6 @@ def JSONResponse(
 		)
 
 	return FastAPIJSONResponse(content, status_code, **kwargs)
-
-
-def update_progress(app: FastAPI, progress: int):
-	config: TConfig = app.extra['CONFIG']
-
-	if config.disable_aaa:
-		return
-
-	try:
-		ocs_call(
-			method='PUT',
-			path=f'/ocs/v1.php/apps/app_api/apps/status/{getenv("APP_ID")}',
-			json_data={ 'progress': min(100, progress) },
-			verify_ssl=config.httpx_verify_ssl,
-		)
-	except Exception as e:
-		log_error(f'Error: Failed to update progress: {e}')
 
 
 def exception_wrap(fun: Callable | None, *args, resconn: Connection, **kwargs):
