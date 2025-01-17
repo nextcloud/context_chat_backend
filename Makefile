@@ -21,7 +21,7 @@ help:
 #.PHONY: build-push
 #build-push:
 #	docker login ghcr.io
-#	docker buildx build --push --platform linux/arm64/v8,linux/amd64 --tag ghcr.io/nextcloud/context_chat_backend:4.0.3 --tag ghcr.io/nextcloud/context_chat_backend:latest .
+#	docker buildx build --push --platform linux/arm64/v8,linux/amd64 --tag ghcr.io/nextcloud/context_chat_backend:4.0.4 --tag ghcr.io/nextcloud/context_chat_backend:latest .
 
 .PHONY: run
 run:
@@ -34,5 +34,5 @@ run:
 register:
 	docker exec master-nextcloud-1 sudo -u www-data php occ app_api:app:unregister context_chat_backend --silent || true
 	docker exec master-nextcloud-1 sudo -u www-data php occ app_api:app:register context_chat_backend manual_install --json-info \
-  "{\"id\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"4.0.3\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system\":0}" \
+  "{\"id\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"4.0.4\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system\":0}" \
   --force-scopes --wait-finish

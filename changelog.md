@@ -8,6 +8,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 4.0.4 - 2025-01-17
+
+### Fixed
+- proper handling of index locks (#133) @kyteinsky
+- better logging (#135) @kyteinsky
+
+### Changed
+- remove update_progress fn now that there is no caller (#135) @kyteinsky
+
+
 ## 4.0.3 - 2025-01-11
 
 ### Fixed
