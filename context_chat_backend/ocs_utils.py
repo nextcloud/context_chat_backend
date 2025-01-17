@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 import json
+import logging
 from base64 import b64decode, b64encode
-from logging import error as log_error
 from os import getenv
 
 import httpx
@@ -14,6 +14,7 @@ from starlette.responses import JSONResponse
 from starlette.status import HTTP_401_UNAUTHORIZED
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+logger = logging.getLogger('ccb.ocs_utils')
 
 def _sign_request(headers: dict, username: str = '') -> None:
 	headers['EX-APP-ID'] = getenv('APP_ID')
@@ -25,21 +26,21 @@ def _sign_request(headers: dict, username: str = '') -> None:
 # We assume that the env variables are set
 def _verify_signature(headers: Headers) -> str | None:
 	if headers.get('AA-VERSION') is None:
-		log_error('AppAPI header AA-VERSION not set')
+		logger.error('AppAPI header AA-VERSION not set')
 		return None
 
 	if headers.get('AA-VERSION') is None or \
 		getenv('AA_VERSION') is None or \
 		version.parse(headers['AA-VERSION']) < version.parse(getenv('AA_VERSION', '')):
-		log_error(f"AppAPI version should be at least {getenv('AA_VERSION')}")
+		logger.error(f"AppAPI version should be at least {getenv('AA_VERSION')}")
 		return None
 
 	if headers.get('EX-APP-ID') != getenv('APP_ID'):
-		log_error(f'Invalid EX-APP-ID:{headers.get("EX-APP-ID")} != {getenv("APP_ID")}')
+		logger.error(f'Invalid EX-APP-ID:{headers.get("EX-APP-ID")} != {getenv("APP_ID")}')
 		return None
 
 	if headers.get('EX-APP-VERSION') != getenv('APP_VERSION'):
-		log_error(
+		logger.error(
 			f'Invalid EX-APP-VERSION:{headers.get("EX-APP-VERSION")} <=> {getenv("APP_VERSION")}'
 		)
 		return None
@@ -48,7 +49,7 @@ def _verify_signature(headers: Headers) -> str | None:
 	username, app_secret = auth_aa.split(':', maxsplit=1)
 
 	if app_secret != getenv('APP_SECRET'):
-		log_error(f'Invalid APP_SECRET:{app_secret} != {getenv("APP_SECRET")}')
+		logger.error(f'Invalid APP_SECRET:{app_secret} != {getenv("APP_SECRET")}')
 		return None
 
 	return username
@@ -142,4 +143,7 @@ def ocs_call(
 		)
 
 		if ret.status_code // 100 != 2:
-			log_error(f'ocs_call: {method} {path} failed with {ret.status_code}: {ret.text}')
+			logger.error(
+				'ocs_call: %s %s failed with %d: %s',
+				method.upper(), path, ret.status_code, ret.text,
+			)

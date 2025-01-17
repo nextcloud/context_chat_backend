@@ -2,24 +2,20 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+import logging
 import multiprocessing as mp
 import re
 import traceback
 from collections.abc import Callable
 from functools import partial, wraps
-from logging import error as log_error
 from multiprocessing.connection import Connection
-from os import getenv
 from time import perf_counter_ns
 from typing import Any, TypeGuard, TypeVar
 
-from fastapi import FastAPI
 from fastapi.responses import JSONResponse as FastAPIJSONResponse
 
-from .ocs_utils import ocs_call
-from .types import TConfig
-
 T = TypeVar('T')
+_logger = logging.getLogger('ccb.utils')
 
 
 def not_none(value: T | None) -> TypeGuard[T]:
@@ -56,6 +52,7 @@ def JSONResponse(
 	'''
 	if isinstance(content, str):
 		if status_code >= 400:
+			_logger.error(f'Failed request ({status_code}): {content}')
 			return FastAPIJSONResponse(
 				content={ 'error': content },
 				status_code=status_code,
@@ -68,23 +65,6 @@ def JSONResponse(
 		)
 
 	return FastAPIJSONResponse(content, status_code, **kwargs)
-
-
-def update_progress(app: FastAPI, progress: int):
-	config: TConfig = app.extra['CONFIG']
-
-	if config.disable_aaa:
-		return
-
-	try:
-		ocs_call(
-			method='PUT',
-			path=f'/ocs/v1.php/apps/app_api/apps/status/{getenv("APP_ID")}',
-			json_data={ 'progress': min(100, progress) },
-			verify_ssl=config.httpx_verify_ssl,
-		)
-	except Exception as e:
-		log_error(f'Error: Failed to update progress: {e}')
 
 
 def exception_wrap(fun: Callable | None, *args, resconn: Connection, **kwargs):
@@ -113,7 +93,7 @@ def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daem
 
 	result = pconn.recv()
 	if result['error'] is not None:
-		print('original traceback:', result['traceback'], flush=True)
+		_logger.error('original traceback: %s', result['traceback'])
 		raise result['error']
 
 	return result['value']
@@ -136,7 +116,7 @@ def timed(func: Callable):
 		start = perf_counter_ns()
 		res = func(*args, **kwargs)
 		end = perf_counter_ns()
-		print(f'{func.__name__} took {(end - start)/1e6:.2f}ms', flush=True)
+		_logger.debug(f'{func.__name__} took {(end - start)/1e6:.2f}ms')
 		return res
 
 	return wrapper

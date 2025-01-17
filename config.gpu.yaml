@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 debug: true
+uvicorn_log_level: info
 disable_aaa: false
 httpx_verify_ssl: true
 use_colors: true

@@ -3,11 +3,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 
+import logging
 import re
 import tempfile
-import traceback
 from collections.abc import Callable
-from logging import error as log_error
 from typing import BinaryIO
 
 import docx2txt
@@ -19,6 +18,7 @@ from pandas import read_csv, read_excel
 from pypdf import PdfReader
 from striprtf import striprtf
 
+logger = logging.getLogger('ccb.doc_loader')
 
 def _temp_file_wrapper(file: BinaryIO, loader: Callable, sep: str = '\n') -> str:
 	raw_bytes = file.read()
@@ -138,8 +138,7 @@ def decode_source(source: UploadFile) -> str | None:
 		source.file.close()
 		return result
 	except Exception:
-		traceback.print_exc()
-		log_error(f'Error decoding source file ({source.filename})')
+		logger.exception(f'Error decoding source file ({source.filename})', stack_info=True)
 		return None
 	finally:
 		source.file.close()  # Ensure file is closed after processing

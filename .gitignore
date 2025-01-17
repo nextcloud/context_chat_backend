@@ -5,4 +5,4 @@ __pycache__/
 .env
 persistent_storage/*
 .vscode/
-embedding_model.log
+logs/

@@ -49,6 +49,7 @@ def get_config(file_path: str) -> TConfig:
 
 	return TConfig(
 		debug=config.get('debug', False),
+		uvicorn_log_level=config.get('uvicorn_log_level', 'info'),
 		disable_aaa=config.get('disable_aaa', False),
 		httpx_verify_ssl=config.get('httpx_verify_ssl', True),
 		use_colors=config.get('use_colors', True),

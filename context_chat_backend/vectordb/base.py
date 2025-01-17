@@ -148,7 +148,6 @@ class BaseVectorDB(ABC):
 
 		Raises
 		------
-		# todo
 		SafeDbException
 		'''
 		...

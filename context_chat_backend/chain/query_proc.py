@@ -2,10 +2,13 @@
 # SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+import logging
+
 from langchain.llms.base import LLM
 
 from ..types import TConfig
 
+logger = logging.getLogger('ccb.chain')
 
 def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, text_chunks: list[str]) -> str:
 	'''
@@ -60,11 +63,11 @@ def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, text_
 			accepted_chunks.append(context)
 			remaining_tokens -= context_tokens
 
-	print(
-		'total tokens:', n_ctx - remaining_tokens,
-		'remaining tokens:', remaining_tokens,
-		'accepted chunks:', len(accepted_chunks),
-		flush=True,
-	)
+	logger.debug('pruned query stats', extra={
+		'total tokens': n_ctx - remaining_tokens,
+		'remaining tokens': remaining_tokens,
+		'accepted chunks': len(accepted_chunks),
+		'total chunks': len(text_chunks),
+	})
 
 	return template.format(context='\n\n'.join(accepted_chunks), question=query)
