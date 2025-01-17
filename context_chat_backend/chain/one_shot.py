@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+import logging
+
 from langchain.llms.base import LLM
 
 from ..dyn_loader import VectorDBLoader
@@ -16,6 +18,7 @@ _LLM_TEMPLATE = '''Answer based only on this context and do not add any imaginat
 {question}
 ''' # noqa: E501
 
+logger = logging.getLogger('ccb.chain')
 
 def process_query(
 	user_id: str,
@@ -65,7 +68,10 @@ def process_context_query(
 		raise ContextException('No documents retrieved, please index a few documents first')
 
 	context_chunks = get_context_chunks(context_docs)
-	print('len(context_chunks)', len(context_chunks), flush=True)
+	logger.debug('context retrieved', extra={
+		'len(context_docs)': len(context_docs),
+		'len(context_chunks)': len(context_chunks),
+	})
 
 	output = llm.invoke(
 		get_pruned_query(llm, app_config, query, template or _LLM_TEMPLATE, context_chunks),

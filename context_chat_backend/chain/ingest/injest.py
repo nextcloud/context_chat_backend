@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+import logging
 import re
 
 from fastapi.datastructures import UploadFile
@@ -17,6 +18,7 @@ from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
 from .mimetype_list import SUPPORTED_MIMETYPES
 
+logger = logging.getLogger('ccb.injest')
 
 def _allowed_file(file: UploadFile) -> bool:
 	return file.headers['type'] in SUPPORTED_MIMETYPES
@@ -52,13 +54,13 @@ def _sources_to_indocuments(config: TConfig, sources: list[UploadFile]) -> list[
 	indocuments = []
 
 	for source in sources:
-		print('processing source:', source.filename, flush=True)
+		logger.debug('processing source', extra={ 'source_id': source.filename })
 
 		# transform the source to have text data
 		content = decode_source(source)
 
 		if content is None or content == '':
-			print('decoded empty source:', source.filename, flush=True)
+			logger.debug('decoded empty source', extra={ 'source_id': source.filename })
 			continue
 
 		# replace more than two newlines with two newlines (also blank spaces, more than 4)
@@ -69,10 +71,10 @@ def _sources_to_indocuments(config: TConfig, sources: list[UploadFile]) -> list[
 		content = content.replace('\0', '')
 
 		if content is None or content == '':
-			print('decoded empty source after cleanup:', source.filename, flush=True)
+			logger.debug('decoded empty source after cleanup', extra={ 'source_id': source.filename })
 			continue
 
-		print('decoded non empty source:', source.filename, flush=True)
+		logger.debug('decoded non empty source', extra={ 'source_id': source.filename })
 
 		metadata = {
 			'source': source.filename,
@@ -83,6 +85,10 @@ def _sources_to_indocuments(config: TConfig, sources: list[UploadFile]) -> list[
 
 		splitter = get_splitter_for(config.embedding_chunk_size, source.headers['type'])
 		split_docs = splitter.split_documents([doc])
+		logger.debug('split document into chunks', extra={
+			'source_id': source.filename,
+			'len(split_docs)': len(split_docs),
+		})
 
 		indocuments.append(InDocument(
 			documents=split_docs,
@@ -105,11 +111,19 @@ def _process_sources(
 	Returns the list of source ids that were successfully added.
 	'''
 	existing_sources, filtered_sources = _filter_sources(vectordb, sources)
+	logger.debug('db filter source results', extra={
+		'len(existing_sources)': len(existing_sources),
+		'existing_sources': existing_sources,
+		'len(filtered_sources)': len(filtered_sources),
+		'filtered_sources': filtered_sources,
+	})
 
 	# update userIds for existing sources
 	# allow the userIds as additional users, not as the only users
 	if len(existing_sources) > 0:
-		print('Increasing access for existing sources:', [source.filename for source in existing_sources], flush=True)
+		logger.debug('Increasing access for existing sources', extra={
+			'source_ids': [source.filename for source in existing_sources]
+		})
 		for source in existing_sources:
 			try:
 				vectordb.update_access(
@@ -118,26 +132,28 @@ def _process_sources(
 					source.filename,  # pyright: ignore[reportArgumentType]
 				)
 			except SafeDbException as e:
-				print('Failed to update access for source (', source.filename, '):', e.args[0], flush=True)
+				logger.error(f'Failed to update access for source ({source.filename}): {e.args[0]}')
 				continue
 
 	if len(filtered_sources) == 0:
 		# no new sources to embed
-		print('Filtered all sources, nothing to embed', flush=True)
+		logger.debug('Filtered all sources, nothing to embed')
 		return []
 
-	print('Filtered sources:', [source.filename for source in filtered_sources], flush=True)
+	logger.debug('Filtered sources:', extra={
+		'source_ids': [source.filename for source in filtered_sources]
+	})
 	indocuments = _sources_to_indocuments(config, filtered_sources)
 
-	print('Converted sources to documents')
+	logger.debug('Converted all sources to documents')
 
 	if len(indocuments) == 0:
 		# document(s) were empty, not an error
-		print('All documents were found empty after being processed', flush=True)
+		logger.debug('All documents were found empty after being processed')
 		return []
 
 	added_sources = vectordb.add_indocuments(indocuments)
-	print('Added documents to vectordb', flush=True)
+	logger.debug('Added documents to vectordb')
 	return added_sources
 
 
@@ -145,7 +161,7 @@ def _decode_latin_1(s: str) -> str:
 	try:
 		return s.encode('latin-1').decode('utf-8')
 	except UnicodeDecodeError:
-		print('Failed to decode latin-1:', s, flush=True)
+		logger.error('Failed to decode latin-1: %s', s)
 		return s
 
 
@@ -161,11 +177,12 @@ def embed_sources(
 		or _allowed_file(source)
 	]
 
-	print(
-		'Embedding sources:\n' +
-		'\n'.join([f'{source.filename} ({_decode_latin_1(source.headers["title"])})' for source in sources_filtered]),
-		flush=True,
-	)
+	logger.debug('Embedding sources:', extra={
+		'source_ids': [
+			f'{source.filename} ({_decode_latin_1(source.headers["title"])})'
+			for source in sources_filtered
+		],
+	})
 
 	vectordb = vectordb_loader.load()
 	return _process_sources(vectordb, config, sources_filtered)

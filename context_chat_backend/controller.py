@@ -6,13 +6,13 @@ from .chain.types import ContextException, LLMOutput, ScopeType # isort:skip
 from .vectordb.types import DbException, SafeDbException, UpdateAccessOp # isort:skip
 from .types import LoaderException, EmbeddingException # isort:skip
 
+import logging
 import multiprocessing as mp
 import os
 import threading
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from functools import wraps
-from logging import error as log_error
 from threading import Event
 from typing import Annotated, Any
 
@@ -37,6 +37,7 @@ from .vectordb.service import decl_update_access, delete_by_provider, delete_by_
 setup_env_vars()
 repair_run()
 ensure_config_file()
+logger = logging.getLogger('ccb.controller')
 
 models_to_fetch = {
 	"https://huggingface.co/Ralriki/multilingual-e5-large-instruct-GGUF/resolve/8738f8d3d8f311808479ecd5756607e24c6ca811/multilingual-e5-large-instruct-q6_k.gguf": {  # noqa: E501
@@ -51,7 +52,7 @@ def enabled_handler(enabled: bool, _: NextcloudApp | AsyncNextcloudApp) -> str:
 	else:
 		app_enabled.clear()
 
-	print('App', 'enabled' if enabled else 'disabled', flush=True)
+	logger.info(f'App {("disabled", "enabled")[enabled]}')
 	return ''
 
 
@@ -61,7 +62,7 @@ async def lifespan(app: FastAPI):
 	nc = NextcloudApp()
 	if nc.enabled_state:
 		app_enabled.set()
-	print('\n\nApp', 'enabled' if app_enabled.is_set() else 'disabled', 'at startup', flush=True)
+	logger.info(f'App enable state at startup: {app_enabled.is_set()}')
 	yield
 	vectordb_loader.offload()
 	embedding_loader.offload()
@@ -105,13 +106,13 @@ if not app_config.disable_aaa:
 
 @app.exception_handler(DbException)
 async def _(request: Request, exc: DbException):
-	log_error(f'Db Error: {request.url.path}:', exc)
+	logger.exception(f'Db Error: {request.url.path}:', exc_info=exc)
 	return JSONResponse('Vector DB is facing some issues, please check the logs for more info', 500)
 
 
 @app.exception_handler(SafeDbException)
 async def _(request: Request, exc: SafeDbException):
-	log_error(f'Safe Db Error (user facing): {request.url.path}:', exc)
+	logger.exception(f'Safe Db Error (user facing): {request.url.path}:', exc_info=exc)
 	if len(exc.args) > 1:
 		return JSONResponse(exc.args[0], exc.args[1])
 	return JSONResponse(str(exc), 400)
@@ -119,35 +120,34 @@ async def _(request: Request, exc: SafeDbException):
 
 @app.exception_handler(LoaderException)
 async def _(request: Request, exc: LoaderException):
-	log_error(f'Loader Error: {request.url.path}:', exc)
+	logger.exception(f'Loader Error: {request.url.path}:', exc_info=exc)
 	return JSONResponse('The resource loader is facing some issues, please check the logs for more info', 500)
 
 
 @app.exception_handler(ContextException)
 async def _(request: Request, exc: ContextException):
-	log_error(f'Context Retrieval Error: {request.url.path}:', exc)
+	logger.exception(f'Context Retrieval Error: {request.url.path}:', exc_info=exc)
 	# error message is safe
 	return JSONResponse(str(exc), 400)
 
 
 @app.exception_handler(ValueError)
 async def _(request: Request, exc: ValueError):
-	log_error(f'Error: {request.url.path}:', exc)
+	logger.exception(f'Error: {request.url.path}:', exc_info=exc)
 	# error message is safe
 	return JSONResponse(str(exc), 500)
 
 
 @app.exception_handler(LlmException)
 async def _(request: Request, exc: LlmException):
-	log_error(f'Llm Error: {request.url.path}:', exc)
+	logger.exception(f'Llm Error: {request.url.path}:', exc_info=exc)
 	# error message should be safe
 	return JSONResponse(str(exc), 500)
 
 
-# todo: exception is thrown in another process
 @app.exception_handler(EmbeddingException)
 async def _(request: Request, exc: EmbeddingException):
-	log_error(f'Error occurred in an embedding request: {request.url.path}:', exc)
+	logger.exception(f'Error occurred in an embedding request: {request.url.path}:', exc_info=exc)
 	return JSONResponse('Some error occurred in the request to the embedding server, please check the logs for more info', 500)  # noqa: E501
 
 
@@ -191,7 +191,10 @@ def _(
 	userIds: Annotated[list[str], Body()],
 	sourceId: Annotated[str, Body()],
 ):
-	print('Update access declarative request:', userIds, sourceId)
+	logger.debug('Update access declarative request:', extra={
+		'user_ids': userIds,
+		'source_id': sourceId,
+	})
 
 	if len(userIds) == 0:
 		return JSONResponse('Empty list of user ids', 400)
@@ -211,7 +214,11 @@ def _(
 	userIds: Annotated[list[str], Body()],
 	sourceId: Annotated[str, Body()],
 ):
-	print('Update access request:', op, userIds, sourceId)
+	logger.debug('Update access request', extra={
+		'op': op,
+		'user_ids': userIds,
+		'source_id': sourceId,
+	})
 
 	if len(userIds) == 0:
 		return JSONResponse('Empty list of user ids', 400)
@@ -231,7 +238,11 @@ def _(
 	userIds: Annotated[list[str], Body()],
 	providerId: Annotated[str, Body()],
 ):
-	print('Update access by provider request:', op, userIds, providerId)
+	logger.debug('Update access by provider request', extra={
+		'op': op,
+		'user_ids': userIds,
+		'provider_id': providerId,
+	})
 
 	if len(userIds) == 0:
 		return JSONResponse('Empty list of user ids', 400)
@@ -247,7 +258,9 @@ def _(
 @app.post('/deleteSources')
 @enabled_guard(app)
 def _(sourceIds: Annotated[list[str], Body(embed=True)]):
-	print('Delete sources request:', sourceIds)
+	logger.debug('Delete sources request', extra={
+		'source_ids': sourceIds,
+	})
 
 	sourceIds = [source.strip() for source in sourceIds if source.strip() != '']
 
@@ -264,7 +277,7 @@ def _(sourceIds: Annotated[list[str], Body(embed=True)]):
 @app.post('/deleteProvider')
 @enabled_guard(app)
 def _(providerKey: str = Body(embed=True)):
-	print('Delete sources by provider for all users request:', providerKey)
+	logger.debug('Delete sources by provider for all users request', extra={ 'provider_key': providerKey })
 
 	if value_of(providerKey) is None:
 		return JSONResponse('Invalid provider key provided', 400)
@@ -277,7 +290,7 @@ def _(providerKey: str = Body(embed=True)):
 @app.post('/deleteUser')
 @enabled_guard(app)
 def _(userId: str = Body(embed=True)):
-	print('Remove access list for user, and orphaned sources:', userId)
+	logger.debug('Remove access list for user, and orphaned sources', extra={ 'user_id': userId })
 
 	if value_of(userId) is None:
 		return JSONResponse('Invalid userId provided', 400)
@@ -316,7 +329,11 @@ def _(sources: list[UploadFile]):
 			and source.headers['modified'].isdigit()
 			and value_of(source.headers.get('provider'))
 		):
-			log_error('Invalid/missing headers received', source.filename, source.headers)
+			logger.error('Invalid/missing headers received', extra={
+				'source_id': source.filename,
+				'title': source.headers.get('title'),
+				'headers': source.headers,
+			})
 			return JSONResponse(f'Invaild/missing headers for: {source.filename}', 400)
 
 	# wait for 10 minutes before failing the request
@@ -334,6 +351,8 @@ def _(sources: list[UploadFile]):
 
 	try:
 		added_sources = exec_in_proc(target=embed_sources, args=(vectordb_loader, app.extra['CONFIG'], sources))
+	except Exception as e:
+		raise DbException('Error: failed to load sources') from e
 	finally:
 		with index_lock:
 			for source in sources:
@@ -341,12 +360,10 @@ def _(sources: list[UploadFile]):
 		doc_parse_semaphore.release()
 
 	if len(added_sources) != len(sources):
-		print(
-			'Count of newly loaded sources:', len(added_sources),
-			'/', len(sources),
-			'\nSources:', added_sources,
-			flush=True,
-		)
+		logger.debug('Some sources were not loaded', extra={
+			'Count of newly loaded sources': f'{len(added_sources)}/{len(sources)}',
+			'source_ids': added_sources,
+		})
 
 	return JSONResponse({'loaded_sources': added_sources})
 
@@ -417,7 +434,7 @@ def execute_query(query: Query, in_proc: bool = True) -> LLMOutput:
 @app.post('/query')
 @enabled_guard(app)
 def _(query: Query) -> LLMOutput:
-	print('query:', query, flush=True)
+	logger.debug('received query request', extra={ 'query': query.dict() })
 
 	if app_config.llm[0] == 'nc_texttotext':
 		return execute_query(query)

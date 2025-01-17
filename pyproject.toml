@@ -40,7 +40,6 @@ fixable = [
 ]
 
 [tool.pyright]
-include = ["context_chat_backend/**/*.py", "main.py"]
-exclude = ["context_chat_backend/arq_worker.py"]
+include = ["context_chat_backend/**/*.py", "main.py", "main_em.py"]
 pythonVersion = "3.11"
 pythonPlatform = "Linux"

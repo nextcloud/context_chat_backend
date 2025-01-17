@@ -5,6 +5,7 @@
 #
 
 import gc
+import logging
 import multiprocessing as mp
 import os
 import signal
@@ -26,6 +27,7 @@ from .vectordb.base import BaseVectorDB
 from .vectordb.loader import get_vector_db
 from .vectordb.types import DbException
 
+logger = logging.getLogger('ccb.dyn_loader')
 
 class Loader(ABC):
 	@abstractmethod
@@ -41,8 +43,7 @@ pid = mp.Value('i', 0)
 class EmbeddingModelLoader(Loader):
 	def __init__(self, config: TConfig):
 		self.config = config
-		# todo: temp measure
-		self.logfile = open('embedding_model.log', 'a+')
+		self.logfile = open('logs/embedding_server.log', 'a+')
 
 	def load(self):
 		global pid
@@ -79,11 +80,11 @@ class EmbeddingModelLoader(Loader):
 					if response.status_code == 200:
 						return
 				except Exception:
-					print(f'Try {try_} failed in exception')
+					logger.debug(f'Try {try_} failed in exception')
 				try_ += 1
 				sleep(3)
 
-		print('Error: failed to start the embedding server', flush=True)
+		logger.error('Error: failed to start the embedding server')
 		os.kill(os.getpid(), signal.SIGTERM)
 
 	def offload(self):
