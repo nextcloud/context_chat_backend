@@ -44,9 +44,14 @@ def setup_env_vars():
 
 	config_path = os.path.join(persistent_storage, 'config.yaml')
 
+	em_server_log_path = os.path.join(persistent_storage, 'logs')
+	if not os.path.exists(em_server_log_path):
+		os.makedirs(em_server_log_path, 0o750, True)
+
 	os.environ['APP_PERSISTENT_STORAGE'] = persistent_storage
 	os.environ['VECTORDB_DIR'] = vector_db_dir
 	os.environ['MODEL_DIR'] = model_dir
 	os.environ['SENTENCE_TRANSFORMERS_HOME'] = os.getenv('SENTENCE_TRANSFORMERS_HOME', model_dir)
 	os.environ['HF_HOME'] = os.getenv('HF_HOME', model_dir)
 	os.environ['CC_CONFIG_PATH'] = os.getenv('CC_CONFIG_PATH', config_path)
+	os.environ['EM_SERVER_LOG_PATH'] = os.getenv('EM_SERVER_LOG_PATH', em_server_log_path)

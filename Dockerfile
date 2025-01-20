@@ -40,9 +40,6 @@ RUN python3 -m pip install --no-cache-dir https://github.com/abetlen/llama-cpp-p
 RUN sed -i '/llama_cpp_python/d' requirements.txt
 RUN python3 -m pip install --no-cache-dir -r requirements.txt && python3 -m pip cache purge
 
-# Create an empty logs dir
-RUN mkdir logs
-
 # Copy application files
 COPY context_chat_backend context_chat_backend
 COPY main.py .

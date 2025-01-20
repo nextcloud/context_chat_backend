@@ -11,6 +11,7 @@ import os
 import signal
 import subprocess
 from abc import ABC, abstractmethod
+from datetime import datetime
 from time import sleep, time
 from typing import Any
 
@@ -22,7 +23,7 @@ from langchain.llms.base import LLM
 
 from .models.loader import init_model
 from .network_em import NetworkEmbeddings
-from .types import LoaderException, TConfig
+from .types import EmbeddingException, LoaderException, TConfig
 from .vectordb.base import BaseVectorDB
 from .vectordb.loader import get_vector_db
 from .vectordb.types import DbException
@@ -43,7 +44,11 @@ pid = mp.Value('i', 0)
 class EmbeddingModelLoader(Loader):
 	def __init__(self, config: TConfig):
 		self.config = config
-		self.logfile = open('logs/embedding_server.log', 'a+')
+		logfile_path = os.path.join(
+			os.environ['EM_SERVER_LOG_PATH'],
+			f'embedding_server_{datetime.now().strftime("%Y-%m-%d")}.log',
+		)
+		self.logfile = open(logfile_path, 'a+')
 
 	def load(self):
 		global pid
@@ -84,8 +89,7 @@ class EmbeddingModelLoader(Loader):
 				try_ += 1
 				sleep(3)
 
-		logger.error('Error: failed to start the embedding server')
-		os.kill(os.getpid(), signal.SIGTERM)
+		raise EmbeddingException('Error: the embedding server is not responding')
 
 	def offload(self):
 		global pid

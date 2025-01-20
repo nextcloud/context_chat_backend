@@ -5,4 +5,3 @@ __pycache__/
 .env
 persistent_storage/*
 .vscode/
-logs/

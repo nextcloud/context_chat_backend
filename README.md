@@ -7,8 +7,6 @@
 [![REUSE status](https://api.reuse.software/badge/github.com/nextcloud/context_chat_backend)](https://api.reuse.software/info/github.com/nextcloud/context_chat_backend)
 
 > [!NOTE]
-> This is a beta software. Expect breaking changes.
->
 > Be mindful to install the backend before the Context Chat php app (Context Chat php app would sends all the user-accessible files to the backend for indexing in the background. It is not an issue even if the request fails to an uninitialised backend since those files would be tried again in the next background job run.)
 >
 > The HTTP request timeout is 50 minutes for all requests and can be changed with the `request_timeout` app config for the php app `context_chat` using the occ command (`occ config:app:set context_chat request_timeout --value=3000`, value is in seconds). The same also needs to be done for docker socket proxy. See [Slow responding ExApps](https://github.com/cloud-py-api/docker-socket-proxy?tab=readme-ov-file#slow-responding-exapps)
@@ -100,6 +98,11 @@ volumes:
 ```
 -v /var/run/docker.sock:/var/run/docker.sock:ro
 ```
+
+## Logs
+Logs are stored in the `logs/` directory in the persistent directory. In a docker container, it should be at `/nc_app_context_chat_backend/logs/`. The log file is named `ccb.log` and is set to otate at 20 MB with 10 backups. These logs are in JSONL format, i.e. each line is a valid JSON object.
+Now only warning and above logs are printed to the console. All the debug logs are written to the log file if `debug` is set to `true` in the config file.
+The logs of the embedding server are written to `logs/embedding_server_[date].log` in the persistent directory, it rotates with date change and is not in JSONL format, just raw stdout and stderr from the embedding server's process.
 
 ## Configuration
 Configuration resides inside the persistent storage as `config.yaml`. The location is `$APP_PERSISTENT_STORAGE`. By default it would be at `/nc_app_context_chat_backend_data/config.yaml` inside the container.

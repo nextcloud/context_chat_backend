@@ -14,17 +14,6 @@ vectordb:
   pgvector:
     # 'connection' overrides the env var 'CCB_DB_URL'
 
-  chroma:
-    is_persistent: true
-    # chroma_server_host:
-    # chroma_server_http_port:
-    # chroma_server_ssl_enabled:
-    # chroma_server_api_default_path:
-
-  weaviate:
-    # auth_client_secret:
-    # url: http://localhost:8080
-
 embedding:
   protocol: http
   host: localhost
