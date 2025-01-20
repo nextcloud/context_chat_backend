@@ -8,6 +8,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 4.0.5 - 2025-01-20
+
+### Fixed
+- example env min app_api ver. 3.0.0 (#137) @kyteinsky
+- add logging files to Dockerfile (#139) @kyteinsky
+- make logs persistent (#140) @kyteinsky
+- better handling of embedding server failure (#140) @kyteinsky
+
+### Changed
+- remove root logs dir (#140) @kyteinsky
+- revert CI env var in embedding server proc (#140) @kyteinsky
+- remove unsupported vectordb configs (#140) @kyteinsky
+- update readme: remove beta status (#140) @kyteinsky
+- update readme for logs (#140) @kyteinsky
+
+
 ## 4.0.4 - 2025-01-17
 
 ### Fixed
