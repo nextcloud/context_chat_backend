@@ -61,14 +61,13 @@ class EmbeddingModelLoader(Loader):
 			if pid.value > 0 and psutil.pid_exists(pid.value):
 				return
 
-			new_env = os.environ.copy().update({ 'CI': 'true' })
 			proc = subprocess.Popen(  # noqa: S603
 				['./main_em.py'],
 				stdout=self.logfile,
 				stderr=self.logfile,
 				stdin=None,
 				close_fds=True,
-				env=new_env,
+				env=os.environ,
 			)
 			pid.value = proc.pid
 
