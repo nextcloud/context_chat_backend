@@ -9,6 +9,7 @@ import json
 import logging
 import logging.config
 import logging.handlers
+import os
 from time import gmtime
 
 from ruamel.yaml import YAML
@@ -88,6 +89,19 @@ def get_logging_config() -> dict:
 		try:
 			yaml = YAML(typ='safe')
 			config: dict = yaml.load(f)
+
+			persistent_storage = os.getenv('APP_PERSISTENT_STORAGE', 'persistent_storage')
+			if (config.get('handlers', {}).get('file_json', {}).get('filename')):
+				if (
+					not config['handlers']['file_json']['filename'].startswith(persistent_storage)
+					and not config['handlers']['file_json']['filename'].startswith('/')
+				):
+					config['handlers']['file_json']['filename'] = os.path.join(
+						persistent_storage,
+						config['handlers']['file_json']['filename'],
+					)
+				# create logs directory if it doesn't exist
+				os.makedirs(os.path.dirname(config['handlers']['file_json']['filename']), exist_ok=True)
 		except Exception as e:
 			raise AssertionError('Error: could not load config from logger_config.yaml file') from e
 

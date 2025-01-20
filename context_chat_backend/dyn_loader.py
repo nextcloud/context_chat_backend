@@ -11,6 +11,7 @@ import os
 import signal
 import subprocess
 from abc import ABC, abstractmethod
+from datetime import datetime
 from time import sleep, time
 from typing import Any
 
@@ -43,7 +44,11 @@ pid = mp.Value('i', 0)
 class EmbeddingModelLoader(Loader):
 	def __init__(self, config: TConfig):
 		self.config = config
-		self.logfile = open('logs/embedding_server.log', 'a+')
+		logfile_path = os.path.join(
+			os.environ['EM_SERVER_LOG_PATH'],
+			f'embedding_server_{datetime.now().strftime("%Y-%m-%d")}.log',
+		)
+		self.logfile = open(logfile_path, 'a+')
 
 	def load(self):
 		global pid
@@ -56,13 +61,14 @@ class EmbeddingModelLoader(Loader):
 			if pid.value > 0 and psutil.pid_exists(pid.value):
 				return
 
+			new_env = os.environ.copy().update({ 'CI': 'true' })
 			proc = subprocess.Popen(  # noqa: S603
 				['./main_em.py'],
 				stdout=self.logfile,
 				stderr=self.logfile,
 				stdin=None,
 				close_fds=True,
-				env=os.environ,
+				env=new_env,
 			)
 			pid.value = proc.pid
 
