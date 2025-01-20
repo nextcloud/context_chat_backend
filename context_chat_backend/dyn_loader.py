@@ -23,7 +23,7 @@ from langchain.llms.base import LLM
 
 from .models.loader import init_model
 from .network_em import NetworkEmbeddings
-from .types import LoaderException, TConfig
+from .types import EmbeddingException, LoaderException, TConfig
 from .vectordb.base import BaseVectorDB
 from .vectordb.loader import get_vector_db
 from .vectordb.types import DbException
@@ -90,8 +90,7 @@ class EmbeddingModelLoader(Loader):
 				try_ += 1
 				sleep(3)
 
-		logger.error('Error: failed to start the embedding server')
-		os.kill(os.getpid(), signal.SIGTERM)
+		raise EmbeddingException('Error: the embedding server is not responding')
 
 	def offload(self):
 		global pid

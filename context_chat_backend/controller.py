@@ -351,6 +351,8 @@ def _(sources: list[UploadFile]):
 
 	try:
 		added_sources = exec_in_proc(target=embed_sources, args=(vectordb_loader, app.extra['CONFIG'], sources))
+	except (DbException, EmbeddingException) as e:
+		raise e
 	except Exception as e:
 		raise DbException('Error: failed to load sources') from e
 	finally:
