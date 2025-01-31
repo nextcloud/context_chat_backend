@@ -37,5 +37,12 @@ Setup background job workers as described here: https://docs.nextcloud.com/serve
 			<image>nextcloud/context_chat_backend</image>
 			<image-tag>4.0.5</image-tag>
 		</docker-install>
+		<environment-variables>
+			<variable>
+				<name>EXTERNAL_DB</name>
+				<display-name>PostgreSQL URI</display-name>
+				<description>A URI in the form of "postgresql+psycopg://pguser:pgpass@localhost:5432/nextcloud" that supports the pgvector extension. If this is set, no separate internal database will be setup for vector storage. This should be accessible by the ex-app container nc_app_context_chat_backend.</description>
+			</variable>
+		</environment-variables>
 	</external-app>
 </info>
