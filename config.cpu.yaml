@@ -20,13 +20,14 @@ embedding:
   port: 5000
   workers: 1
   offload_after_mins: 15 # in minutes
-  request_timeout: 1800 # in seconds
+  request_timeout: 1680 # in seconds
   llama:
     # 'model_alias' is reserved
     # 'embedding' is always set to True
     model: multilingual-e5-large-instruct-q6_k.gguf
-    n_batch: 16
+    n_batch: 512
     n_ctx: 8192
+    logits_all: false
 
 llm:
   nc_texttotext:
