@@ -145,6 +145,11 @@ class VectorDB(BaseVectorDB):
 
 					self.decl_update_access(indoc.userIds, indoc.source_id, session)
 					added_sources.append(indoc.source_id)
+				except SafeDbException as e:
+					logger.debug('Error adding documents to vectordb', exc_info=e, extra={
+						'source_id': indoc.source_id,
+					})
+					continue
 				except Exception as e:
 					logger.exception('Error adding documents to vectordb', exc_info=e, extra={
 						'source_id': indoc.source_id,
@@ -211,7 +216,12 @@ class VectorDB(BaseVectorDB):
 			)
 			result = session.execute(stmt).fetchone()
 			if result is None:
-				raise SafeDbException('Error: source id not found', 404)
+				raise SafeDbException(
+					'Error: source id not found. It is possible that this document is still in the index queue'
+					' and has not been added to the database yet.'
+					' This is generally not an error and will resolve itself when the document is indexed.',
+					404,
+				)
 
 			stmt = (
 				sa.delete(AccessListStore)
@@ -233,8 +243,10 @@ class VectorDB(BaseVectorDB):
 			)
 			session.execute(stmt)
 			session.commit()
+		except SafeDbException as e:
+			session.rollback()
+			raise e
 		except Exception as e:
-			# rollback the session whether it's ours or not
 			session.rollback()
 			raise DbException('Error: updating access list') from e
 		finally:
@@ -293,8 +305,10 @@ class VectorDB(BaseVectorDB):
 					if session_ is None:
 						session.close()
 					raise SafeDbException('Error: invalid access operation', 400)
+		except SafeDbException as e:
+			session.rollback()
+			raise e
 		except Exception as e:
-			# rollback the session whether it's ours or not
 			session.rollback()
 			raise DbException('Error: updating access list') from e
 		finally:
