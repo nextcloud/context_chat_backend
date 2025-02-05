@@ -12,7 +12,7 @@ from typing import BinaryIO
 import docx2txt
 from epub2txt import epub2txt
 from fastapi import UploadFile
-from langchain_community.document_loaders.unstructured import UnstructuredFileLoader
+from langchain_unstructured import UnstructuredLoader
 from odfdo import Document
 from pandas import read_csv, read_excel
 from pypdf import PdfReader
@@ -22,13 +22,9 @@ logger = logging.getLogger('ccb.doc_loader')
 
 def _temp_file_wrapper(file: BinaryIO, loader: Callable, sep: str = '\n') -> str:
 	raw_bytes = file.read()
-	with tempfile.NamedTemporaryFile(mode='wb', delete=False) as tmp:
+	with tempfile.NamedTemporaryFile(mode='wb') as tmp:
 		tmp.write(raw_bytes)
 		docs = loader(tmp.name)
-
-		if not tmp.delete:
-			import os
-			os.remove(tmp.name)
 
 	if isinstance(docs, str) or isinstance(docs, bytes):
 		return docs.decode('utf-8', 'ignore') if isinstance(docs, bytes) else docs  # pyright: ignore[reportReturnType]
@@ -60,7 +56,7 @@ def _load_odt(file: BinaryIO) -> str:
 
 
 def _load_ppt_x(file: BinaryIO) -> str:
-	return _temp_file_wrapper(file, lambda fp: UnstructuredFileLoader(fp).load()).strip()
+	return _temp_file_wrapper(file, lambda fp: UnstructuredLoader(fp).load()).strip()
 
 
 def _load_rtf(file: BinaryIO) -> str:
@@ -74,7 +70,7 @@ def _load_xml(file: BinaryIO) -> str:
 
 
 def _load_xlsx(file: BinaryIO) -> str:
-	return read_excel(file).to_string(header=False, na_rep='')
+	return read_excel(file, na_filter=False).to_string(header=False, na_rep='')
 
 
 def _load_email(file: BinaryIO, ext: str = 'eml') -> str | None:
@@ -94,7 +90,7 @@ def _load_email(file: BinaryIO, ext: str = 'eml') -> str | None:
 
 	return _temp_file_wrapper(
 		file,
-		lambda fp: UnstructuredFileLoader(fp, process_attachments=False).load(),
+		lambda fp: UnstructuredLoader(fp, process_attachments=False).load(),
 	).strip()
 
 
