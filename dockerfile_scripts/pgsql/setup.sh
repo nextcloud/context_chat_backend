@@ -17,16 +17,16 @@ fi
 
 # Check if EXTERNAL_DB is set
 if [ -n "${EXTERNAL_DB}" ]; then
-    CCB_DB_URL="${EXTERNAL_DB}"
-    echo "Using EXTERNAL_DB, CCB_DB_URL is set to: $CCB_DB_URL"
-
-    if [[ "$CCB_DB_URL" != "postgresql+psycopg://"* ]]; then
-        echo "CCB_DB_URL must be a PostgreSQL URL and start with 'postgresql+psycopg://'"
+    if [[ "$EXTERNAL_DB" != "postgresql+psycopg://"* ]]; then
+        echo "EXTERNAL_DB must be a PostgreSQL URL and start with 'postgresql+psycopg://'"
         exit 1
     fi
 
+    echo "Using EXTERNAL_DB, CCB_DB_URL is set to: $EXTERNAL_DB"
+
     if ! grep -q "^export EXTERNAL_DB=" /etc/environment; then
         echo "export EXTERNAL_DB=\"$EXTERNAL_DB\"" >> /etc/environment
+        echo "export CCB_DB_URL=\"$EXTERNAL_DB\"" >> /etc/environment
     fi
     exit 0
 fi
