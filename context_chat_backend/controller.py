@@ -107,12 +107,12 @@ if not app_config.disable_aaa:
 @app.exception_handler(DbException)
 async def _(request: Request, exc: DbException):
 	logger.exception(f'Db Error: {request.url.path}:', exc_info=exc)
-	return JSONResponse('Vector DB is facing some issues, please check the logs for more info', 500)
+	return JSONResponse(f'Vector DB Error: {exc}', 500)
 
 
 @app.exception_handler(SafeDbException)
 async def _(request: Request, exc: SafeDbException):
-	logger.exception(f'Safe Db Error (user facing): {request.url.path}:', exc_info=exc)
+	logger.exception(f'Safe Db Error: {request.url.path}:', exc_info=exc)
 	if len(exc.args) > 1:
 		return JSONResponse(exc.args[0], exc.args[1])
 	return JSONResponse(str(exc), 400)
@@ -121,34 +121,31 @@ async def _(request: Request, exc: SafeDbException):
 @app.exception_handler(LoaderException)
 async def _(request: Request, exc: LoaderException):
 	logger.exception(f'Loader Error: {request.url.path}:', exc_info=exc)
-	return JSONResponse('The resource loader is facing some issues, please check the logs for more info', 500)
+	return JSONResponse(f'Resource Loader Error: {exc}', 500)
 
 
 @app.exception_handler(ContextException)
 async def _(request: Request, exc: ContextException):
 	logger.exception(f'Context Retrieval Error: {request.url.path}:', exc_info=exc)
-	# error message is safe
-	return JSONResponse(str(exc), 400)
+	return JSONResponse(f'Context Retrieval Error: {exc}', 400)
 
 
 @app.exception_handler(ValueError)
 async def _(request: Request, exc: ValueError):
 	logger.exception(f'Error: {request.url.path}:', exc_info=exc)
-	# error message is safe
-	return JSONResponse(str(exc), 500)
+	return JSONResponse(f'Error: {exc}', 400)
 
 
 @app.exception_handler(LlmException)
 async def _(request: Request, exc: LlmException):
 	logger.exception(f'Llm Error: {request.url.path}:', exc_info=exc)
-	# error message should be safe
-	return JSONResponse(str(exc), 500)
+	return JSONResponse(f'LLM Error: {exc}', 500)
 
 
 @app.exception_handler(EmbeddingException)
 async def _(request: Request, exc: EmbeddingException):
 	logger.exception(f'Error occurred in an embedding request: {request.url.path}:', exc_info=exc)
-	return JSONResponse('Some error occurred in the request to the embedding server, please check the logs for more info', 500)  # noqa: E501
+	return JSONResponse(f'Embedding Request Error: {exc}', 500)
 
 
 # guards
