@@ -7,6 +7,7 @@ httpx
 langchain
 langchain-community
 langchain-postgres
+langchain-unstructured
 llama_cpp_python
 msg-parser
 nc_py_api
@@ -30,7 +31,6 @@ striprtf
 torch
 torchvision
 transformers
-unstructured @ git+https://github.com/kyteinsky/unstructured@d3a404cfb541dae8e16956f096bac99fc05c985b
-unstructured-client
+unstructured @ git+https://github.com/kyteinsky/unstructured@68394f64e8fcf800945327eb246369ab31d95eca
 wheel
 xlrd
