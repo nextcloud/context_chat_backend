@@ -8,6 +8,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 4.0.6 - 2025-02-10
+
+### Changed
+- return sources to retry (#148) @marcelklehr
+- log state of indexing regularly (#150) @marcelklehr
+
+### Fixed
+- skip issues with enhancement or to develop labels (#149) @kyteinsky
+- package sha fix, upgrade and other fixes (#144) @kyteinsky
+- add missing app_api env declaration for EXTERNAL_DB (#143) @kyteinsky
+
+
 ## 4.0.5 - 2025-01-20
 
 ### Fixed
