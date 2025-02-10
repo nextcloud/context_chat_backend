@@ -40,7 +40,10 @@ class NetworkEmbeddings(Embeddings, BaseModel):
 		emconf = self.app_config.embedding
 
 		lengths = [len(text) for text in (input_ if isinstance(input_, list) else [input_])]
-		logger.info(f'Sending embedding request for {len(lengths)} chunks of the following sizes: ', lengths)
+		logger.info(
+			f'Sending embedding request for {len(lengths)} chunks of the following sizes (total: {sum(lengths)}):'
+			, lengths
+		)
 
 		try:
 			with httpx.Client() as client:
