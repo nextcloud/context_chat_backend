@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+import logging
 from typing import Literal, TypedDict
 
 import httpx
@@ -9,6 +10,8 @@ from langchain_core.embeddings import Embeddings
 from pydantic import BaseModel
 
 from .types import EmbeddingException, TConfig
+
+logger = logging.getLogger('ccb.nextwork_em')
 
 # Copied from llama_cpp/llama_types.py
 
@@ -35,6 +38,12 @@ class NetworkEmbeddings(Embeddings, BaseModel):
 
 	def _get_embedding(self, input_: str | list[str]) -> list[float] | list[list[float]]:
 		emconf = self.app_config.embedding
+
+		lengths = [len(text) for text in (input_ if isinstance(input_, list) else [input_])]
+		logger.info(
+			f'Sending embedding request for {len(lengths)} chunks of the following sizes (total: {sum(lengths)}):'
+			, lengths
+		)
 
 		try:
 			with httpx.Client() as client:

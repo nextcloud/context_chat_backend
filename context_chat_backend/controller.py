@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+from time import sleep
+
 from .chain.types import ContextException, LLMOutput, ScopeType # isort:skip
 from .vectordb.types import DbException, SafeDbException, UpdateAccessOp # isort:skip
 from .types import LoaderException, EmbeddingException # isort:skip
@@ -13,7 +15,7 @@ import threading
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from functools import wraps
-from threading import Event
+from threading import Event, Thread
 from typing import Annotated, Any
 
 from fastapi import Body, FastAPI, Request, UploadFile
@@ -63,6 +65,8 @@ async def lifespan(app: FastAPI):
 	if nc.enabled_state:
 		app_enabled.set()
 	logger.info(f'App enable state at startup: {app_enabled.is_set()}')
+	t = Thread(target=background_thread_task, args=())
+	t.start()
 	yield
 	vectordb_loader.offload()
 	embedding_loader.offload()
@@ -101,6 +105,12 @@ doc_parse_semaphore = mp.Semaphore(app_config.doc_parser_worker_limit)
 if not app_config.disable_aaa:
 	app.add_middleware(AppAPIAuthMiddleware)
 
+# logger background thread
+
+def background_thread_task():
+	while(True):
+		logger.info(f'Currently indexing {len(_indexing)} documents (filename, size): ', _indexing)
+		sleep(10)
 
 # exception handlers
 
@@ -344,7 +354,7 @@ def _(sources: list[UploadFile]):
 
 	with index_lock:
 		for source in sources:
-			_indexing[source.filename] = True
+			_indexing[source.filename] = source.size
 
 	try:
 		added_sources, not_added_sources = exec_in_proc(
