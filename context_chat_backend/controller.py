@@ -109,7 +109,7 @@ if not app_config.disable_aaa:
 
 def background_thread_task():
 	while(True):
-		logger.info(f'Currently indexing {len(_indexing)} documents (filename, size): ', _indexing)
+		logger.info(f'Currently indexing {len(_indexing)} documents (filename, size): ', extra={'_indexing': _indexing})
 		sleep(10)
 
 # exception handlers
