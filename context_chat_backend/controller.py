@@ -347,7 +347,10 @@ def _(sources: list[UploadFile]):
 			_indexing[source.filename] = True
 
 	try:
-		added_sources, not_added_sources = exec_in_proc(target=embed_sources, args=(vectordb_loader, app.extra['CONFIG'], sources))
+		added_sources, not_added_sources = exec_in_proc(
+			target=embed_sources,
+			args=(vectordb_loader, app.extra['CONFIG'], sources)
+		)
 	except DbException as e:
 		raise e
 	except Exception as e:
