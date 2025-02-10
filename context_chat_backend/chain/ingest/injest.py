@@ -138,7 +138,7 @@ def _process_sources(
 	if len(filtered_sources) == 0:
 		# no new sources to embed
 		logger.debug('Filtered all sources, nothing to embed')
-		return []
+		return [], []
 
 	logger.debug('Filtered sources:', extra={
 		'source_ids': [source.filename for source in filtered_sources]
@@ -150,7 +150,7 @@ def _process_sources(
 	if len(indocuments) == 0:
 		# document(s) were empty, not an error
 		logger.debug('All documents were found empty after being processed')
-		return []
+		return [], []
 
 	added_sources, not_added_sources = vectordb.add_indocuments(indocuments)
 	logger.debug('Added documents to vectordb')
