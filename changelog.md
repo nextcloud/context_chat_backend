@@ -8,6 +8,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 4.0.7 - 2025-02-10
+
+### Changed
+- ocs signature verification changes (#154) @kyteinsky
+
+### Fixed
+- fix logger issue (#153) @marcelklehr
+
+
 ## 4.0.6 - 2025-02-10
 
 ### Changed
