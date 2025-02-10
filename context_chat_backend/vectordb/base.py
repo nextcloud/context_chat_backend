@@ -62,7 +62,7 @@ class BaseVectorDB(ABC):
 		'''
 
 	@abstractmethod
-	def add_indocuments(self, indocuments: list[InDocument]) -> list[str]:
+	def add_indocuments(self, indocuments: list[InDocument]) -> tuple[list[str],list[str]]:
 		'''
 		Adds the given indocuments to the vectordb and updates the docs + access tables.
 
@@ -73,8 +73,8 @@ class BaseVectorDB(ABC):
 
 		Returns
 		-------
-		list[str]
-			List of source ids that were successfully added.
+		tuple[list[str],list[str]]
+			List of source ids that were successfully added and the list of source ids that need to be retried.
 		'''
 
 	@timed

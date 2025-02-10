@@ -347,8 +347,11 @@ def _(sources: list[UploadFile]):
 			_indexing[source.filename] = True
 
 	try:
-		added_sources = exec_in_proc(target=embed_sources, args=(vectordb_loader, app.extra['CONFIG'], sources))
-	except (DbException, EmbeddingException) as e:
+		added_sources, not_added_sources = exec_in_proc(
+			target=embed_sources,
+			args=(vectordb_loader, app.extra['CONFIG'], sources)
+		)
+	except DbException as e:
 		raise e
 	except Exception as e:
 		raise DbException('Error: failed to load sources') from e
@@ -364,7 +367,7 @@ def _(sources: list[UploadFile]):
 			'source_ids': added_sources,
 		})
 
-	return JSONResponse({'loaded_sources': added_sources})
+	return JSONResponse({'loaded_sources': added_sources, 'sources_to_retry': not_added_sources})
 
 
 class Query(BaseModel):
