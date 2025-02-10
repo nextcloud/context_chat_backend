@@ -105,10 +105,10 @@ def _process_sources(
 	vectordb: BaseVectorDB,
 	config: TConfig,
 	sources: list[UploadFile],
-) -> list[str]:
+) -> tuple[list[str],list[str]]:
 	'''
 	Processes the sources and adds them to the vectordb.
-	Returns the list of source ids that were successfully added.
+	Returns the list of source ids that were successfully added and those that need to be retried.
 	'''
 	existing_sources, filtered_sources = _filter_sources(vectordb, sources)
 	logger.debug('db filter source results', extra={
@@ -152,9 +152,9 @@ def _process_sources(
 		logger.debug('All documents were found empty after being processed')
 		return []
 
-	added_sources = vectordb.add_indocuments(indocuments)
+	added_sources, not_added_sources = vectordb.add_indocuments(indocuments)
 	logger.debug('Added documents to vectordb')
-	return added_sources
+	return added_sources, not_added_sources
 
 
 def _decode_latin_1(s: str) -> str:
@@ -169,7 +169,7 @@ def embed_sources(
 	vectordb_loader: VectorDBLoader,
 	config: TConfig,
 	sources: list[UploadFile],
-) -> list[str]:
+) -> tuple[list[str],list[str]]:
 	# either not a file or a file that is allowed
 	sources_filtered = [
 		source for source in sources

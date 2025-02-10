@@ -16,6 +16,7 @@ from langchain_core.embeddings import Embeddings
 from langchain_postgres.vectorstores import Base, PGVector
 
 from ..chain.types import InDocument, ScopeType
+from ..types import EmbeddingException
 from ..utils import timed
 from .base import BaseVectorDB
 from .types import DbException, SafeDbException, UpdateAccessOp
@@ -126,8 +127,9 @@ class VectorDB(BaseVectorDB):
 			except Exception as e:
 				raise DbException('Error: getting a list of all users from access list') from e
 
-	def add_indocuments(self, indocuments: list[InDocument]) -> list[str]:
+	def add_indocuments(self, indocuments: list[InDocument]) -> tuple[list[str], list[str]]:
 		added_sources = []
+		not_added_sources = []
 
 		with self.session_maker() as session:
 			for indoc in indocuments:
@@ -150,13 +152,19 @@ class VectorDB(BaseVectorDB):
 						'source_id': indoc.source_id,
 					})
 					continue
+				except EmbeddingException as e:
+					logger.debug('Error adding documents to vectordb', exc_info=e, extra={
+						'source_id': indoc.source_id,
+					})
+					not_added_sources.append(indoc.source_id)
+					continue
 				except Exception as e:
 					logger.exception('Error adding documents to vectordb', exc_info=e, extra={
 						'source_id': indoc.source_id,
 					})
 					continue
 
-		return added_sources
+		return added_sources, not_added_sources
 
 	@timed
 	def check_sources(self, sources: list[UploadFile]) -> tuple[list[str], list[str]]:
