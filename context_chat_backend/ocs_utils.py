@@ -8,7 +8,6 @@ from base64 import b64decode, b64encode
 from os import getenv
 
 import httpx
-from packaging import version
 from starlette.datastructures import URL, Headers
 from starlette.responses import JSONResponse
 from starlette.status import HTTP_401_UNAUTHORIZED
@@ -25,24 +24,18 @@ def _sign_request(headers: dict, username: str = '') -> None:
 
 # We assume that the env variables are set
 def _verify_signature(headers: Headers) -> str | None:
-	if headers.get('AA-VERSION') is None:
-		logger.error('AppAPI header AA-VERSION not set')
-		return None
-
-	if headers.get('AA-VERSION') is None or \
-		getenv('AA_VERSION') is None or \
-		version.parse(headers['AA-VERSION']) < version.parse(getenv('AA_VERSION', '')):
-		logger.error(f"AppAPI version should be at least {getenv('AA_VERSION')}")
-		return None
-
-	if headers.get('EX-APP-ID') != getenv('APP_ID'):
+	if headers.get('EX-APP-ID') is None or headers.get('EX-APP-ID') != getenv('APP_ID'):
 		logger.error(f'Invalid EX-APP-ID:{headers.get("EX-APP-ID")} != {getenv("APP_ID")}')
 		return None
 
-	if headers.get('EX-APP-VERSION') != getenv('APP_VERSION'):
+	if headers.get('EX-APP-VERSION') is None or headers.get('EX-APP-VERSION') != getenv('APP_VERSION'):
 		logger.error(
 			f'Invalid EX-APP-VERSION:{headers.get("EX-APP-VERSION")} <=> {getenv("APP_VERSION")}'
 		)
+		return None
+
+	if headers.get('AUTHORIZATION-APP-API') is None:
+		logger.error('Missing AUTHORIZATION-APP-API header')
 		return None
 
 	auth_aa = b64decode(headers.get('AUTHORIZATION-APP-API', '')).decode('UTF-8', 'ignore')
