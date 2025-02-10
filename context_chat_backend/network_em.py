@@ -42,7 +42,7 @@ class NetworkEmbeddings(Embeddings, BaseModel):
 		lengths = [len(text) for text in (input_ if isinstance(input_, list) else [input_])]
 		logger.info(
 			f'Sending embedding request for {len(lengths)} chunks of the following sizes (total: {sum(lengths)}):'
-			, lengths
+			, extra={'lengths':lengths}
 		)
 
 		try:
