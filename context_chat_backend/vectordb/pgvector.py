@@ -148,12 +148,12 @@ class VectorDB(BaseVectorDB):
 					self.decl_update_access(indoc.userIds, indoc.source_id, session)
 					added_sources.append(indoc.source_id)
 				except SafeDbException as e:
-					logger.debug('Error adding documents to vectordb', exc_info=e, extra={
+					logger.exception('Error adding documents to vectordb', exc_info=e, extra={
 						'source_id': indoc.source_id,
 					})
 					continue
 				except EmbeddingException as e:
-					logger.debug('Error adding documents to vectordb', exc_info=e, extra={
+					logger.exception('Error adding documents to vectordb', exc_info=e, extra={
 						'source_id': indoc.source_id,
 					})
 					not_added_sources.append(indoc.source_id)
