@@ -59,7 +59,7 @@ def _sources_to_indocuments(config: TConfig, sources: list[UploadFile]) -> list[
 		# transform the source to have text data
 		content = decode_source(source)
 
-		if content is None or content == '':
+		if content is None or (content := content.strip()) == '':
 			logger.debug('decoded empty source', extra={ 'source_id': source.filename })
 			continue
 
