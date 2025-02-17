@@ -32,7 +32,8 @@ from .models.types import LlmException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
 from .utils import JSONResponse, exec_in_proc, is_valid_provider_id, is_valid_source_id, value_of
-from .vectordb.service import decl_update_access, delete_by_provider, delete_by_source, delete_user, update_access
+from .vectordb.service import decl_update_access, delete_by_provider, delete_by_source, delete_user, update_access, \
+	count_documents_by_provider
 
 # setup
 
@@ -306,6 +307,11 @@ def _(userId: str = Body(embed=True)):
 
 	return JSONResponse('User deleted')
 
+@app.post('/countIndexedDocuments')
+@enabled_guard(app)
+def _():
+	counts = exec_in_proc(target=count_documents_by_provider, args=(vectordb_loader,))
+	return JSONResponse(counts)
 
 @app.put('/loadSources')
 @enabled_guard(app)

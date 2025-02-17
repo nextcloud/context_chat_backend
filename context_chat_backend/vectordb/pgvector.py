@@ -464,6 +464,20 @@ class VectorDB(BaseVectorDB):
 
 			self._cleanup_if_orphaned(list(source_ids), session)
 
+	def count_documents_by_provider(self):
+		try:
+			with self.session_maker() as session:
+				# get chunks associated with the source_ids
+				stmt = (
+					sa.select(DocumentsStore.provider, sa.func.count(DocumentsStore.source_id).label('doc_count'))
+					.group_by(DocumentsStore.provider)
+				)
+				result = session.execute(stmt).fetchall()
+				return {row.provider: row.doc_count for row in result}
+
+		except Exception as e:
+			raise DbException('Error: Could not count documents in database') from e
+
 	@timed
 	def doc_search(
 		self,

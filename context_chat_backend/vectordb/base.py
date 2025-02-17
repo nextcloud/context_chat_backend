@@ -212,6 +212,13 @@ class BaseVectorDB(ABC):
 		'''
 		...
 
+	@abstractmethod
+	def count_documents_by_provider(self):
+		'''
+		Counts the number of documents grouped by provider.
+		'''
+		...
+
 	@timed
 	@abstractmethod
 	def doc_search(
