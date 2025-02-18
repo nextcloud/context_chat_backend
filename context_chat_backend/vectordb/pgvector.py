@@ -464,7 +464,7 @@ class VectorDB(BaseVectorDB):
 
 			self._cleanup_if_orphaned(list(source_ids), session)
 
-	def count_documents_by_provider(self):
+	def count_documents_by_provider(self) -> dict[str, int]:
 		try:
 			with self.session_maker() as session:
 				# get chunks associated with the source_ids
