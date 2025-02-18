@@ -2,11 +2,12 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-from time import sleep
 
-from .chain.types import ContextException, LLMOutput, ScopeType # isort:skip
-from .vectordb.types import DbException, SafeDbException, UpdateAccessOp # isort:skip
-from .types import LoaderException, EmbeddingException # isort:skip
+# isort: off
+from .chain.types import ContextException, LLMOutput, ScopeType
+from .types import LoaderException, EmbeddingException
+from .vectordb.types import DbException, SafeDbException, UpdateAccessOp
+# isort: on
 
 import logging
 import multiprocessing as mp
@@ -16,6 +17,7 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 from functools import wraps
 from threading import Event, Thread
+from time import sleep
 from typing import Annotated, Any
 
 from fastapi import Body, FastAPI, Request, UploadFile
@@ -32,7 +34,14 @@ from .models.types import LlmException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
 from .utils import JSONResponse, exec_in_proc, is_valid_provider_id, is_valid_source_id, value_of
-from .vectordb.service import decl_update_access, delete_by_provider, delete_by_source, delete_user, update_access
+from .vectordb.service import (
+	count_documents_by_provider,
+	decl_update_access,
+	delete_by_provider,
+	delete_by_source,
+	delete_user,
+	update_access,
+)
 
 # setup
 
@@ -306,6 +315,11 @@ def _(userId: str = Body(embed=True)):
 
 	return JSONResponse('User deleted')
 
+@app.post('/countIndexedDocuments')
+@enabled_guard(app)
+def _():
+	counts = exec_in_proc(target=count_documents_by_provider, args=(vectordb_loader,))
+	return JSONResponse(counts)
 
 @app.put('/loadSources')
 @enabled_guard(app)

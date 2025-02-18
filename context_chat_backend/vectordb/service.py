@@ -62,3 +62,8 @@ def decl_update_access(
 	db: BaseVectorDB = vectordb_loader.load()
 	logger.debug('decl update access', extra={ 'user_ids': user_ids, 'source_id': source_id })
 	db.decl_update_access(user_ids, source_id)
+
+def count_documents_by_provider(vectordb_loader: VectorDBLoader):
+	db: BaseVectorDB = vectordb_loader.load()
+	logger.debug('counting documents by provider')
+	return db.count_documents_by_provider()
