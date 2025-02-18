@@ -43,3 +43,8 @@ fixable = [
 include = ["context_chat_backend/**/*.py", "main.py", "main_em.py"]
 pythonVersion = "3.11"
 pythonPlatform = "Linux"
+
+[tool.isort]
+profile = "black"
+line_length = 120
+indent = "tab"

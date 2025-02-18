@@ -2,6 +2,13 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+
+# isort: off
+from .chain.types import ContextException, LLMOutput, ScopeType
+from .types import LoaderException, EmbeddingException
+from .vectordb.types import DbException, SafeDbException, UpdateAccessOp
+# isort: on
+
 import logging
 import multiprocessing as mp
 import os
@@ -26,15 +33,15 @@ from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, VectorDBLoader
 from .models.types import LlmException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
-from .utils import (JSONResponse, exec_in_proc, is_valid_provider_id,
-                    is_valid_source_id, value_of)
-from .vectordb.service import (count_documents_by_provider, decl_update_access,
-                               delete_by_provider, delete_by_source,
-                               delete_user, update_access)
-
-from .chain.types import ContextException, LLMOutput, ScopeType  # isort:skip
-from .types import LoaderException, EmbeddingException  # isort:skip
-from .vectordb.types import DbException, SafeDbException, UpdateAccessOp  # isort:skip
+from .utils import JSONResponse, exec_in_proc, is_valid_provider_id, is_valid_source_id, value_of
+from .vectordb.service import (
+	count_documents_by_provider,
+	decl_update_access,
+	delete_by_provider,
+	delete_by_source,
+	delete_user,
+	update_access,
+)
 
 # setup
 
