@@ -8,6 +8,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 4.1.0 - 2025-02-21
+
+### Fixed
+- fix sources that are decoded as only spaces fail to index (#157) @Lukasdotcom
+
+### Added
+- add endpoint to count indexed documents (#160) @marcelklehr
+
+
 ## 4.0.7 - 2025-02-10
 
 ### Changed
