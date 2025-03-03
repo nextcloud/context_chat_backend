@@ -253,10 +253,12 @@ class VectorDB(BaseVectorDB):
 			session.commit()
 		except SafeDbException as e:
 			session.rollback()
-			raise e
+			logger.info('Error: declaratively updating access list', exc_info=e, extra={
+				'source_id': source_id,
+			})
 		except Exception as e:
 			session.rollback()
-			raise DbException('Error: updating access list') from e
+			raise DbException('Error: declaratively updating access list') from e
 		finally:
 			if session_ is None:
 				session.close()
@@ -278,9 +280,12 @@ class VectorDB(BaseVectorDB):
 			)
 			result = session.execute(stmt).fetchone()
 			if result is None:
-				if session_ is None:
-					session.close()
-				raise SafeDbException('Error: source id not found', 404)
+				raise SafeDbException(
+					'Error: source id not found. It is possible that this document is still in the index queue'
+					' and has not been added to the database yet.'
+					' This is generally not an error and will resolve itself when the document is indexed.',
+					404,
+				)
 
 			match op:
 				case UpdateAccessOp.allow:
@@ -310,12 +315,12 @@ class VectorDB(BaseVectorDB):
 					# check if all entries related to the source were deleted
 					self._cleanup_if_orphaned([source_id], session)
 				case _:
-					if session_ is None:
-						session.close()
 					raise SafeDbException('Error: invalid access operation', 400)
 		except SafeDbException as e:
 			session.rollback()
-			raise e
+			logger.info('Error: updating access list', exc_info=e, extra={
+				'source_id': source_id,
+			})
 		except Exception as e:
 			session.rollback()
 			raise DbException('Error: updating access list') from e
