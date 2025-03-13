@@ -530,19 +530,19 @@ class VectorDB(BaseVectorDB):
 		collection = self.client.get_collection(session)
 		if not collection:
 			raise DbException('Collection not found')
-		
+
 		# Initialize results list to store all potential matches
 		all_results = []
 		batch_size = 50000
 		# Process chunk_ids in batches to prevent db errors
 		for i in range(0, len(chunk_ids), batch_size):
 			batch_chunk_ids = chunk_ids[i:i+batch_size]
-			
+
 			filter_by = [
 				self.client.EmbeddingStore.collection_id == collection.uuid,
 				self.client.EmbeddingStore.id.in_(batch_chunk_ids),
 			]
-			
+
 			batch_results = (
 				session.query(
 					self.client.EmbeddingStore,
@@ -555,14 +555,14 @@ class VectorDB(BaseVectorDB):
 				)
 				.limit(k)  # Get up to k results from the batch
 			)
-			
+
 			all_results.extend(batch_results)
-		
+
 		# Sort all collected results by distance and take top k
 		if len(chunk_ids) > batch_size:
 			all_results.sort(key=lambda x: x.distance)
 		top_k_results = all_results[:k]
-		
+
 		return [
 			Document(
 				id=str(result.EmbeddingStore.id),
