@@ -497,24 +497,17 @@ class VectorDB(BaseVectorDB):
 
 		try:
 			with self.session_maker() as session:
-				# get user's access list
-				stmt = (
-					sa.select(AccessListStore.source_id)
-					.filter(AccessListStore.uid == user_id)
-				)
-				result = session.execute(stmt).fetchall()
-				source_ids = [r.source_id for r in result]
-
-				doc_filters = [DocumentsStore.source_id.in_(source_ids)]
+				doc_filters = [AccessListStore.uid == user_id]
 				match scope_type:
 					case ScopeType.PROVIDER:
 						doc_filters.append(DocumentsStore.provider.in_(scope_list))  # pyright: ignore[reportArgumentType]
 					case ScopeType.SOURCE:
 						doc_filters.append(DocumentsStore.source_id.in_(scope_list))  # pyright: ignore[reportArgumentType]
 
-				# get chunks associated with the source_ids
+				# get chunks associated with the user
 				stmt = (
 					sa.select(DocumentsStore.chunks)
+					.join(AccessListStore, AccessListStore.source_id==DocumentsStore.source_id)
 					.filter(*doc_filters)
 				)
 				result = session.execute(stmt).fetchall()
@@ -537,31 +530,43 @@ class VectorDB(BaseVectorDB):
 		collection = self.client.get_collection(session)
 		if not collection:
 			raise DbException('Collection not found')
-
-		filter_by = [
-			self.client.EmbeddingStore.collection_id == collection.uuid,
-			self.client.EmbeddingStore.id.in_(chunk_ids),
-		]
-
-		results = (
-			session.query(
-				self.client.EmbeddingStore,
-				self.client.distance_strategy(embedding).label('distance'),
+		
+		# Initialize results list to store all potential matches
+		all_results = []
+		batch_size = 50000
+		# Process chunk_ids in batches to prevent db errors
+		for i in range(0, len(chunk_ids), batch_size):
+			batch_chunk_ids = chunk_ids[i:i+batch_size]
+			
+			filter_by = [
+				self.client.EmbeddingStore.collection_id == collection.uuid,
+				self.client.EmbeddingStore.id.in_(batch_chunk_ids),
+			]
+			
+			batch_results = (
+				session.query(
+					self.client.EmbeddingStore,
+					self.client.distance_strategy(embedding).label('distance'),
+				)
+				.filter(*filter_by)
+				.join(
+					self.client.CollectionStore,
+					self.client.EmbeddingStore.collection_id == self.client.CollectionStore.uuid,
+				)
+				.limit(k)  # Get up to k results from the batch
 			)
-			.filter(*filter_by)
-			.order_by(sa.asc('distance'))
-			.join(
-				self.client.CollectionStore,
-				self.client.EmbeddingStore.collection_id == self.client.CollectionStore.uuid,
-			)
-			.limit(k)
-			.all()
-		)
-
+			
+			all_results.extend(batch_results)
+		
+		# Sort all collected results by distance and take top k
+		if len(chunk_ids) > batch_size:
+			all_results.sort(key=lambda x: x.distance)
+		top_k_results = all_results[:k]
+		
 		return [
 			Document(
 				id=str(result.EmbeddingStore.id),
 				page_content=result.EmbeddingStore.document,
 				metadata=result.EmbeddingStore.cmetadata,
-			) for result in results
+			) for result in top_k_results
 		]
