@@ -72,7 +72,7 @@ jobs:
 
     steps:
       - name: Checkout server
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           repository: nextcloud/server
           ref: ${{ matrix.server-versions }}
@@ -85,20 +85,20 @@ jobs:
           git -c "http.extraheader=$auth_header" -c protocol.version=2 submodule update --init --force --recursive --depth=1
 
       - name: Set up php ${{ matrix.php-versions }}
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@9e72090525849c5e82e596468b86eb55e9cc5401 # v2
         with:
           php-version: ${{ matrix.php-versions }}
           tools: phpunit
           extensions: mbstring, iconv, fileinfo, intl, sqlite, pdo_mysql, pdo_sqlite, pgsql, pdo_pgsql, gd, zip
 
       - name: Checkout context_chat php app
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           repository: nextcloud/context_chat
           path: apps/context_chat
 
       - name: Checkout backend
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           path: context_chat_backend/
 
@@ -129,7 +129,7 @@ jobs:
         run: ./occ app:enable -vvv -f context_chat app_api testing
 
       - name: Checkout documentation
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           repository: nextcloud/documentation
           path: data/admin/files/documentation
@@ -149,7 +149,7 @@ jobs:
           rm -rf documentation
 
       - name: Setup python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5
         with:
           python-version: '3.11'
           cache: 'pip'
