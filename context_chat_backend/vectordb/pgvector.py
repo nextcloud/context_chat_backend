@@ -560,6 +560,7 @@ class VectorDB(BaseVectorDB):
 					self.client.CollectionStore,
 					self.client.EmbeddingStore.collection_id == self.client.CollectionStore.uuid,
 				)
+				.order_by(sa.asc('distance'))
 				.limit(k)  # Get up to k results from the batch
 			)
 
