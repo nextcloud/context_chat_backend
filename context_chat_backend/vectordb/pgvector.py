@@ -26,6 +26,7 @@ load_dotenv()
 COLLECTION_NAME = 'ccb_store'
 DOCUMENTS_TABLE_NAME = 'docs'
 ACCESS_LIST_TABLE_NAME = 'access_list'
+PG_BATCH_SIZE = 50000
 
 logger = logging.getLogger('ccb.vectordb')
 
@@ -130,11 +131,17 @@ class VectorDB(BaseVectorDB):
 	def add_indocuments(self, indocuments: list[InDocument]) -> tuple[list[str], list[str]]:
 		added_sources = []
 		not_added_sources = []
+		batch_size = PG_BATCH_SIZE // 5
 
 		with self.session_maker() as session:
 			for indoc in indocuments:
 				try:
-					chunk_ids = self.client.add_documents(indoc.documents)
+					# query paramerters limitation in postgres is 65535 (https://www.postgresql.org/docs/current/limits.html)
+					# so we chunk the documents into (5 values * 10k) chunks
+					# change the chunk size when there are more inserted values per document
+					chunk_ids = []
+					for i in range(0, len(indoc.documents), batch_size):
+						chunk_ids.extend(self.client.add_documents(indoc.documents[i:i+batch_size]))
 
 					doc = DocumentsStore(
 						source_id=indoc.source_id,
@@ -533,10 +540,10 @@ class VectorDB(BaseVectorDB):
 
 		# Initialize results list to store all potential matches
 		all_results = []
-		batch_size = 50000
 		# Process chunk_ids in batches to prevent db errors
-		for i in range(0, len(chunk_ids), batch_size):
-			batch_chunk_ids = chunk_ids[i:i+batch_size]
+		# query paramerters limitation in postgres is 65535 (https://www.postgresql.org/docs/current/limits.html)
+		for i in range(0, len(chunk_ids), PG_BATCH_SIZE):
+			batch_chunk_ids = chunk_ids[i:i+PG_BATCH_SIZE]
 
 			filter_by = [
 				self.client.EmbeddingStore.collection_id == collection.uuid,
@@ -559,7 +566,7 @@ class VectorDB(BaseVectorDB):
 			all_results.extend(batch_results)
 
 		# Sort all collected results by distance and take top k
-		if len(chunk_ids) > batch_size:
+		if len(chunk_ids) > PG_BATCH_SIZE:
 			all_results.sort(key=lambda x: x.distance)
 		top_k_results = all_results[:k]
 
