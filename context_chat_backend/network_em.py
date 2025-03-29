@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 import logging
+from time import sleep
 from typing import Literal, TypedDict
 
 import httpx
@@ -36,7 +37,7 @@ class CreateEmbeddingResponse(TypedDict):
 class NetworkEmbeddings(Embeddings, BaseModel):
 	app_config: TConfig
 
-	def _get_embedding(self, input_: str | list[str]) -> list[float] | list[list[float]]:
+	def _get_embedding(self, input_: str | list[str], try_: int = 3) -> list[float] | list[list[float]]:
 		emconf = self.app_config.embedding
 
 		lengths = [len(text) for text in (input_ if isinstance(input_, list) else [input_])]
@@ -52,13 +53,20 @@ class NetworkEmbeddings(Embeddings, BaseModel):
 					json={'input': input_},
 					timeout=emconf.request_timeout,
 				)
-		except Exception as e:
+				if response.status_code != 200:
+					raise EmbeddingException(response.text)
+		except (
+			EmbeddingException,
+			httpx.RemoteProtocolError,
+			httpx.ReadError,
+			httpx.LocalProtocolError,
+			httpx.PoolTimeout,
+		) as e:
+			if try_ > 0:
+				logger.debug('Retrying embedding request in 5 secs', extra={'try': try_})
+				sleep(5)
+				return self._get_embedding(input_, try_ - 1)
 			raise EmbeddingException('Error: request to get embeddings failed') from e
-
-		try:
-			response.raise_for_status()
-		except Exception as e:
-			raise EmbeddingException(f'Error: failed to get embeddings: {response.text}') from e
 
 		# converts TypedDict to a pydantic model
 		resp = CreateEmbeddingResponse(**response.json())
