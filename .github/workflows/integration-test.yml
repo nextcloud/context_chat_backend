@@ -1,31 +1,18 @@
-# SPDX-FileCopyrightText: Nextcloud contributors
+# SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 name: Integration test
 
 on:
   pull_request:
-    paths:
-      - main.py
-      - config.cpu.yaml
-      - config.gpu.yaml
-      - context_chat_backend/**
-      - appinfo/**
-      - example.env
-      - hwdetect.sh
-      - persistent_storage/**
+    branches:
+      - master
   push:
     branches:
       - master
-    paths:
-      - main.py
-      - config.cpu.yaml
-      - config.gpu.yaml
-      - context_chat_backend/**
-      - appinfo/**
-      - example.env
-      - hwdetect.sh
-      - persistent_storage/**
+
+permissions:
+  contents: read
 
 concurrency:
   group: integration-test-${{ github.head_ref || github.run_id }}
@@ -33,8 +20,41 @@ concurrency:
 
 
 jobs:
-  transcription:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+
+    outputs:
+      src: ${{ steps.changes.outputs.src}}
+
+    steps:
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: changes
+        continue-on-error: true
+        with:
+          filters: |
+            src:
+              - 'main.py'
+              - 'main_em.py'
+              - 'config.cpu.yaml'
+              - 'config.gpu.yaml'
+              - 'context_chat_backend/**'
+              - 'appinfo/**'
+              - 'example.env'
+              - 'hwdetect.sh'
+              - 'persistent_storage/**'
+              - 'project.toml'
+              - 'requirements.txt'
+              - 'logger_config.yaml'
+              - '.github/workflows/integration-test.yml'
+
+  integration:
     runs-on: ubuntu-22.04
+
+    needs: changes
+    if: needs.changes.outputs.src != 'false'
 
     strategy:
       # do not stop on another job's failure
@@ -238,4 +258,18 @@ jobs:
           cat context_chat_backend/backend_logs || echo "No backend logs"
           echo '--------------------------------------------------'
           tail -v -n +1 context_chat_backend/persistent_storage/logs/* || echo "No logs in logs directory"
-          
+
+  summary:
+    permissions:
+      contents: none
+    runs-on: ubuntu-latest-low
+    needs: [changes, integration]
+
+    if: always()
+
+    # This is the summary, we just avoid to rename it so that branch protection rules still match
+    name: integration-test
+
+    steps:
+      - name: Summary status
+        run: if ${{ needs.changes.outputs.src != 'false' && needs.integration.result != 'success' }}; then exit 1; fi
