@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
+# SPDX-FileCopyrightText: 2025 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 name: Integration test
@@ -237,7 +237,7 @@ jobs:
           final_mem=$(cat after_scan_mem.txt | tr -d ' ')
           echo "Initial Memory Usage: $initial_mem%"
           echo "Memory Usage after scan: $final_mem%"
-          
+
           if (( $(echo "$final_mem > $initial_mem" | bc -l) )); then
             echo "Memory usage has increased during scan. Possible memory leak detected!"
           else
@@ -250,7 +250,7 @@ jobs:
           final_mem=$(cat after_prompt_mem.txt | tr -d ' ')
           echo "Initial Memory Usage: $initial_mem%"
           echo "Memory Usage after prompt: $final_mem%"
-          
+
           if (( $(echo "$final_mem > $initial_mem" | bc -l) )); then
             echo "Memory usage has increased during prompt. Possible memory leak detected!"
           else
