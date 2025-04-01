@@ -8,6 +8,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 4.1.1 - 2025-04-02
+
+### Fixed
+- do not fail access update requests if source is not found in db (#163) @kyteinsky
+- fix for when too many sources/chunks for postgres IN (#166) @Lukasdotcom
+- retry on httpx exceptions in embedding requests (#168) @kyteinsky
+
+
 ## 4.1.0 - 2025-02-21
 
 ### Fixed
