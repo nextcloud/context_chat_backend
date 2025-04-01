@@ -1,31 +1,18 @@
-# SPDX-FileCopyrightText: Nextcloud contributors
+# SPDX-FileCopyrightText: 2025 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 name: Integration test
 
 on:
   pull_request:
-    paths:
-      - main.py
-      - config.cpu.yaml
-      - config.gpu.yaml
-      - context_chat_backend/**
-      - appinfo/**
-      - example.env
-      - hwdetect.sh
-      - persistent_storage/**
+    branches:
+      - master
   push:
     branches:
       - master
-    paths:
-      - main.py
-      - config.cpu.yaml
-      - config.gpu.yaml
-      - context_chat_backend/**
-      - appinfo/**
-      - example.env
-      - hwdetect.sh
-      - persistent_storage/**
+
+permissions:
+  contents: read
 
 concurrency:
   group: integration-test-${{ github.head_ref || github.run_id }}
@@ -33,8 +20,41 @@ concurrency:
 
 
 jobs:
-  transcription:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+
+    outputs:
+      src: ${{ steps.changes.outputs.src}}
+
+    steps:
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: changes
+        continue-on-error: true
+        with:
+          filters: |
+            src:
+              - 'main.py'
+              - 'main_em.py'
+              - 'config.cpu.yaml'
+              - 'config.gpu.yaml'
+              - 'context_chat_backend/**'
+              - 'appinfo/**'
+              - 'example.env'
+              - 'hwdetect.sh'
+              - 'persistent_storage/**'
+              - 'project.toml'
+              - 'requirements.txt'
+              - 'logger_config.yaml'
+              - '.github/workflows/integration-test.yml'
+
+  integration:
     runs-on: ubuntu-22.04
+
+    needs: changes
+    if: needs.changes.outputs.src != 'false'
 
     strategy:
       # do not stop on another job's failure
@@ -196,8 +216,15 @@ jobs:
         run: |
           ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' &
           ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' &
-          ./occ context_chat:prompt admin "Which factors are taken into account for the Ethical AI Rating?"
-          ./occ context_chat:prompt admin "Welche Faktoren beeinflussen das Ethical AI Rating?"
+
+          OUT1=$(./occ context_chat:prompt admin "Which factors are taken into account for the Ethical AI Rating?")
+          echo "$OUT1"
+          echo '--------------------------------------------------'
+          OUT2=$(./occ context_chat:prompt admin "Welche Faktoren beeinflussen das Ethical AI Rating?")
+          echo "$OUT2"
+
+          echo "$OUT1" | grep -q "If all of these points are met, we give a Green label." || exit 1
+          echo "$OUT2" | grep -q "If all of these points are met, we give a Green label." || exit 1
 
       - name: Check python memory usage
         run: |
@@ -210,7 +237,7 @@ jobs:
           final_mem=$(cat after_scan_mem.txt | tr -d ' ')
           echo "Initial Memory Usage: $initial_mem%"
           echo "Memory Usage after scan: $final_mem%"
-          
+
           if (( $(echo "$final_mem > $initial_mem" | bc -l) )); then
             echo "Memory usage has increased during scan. Possible memory leak detected!"
           else
@@ -223,7 +250,7 @@ jobs:
           final_mem=$(cat after_prompt_mem.txt | tr -d ' ')
           echo "Initial Memory Usage: $initial_mem%"
           echo "Memory Usage after prompt: $final_mem%"
-          
+
           if (( $(echo "$final_mem > $initial_mem" | bc -l) )); then
             echo "Memory usage has increased during prompt. Possible memory leak detected!"
           else
@@ -238,4 +265,18 @@ jobs:
           cat context_chat_backend/backend_logs || echo "No backend logs"
           echo '--------------------------------------------------'
           tail -v -n +1 context_chat_backend/persistent_storage/logs/* || echo "No logs in logs directory"
-          
+
+  summary:
+    permissions:
+      contents: none
+    runs-on: ubuntu-latest-low
+    needs: [changes, integration]
+
+    if: always()
+
+    # This is the summary, we just avoid to rename it so that branch protection rules still match
+    name: integration-test
+
+    steps:
+      - name: Summary status
+        run: if ${{ needs.changes.outputs.src != 'false' && needs.integration.result != 'success' }}; then exit 1; fi
