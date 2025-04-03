@@ -8,6 +8,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 4.2.0 - 2025-04-03
+
+### Changed
+- bump minor version to match the companion app
+
+
 ## 4.1.1 - 2025-04-02
 
 ### Fixed
