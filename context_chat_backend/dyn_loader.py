@@ -71,6 +71,7 @@ class EmbeddingModelLoader(Loader):
 			)
 			pid.value = proc.pid
 
+		last_resp, last_exc = None, None
 		# poll for heartbeat
 		try_ = 0
 		while try_ < 20:
@@ -84,12 +85,17 @@ class EmbeddingModelLoader(Loader):
 					)
 					if response.status_code == 200:
 						return
-				except Exception:
+					last_resp = response
+				except Exception as e:
+					last_exc = e
 					logger.debug(f'Try {try_} failed in exception')
 				try_ += 1
 				sleep(3)
 
-		raise EmbeddingException('Error: the embedding server is not responding')
+		raise EmbeddingException(
+			'Error: the embedding server is not responding or could not be started. '
+			+ (f'\nLast error: {last_resp.status_code} {last_resp.text}' if last_resp else '')
+		) from last_exc
 
 	def offload(self):
 		global pid
