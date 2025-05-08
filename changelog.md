@@ -8,6 +8,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 4.3.0 - 2025-05-08
+
+### Fixed
+- fix(nc_texttotext): retries and graceful error handling for schedule (#179) @kyteinsky
+- fix(dyn_loader): richer error message for embedding server start fail (#179) @kyteinsky
+- fix(deps): add libreoffice to install_deps (#180) @kyteinsky
+
+### Changed
+- bump minor version to match the companion app
+
+
 ## 4.2.0 - 2025-04-03
 
 ### Changed
