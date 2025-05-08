@@ -20,7 +20,7 @@ Install the given apps for Context Chat to work as desired **in the given order*
 
 Setup background job workers as described here: https://docs.nextcloud.com/server/latest/admin_manual/ai/overview.html#improve-ai-task-pickup-speed
 ]]></description>
-	<version>4.2.0</version>
+	<version>4.3.0</version>
 	<licence>agpl</licence>
 	<author mail="kyteinsky@gmail.com" homepage="https://github.com/kyteinsky">Anupam Kumar</author>
 	<namespace>Context Chat</namespace>
@@ -35,7 +35,7 @@ Setup background job workers as described here: https://docs.nextcloud.com/serve
 		<docker-install>
 			<registry>ghcr.io</registry>
 			<image>nextcloud/context_chat_backend</image>
-			<image-tag>4.2.0</image-tag>
+			<image-tag>4.3.0</image-tag>
 		</docker-install>
 		<environment-variables>
 			<variable>
