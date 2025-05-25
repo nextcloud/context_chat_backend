@@ -96,6 +96,7 @@ jobs:
         with:
           repository: nextcloud/server
           ref: ${{ matrix.server-versions }}
+          persist-credentials: false
 
       - name: Checkout submodules
         shell: bash
@@ -116,11 +117,13 @@ jobs:
         with:
           repository: nextcloud/context_chat
           path: apps/context_chat
+          persist-credentials: false
 
       - name: Checkout backend
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           path: context_chat_backend/
+          persist-credentials: false
 
       - name: Get app version
         id: appinfo
@@ -153,6 +156,7 @@ jobs:
         with:
           repository: nextcloud/documentation
           path: data/admin/files/documentation
+          persist-credentials: false
 
       - name: Prepare docs
         run: |
