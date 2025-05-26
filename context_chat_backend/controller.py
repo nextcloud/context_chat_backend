@@ -4,7 +4,7 @@
 #
 
 # isort: off
-from .chain.types import ContextException, LLMOutput, ScopeType
+from .chain.types import ContextException, LLMOutput, ScopeType, SearchResult
 from .types import LoaderException, EmbeddingException
 from .vectordb.types import DbException, SafeDbException, UpdateAccessOp
 # isort: on
@@ -26,6 +26,7 @@ from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import persistent_storage, set_handlers
 from pydantic import BaseModel, ValidationInfo, field_validator
 
+from .chain.context import do_doc_search
 from .chain.ingest.injest import embed_sources
 from .chain.one_shot import process_context_query, process_query
 from .config_parser import get_config
@@ -315,11 +316,13 @@ def _(userId: str = Body(embed=True)):
 
 	return JSONResponse('User deleted')
 
+
 @app.post('/countIndexedDocuments')
 @enabled_guard(app)
 def _():
 	counts = exec_in_proc(target=count_documents_by_provider, args=(vectordb_loader,))
 	return JSONResponse(counts)
+
 
 @app.put('/loadSources')
 @enabled_guard(app)
@@ -467,3 +470,17 @@ def _(query: Query) -> LLMOutput:
 
 	with llm_lock:
 		return execute_query(query, in_proc=False)
+
+
+@app.post('/docSearch')
+@enabled_guard(app)
+def _(query: Query) -> list[SearchResult]:
+	# useContext from Query is not used here
+	return exec_in_proc(target=do_doc_search, args=(
+		query.userId,
+		query.query,
+		vectordb_loader,
+		query.ctxLimit,
+		query.scopeType,
+		query.scopeList,
+	))
