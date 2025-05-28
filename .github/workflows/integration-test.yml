@@ -96,13 +96,8 @@ jobs:
         with:
           repository: nextcloud/server
           ref: ${{ matrix.server-versions }}
-
-      - name: Checkout submodules
-        shell: bash
-        run: |
-          auth_header="$(git config --local --get http.https://github.com/.extraheader)"
-          git submodule sync --recursive
-          git -c "http.extraheader=$auth_header" -c protocol.version=2 submodule update --init --force --recursive --depth=1
+          submodules: 'recursive'
+          persist-credentials: false
 
       - name: Set up php ${{ matrix.php-versions }}
         uses: shivammathur/setup-php@9e72090525849c5e82e596468b86eb55e9cc5401 # v2
@@ -116,11 +111,13 @@ jobs:
         with:
           repository: nextcloud/context_chat
           path: apps/context_chat
+          persist-credentials: false
 
       - name: Checkout backend
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           path: context_chat_backend/
+          persist-credentials: false
 
       - name: Get app version
         id: appinfo
@@ -153,6 +150,7 @@ jobs:
         with:
           repository: nextcloud/documentation
           path: data/admin/files/documentation
+          persist-credentials: false
 
       - name: Prepare docs
         run: |
