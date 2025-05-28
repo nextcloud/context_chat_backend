@@ -18,7 +18,7 @@ pandas
 psutil
 pypdf
 docx2txt
-protobuf==3.20.0
+protobuf==6.30.2
 python-dotenv
 python-multipart
 python-pptx
