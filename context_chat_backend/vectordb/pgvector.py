@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 
 import sqlalchemy as sa
+import sqlalchemy.dialects.postgresql as postgresql_dialects
 import sqlalchemy.orm as orm
 from dotenv import load_dotenv
 from fastapi import UploadFile
@@ -89,7 +90,7 @@ class AccessListStore(Base):
 	)
 
 	@classmethod
-	def get_all(cls, session: sa.orm.Session) -> list[str]:
+	def get_all(cls, session: orm.Session) -> list[str]:
 		try:
 			return [r.uid for r in session.query(cls.uid).distinct().all()]
 		except Exception as e:
@@ -246,7 +247,7 @@ class VectorDB(BaseVectorDB):
 			session.commit()
 
 			stmt = (
-				sa.dialects.postgresql.insert(AccessListStore)
+				postgresql_dialects.insert(AccessListStore)
 				.values([
 					{
 						'uid': user_id,
@@ -297,7 +298,7 @@ class VectorDB(BaseVectorDB):
 			match op:
 				case UpdateAccessOp.allow:
 					stmt = (
-						sa.dialects.postgresql.insert(AccessListStore)
+						postgresql_dialects.insert(AccessListStore)
 						.values([
 							{
 								'uid': user_id,
