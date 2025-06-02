@@ -60,7 +60,8 @@ def do_doc_search(
 	augmented_limit = ctx_limit * 2 # to account for duplicate sources
 	docs = get_context_docs(user_id, query, db, augmented_limit, scope_type, scope_list)
 	if len(docs) == 0:
-		raise ContextException('No documents retrieved, please index a few documents first')
+		logger.warning('No documents retrieved, please index a few documents first')
+		return []
 
 	sources_cache = {}
 	results: list[SearchResult] = []
