@@ -25,12 +25,13 @@ def _sign_request(headers: dict, username: str = '') -> None:
 # We assume that the env variables are set
 def _verify_signature(headers: Headers) -> str | None:
 	if headers.get('EX-APP-ID') is None or headers.get('EX-APP-ID') != getenv('APP_ID'):
-		logger.error(f'Invalid EX-APP-ID:{headers.get("EX-APP-ID")} != {getenv("APP_ID")}')
+		logger.error(f'Invalid EX-APP-ID received: "{headers.get("EX-APP-ID")}", expected "{getenv("APP_ID")}"')
 		return None
 
 	if headers.get('EX-APP-VERSION') is None or headers.get('EX-APP-VERSION') != getenv('APP_VERSION'):
 		logger.error(
-			f'Invalid EX-APP-VERSION:{headers.get("EX-APP-VERSION")} <=> {getenv("APP_VERSION")}'
+			f'Invalid EX-APP-VERSION received: "{headers.get("EX-APP-VERSION")}", expected "{getenv("APP_VERSION")}".'
+			' A reinstall of the app context_chat_backend in app_api keeping the data can potentially fix it.'
 		)
 		return None
 
@@ -42,7 +43,7 @@ def _verify_signature(headers: Headers) -> str | None:
 	username, app_secret = auth_aa.split(':', maxsplit=1)
 
 	if app_secret != getenv('APP_SECRET'):
-		logger.error(f'Invalid APP_SECRET:{app_secret} != {getenv("APP_SECRET")}')
+		logger.error('Invalid APP_SECRET received')
 		return None
 
 	return username
