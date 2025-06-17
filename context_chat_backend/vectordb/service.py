@@ -32,6 +32,12 @@ def delete_user(vectordb_loader: VectorDBLoader, user_id: str):
 	db.delete_user(user_id)
 
 
+def delete_folder(vectordb_loader: VectorDBLoader, folder_path: str):
+	db: BaseVectorDB = vectordb_loader.load()
+	logger.debug(f'deleting folder "{folder_path}" from db')
+	db.delete_folder(folder_path)
+
+
 def update_access(
 	vectordb_loader: VectorDBLoader,
 	op: UpdateAccessOp,

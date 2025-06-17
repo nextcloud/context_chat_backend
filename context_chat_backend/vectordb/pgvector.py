@@ -477,6 +477,46 @@ class VectorDB(BaseVectorDB):
 
 			self._cleanup_if_orphaned(list(source_ids), session)
 
+	@timed
+	def delete_folder(self, folder_path: str):
+		session = self.session_maker()
+
+		try:
+			stmt = (
+				sa.delete(self.client.EmbeddingStore)
+				.filter(
+					self.client.EmbeddingStore.cmetadata['source'].astext.like('files__default: %'),
+					self.client.EmbeddingStore.cmetadata['title'].astext.like(f'{folder_path.removesuffix("/")}/%'),
+				)
+				.returning(self.client.EmbeddingStore.cmetadata['source'])
+			)
+			result = session.execute(stmt)
+			source_ids = {str(c) for res in result for c in res}
+
+			if len(source_ids) == 0:
+				logger.info('No source ids found for the given folder path', extra={
+					'folder_path': folder_path,
+				})
+				return
+
+			stmt = (
+				sa.delete(DocumentsStore)
+				.filter(DocumentsStore.source_id.in_(source_ids))
+			)
+			result = session.execute(stmt)
+			if result.rowcount == 0:
+				logger.info('No documents (docs) deleted for the given folder path', extra={
+					'folder_path': folder_path,
+				})
+				return
+
+			session.commit()
+		except Exception as e:
+			session.rollback()
+			raise DbException('Error: deleting documents and chunks based on folder path failed') from e
+
+		# self._cleanup_if_orphaned(source_ids, session)
+
 	def count_documents_by_provider(self) -> dict[str, int]:
 		try:
 			with self.session_maker() as session:

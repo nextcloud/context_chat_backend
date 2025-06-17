@@ -40,6 +40,7 @@ from .vectordb.service import (
 	decl_update_access,
 	delete_by_provider,
 	delete_by_source,
+	delete_folder,
 	delete_user,
 	update_access,
 )
@@ -315,6 +316,20 @@ def _(userId: str = Body(embed=True)):
 	exec_in_proc(target=delete_user, args=(vectordb_loader, userId))
 
 	return JSONResponse('User deleted')
+
+
+@app.post('/deleteFolder')
+@enabled_guard(app)
+def _(folderPath: Annotated[str, Body(embed=True)]):
+	logger.debug('Delete user folder request', extra={ 'folder_path': folderPath })
+
+	# todo: check if / is always present in folderPath from client side
+	if value_of(folderPath) is None or '/' not in folderPath:
+		return JSONResponse(f'Invalid folderPath provided: {folderPath}', 400)
+
+	exec_in_proc(target=delete_folder, args=(vectordb_loader, folderPath))
+
+	return JSONResponse('All sources in the folder deleted')
 
 
 @app.post('/countIndexedDocuments')

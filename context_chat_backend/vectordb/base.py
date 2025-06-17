@@ -101,6 +101,29 @@ class BaseVectorDB(ABC):
 		'''
 
 	@abstractmethod
+	def decl_update_access(
+		self,
+		user_ids: list[str],
+		source_id: str,
+	):
+		'''
+		Updates the absolute user access for the given source.
+		This is used to allow or deny access to sources.
+
+		Args
+		----
+		user_ids: list[str]
+			User IDs to grant access to.
+		source_id: str
+			Source ID to update access for.
+
+		Raises
+		------
+		SafeDbException
+		'''
+		...
+
+	@abstractmethod
 	def update_access(
 		self,
 		op: UpdateAccessOp,
@@ -177,29 +200,6 @@ class BaseVectorDB(ABC):
 		...
 
 	@abstractmethod
-	def decl_update_access(
-		self,
-		user_ids: list[str],
-		source_id: str,
-	):
-		'''
-		Updates the absolute user access for the given source.
-		This is used to allow or deny access to sources.
-
-		Args
-		----
-		user_ids: list[str]
-			User IDs to grant access to.
-		source_id: str
-			Source ID to update access for.
-
-		Raises
-		------
-		SafeDbException
-		'''
-		...
-
-	@abstractmethod
 	def delete_user(self, user_id: str):
 		'''
 		Deletes access for the given user.
@@ -209,6 +209,24 @@ class BaseVectorDB(ABC):
 		----
 		user_id: str
 			User ID to delete.
+		'''
+		...
+
+	@timed
+	@abstractmethod
+	def delete_folder(self, folder_path: str):
+		'''
+		Deletes all documents in the given folder path.
+
+		Args
+		----
+		folder_path: str
+			Folder path to delete.
+
+		Raises
+		------
+		DbException
+			If the operation fails.
 		'''
 		...
 
