@@ -131,7 +131,7 @@ class VectorDB(BaseVectorDB):
 
 	def add_indocuments(self, indocuments: list[InDocument]) -> tuple[list[str], list[str]]:
 		added_sources = []
-		not_added_sources = []
+		retry_sources = []
 		batch_size = PG_BATCH_SIZE // 5
 
 		with self.session_maker() as session:
@@ -155,24 +155,29 @@ class VectorDB(BaseVectorDB):
 
 					self.decl_update_access(indoc.userIds, indoc.source_id, session)
 					added_sources.append(indoc.source_id)
+					session.commit()
 				except SafeDbException as e:
+					# for when the source_id is not found. This here can be an error in the DB
+					# and the source should be retried later
 					logger.exception('Error adding documents to vectordb', exc_info=e, extra={
 						'source_id': indoc.source_id,
 					})
+					retry_sources.append(indoc.source_id)
 					continue
 				except EmbeddingException as e:
 					logger.exception('Error adding documents to vectordb', exc_info=e, extra={
 						'source_id': indoc.source_id,
 					})
-					not_added_sources.append(indoc.source_id)
+					retry_sources.append(indoc.source_id)
 					continue
 				except Exception as e:
 					logger.exception('Error adding documents to vectordb', exc_info=e, extra={
 						'source_id': indoc.source_id,
 					})
+					retry_sources.append(indoc.source_id)
 					continue
 
-		return added_sources, not_added_sources
+		return added_sources, retry_sources
 
 	@timed
 	def check_sources(self, sources: list[UploadFile]) -> tuple[list[str], list[str]]:

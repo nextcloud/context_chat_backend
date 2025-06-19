@@ -381,7 +381,7 @@ def _(sources: list[UploadFile]):
 			_indexing[source.filename] = source.size
 
 	try:
-		added_sources, not_added_sources = exec_in_proc(
+		loaded_sources, not_added_sources = exec_in_proc(
 			target=embed_sources,
 			args=(vectordb_loader, app.extra['CONFIG'], sources)
 		)
@@ -395,13 +395,14 @@ def _(sources: list[UploadFile]):
 				_indexing.pop(source.filename, None)
 		doc_parse_semaphore.release()
 
-	if len(added_sources) != len(sources):
+	if len(loaded_sources) != len(sources):
 		logger.debug('Some sources were not loaded', extra={
-			'Count of newly loaded sources': f'{len(added_sources)}/{len(sources)}',
-			'source_ids': added_sources,
+			'Count of loaded sources': f'{len(loaded_sources)}/{len(sources)}',
+			'source_ids': loaded_sources,
 		})
 
-	return JSONResponse({'loaded_sources': added_sources, 'sources_to_retry': not_added_sources})
+	# loaded sources include the existing sources that may only have their access updated
+	return JSONResponse({'loaded_sources': loaded_sources, 'sources_to_retry': not_added_sources})
 
 
 class Query(BaseModel):

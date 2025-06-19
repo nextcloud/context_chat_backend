@@ -117,6 +117,7 @@ def _process_sources(
 		'len(filtered_sources)': len(filtered_sources),
 		'filtered_sources': filtered_sources,
 	})
+	loaded_source_ids = [source.filename for source in existing_sources]
 
 	# update userIds for existing sources
 	# allow the userIds as additional users, not as the only users
@@ -138,23 +139,26 @@ def _process_sources(
 	if len(filtered_sources) == 0:
 		# no new sources to embed
 		logger.debug('Filtered all sources, nothing to embed')
-		return [], []
+		return loaded_source_ids, []  # pyright: ignore[reportReturnType]
 
 	logger.debug('Filtered sources:', extra={
 		'source_ids': [source.filename for source in filtered_sources]
 	})
+	# invalid/empty sources are filtered out here and not counted in loaded/retryable
 	indocuments = _sources_to_indocuments(config, filtered_sources)
 
 	logger.debug('Converted all sources to documents')
 
 	if len(indocuments) == 0:
-		# document(s) were empty, not an error
+		# filtered document(s) were invalid/empty, not an error
 		logger.debug('All documents were found empty after being processed')
-		return [], []
+		return loaded_source_ids, []  # pyright: ignore[reportReturnType]
 
-	added_sources, not_added_sources = vectordb.add_indocuments(indocuments)
+	added_source_ids, retry_source_ids = vectordb.add_indocuments(indocuments)
+	loaded_source_ids.extend(added_source_ids)
 	logger.debug('Added documents to vectordb')
-	return added_sources, not_added_sources
+
+	return loaded_source_ids, retry_source_ids  # pyright: ignore[reportReturnType]
 
 
 def _decode_latin_1(s: str) -> str:
