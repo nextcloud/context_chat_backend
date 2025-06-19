@@ -52,8 +52,15 @@ ensure_config_file()
 logger = logging.getLogger('ccb.controller')
 
 models_to_fetch = {
-	"https://huggingface.co/Ralriki/multilingual-e5-large-instruct-GGUF/resolve/8738f8d3d8f311808479ecd5756607e24c6ca811/multilingual-e5-large-instruct-q6_k.gguf": {  # noqa: E501
-		"save_path": os.path.join(persistent_storage(), 'model_files',  "multilingual-e5-large-instruct-q6_k.gguf")
+	# embedding model
+	'https://huggingface.co/Ralriki/multilingual-e5-large-instruct-GGUF/resolve/8738f8d3d8f311808479ecd5756607e24c6ca811/multilingual-e5-large-instruct-q6_k.gguf': {  # noqa: E501
+		'save_path': os.path.join(persistent_storage(), 'model_files',  'multilingual-e5-large-instruct-q6_k.gguf')
+	},
+	# tokenizer model for estimating token count of queries
+	'gpt2': {
+		'cache_dir': os.path.join(persistent_storage(), 'model_files/hub'),
+		'allow_patterns': ['config.json', 'merges.txt', 'tokenizer.json', 'tokenizer_config.json', 'vocab.json'],
+		'revision': '607a30d783dfa663caf39e06633721c8d4cfcd7e',
 	}
 }
 app_enabled = Event()
