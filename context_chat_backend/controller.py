@@ -2,6 +2,9 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+import zipfile
+
+from starlette.responses import FileResponse
 
 # isort: off
 from .chain.types import ContextException, LLMOutput, ScopeType, SearchResult
@@ -12,6 +15,7 @@ from .vectordb.types import DbException, SafeDbException, UpdateAccessOp
 import logging
 import multiprocessing as mp
 import os
+import tempfile
 import threading
 from collections.abc import Callable
 from contextlib import asynccontextmanager
@@ -492,3 +496,16 @@ def _(query: Query) -> list[SearchResult]:
 		query.scopeType,
 		query.scopeList,
 	))
+
+
+@app.get('/download-logs')
+@enabled_guard(app)
+def download_logs() -> FileResponse:
+	with tempfile.NamedTemporaryFile('wb', delete=False) as tmp:
+		with zipfile.ZipFile(tmp, mode='w', compression=zipfile.ZIP_DEFLATED) as zip_file:
+			files = os.listdir(os.path.join(persistent_storage(), 'logs'))
+			for file in files:
+				file_path = os.path.join(persistent_storage(), 'logs', file)
+				if os.path.isfile(file_path): # Might be a folder (just skip it then)
+					zip_file.write(file_path)
+		return FileResponse(tmp.name, media_type='application/zip', filename='docker_logs.zip')
