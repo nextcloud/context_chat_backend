@@ -39,7 +39,7 @@ Setup background job workers as described here: https://docs.nextcloud.com/serve
 		</docker-install>
 		<routes>
 			<route>
-				<url>download-logs</url>
+				<url>downloadLogs</url>
 				<verb>GET</verb>
 				<access_level>ADMIN</access_level>
 				<headers_to_exclude>[]</headers_to_exclude>

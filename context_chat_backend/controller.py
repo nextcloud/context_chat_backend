@@ -2,9 +2,6 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-import zipfile
-
-from starlette.responses import FileResponse
 
 # isort: off
 from .chain.types import ContextException, LLMOutput, ScopeType, SearchResult
@@ -17,6 +14,7 @@ import multiprocessing as mp
 import os
 import tempfile
 import threading
+import zipfile
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from functools import wraps
@@ -29,6 +27,7 @@ from langchain.llms.base import LLM
 from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import persistent_storage, set_handlers
 from pydantic import BaseModel, ValidationInfo, field_validator
+from starlette.responses import FileResponse
 
 from .chain.context import do_doc_search
 from .chain.ingest.injest import embed_sources
@@ -498,8 +497,7 @@ def _(query: Query) -> list[SearchResult]:
 	))
 
 
-@app.get('/download-logs')
-@enabled_guard(app)
+@app.get('/downloadLogs')
 def download_logs() -> FileResponse:
 	with tempfile.NamedTemporaryFile('wb', delete=False) as tmp:
 		with zipfile.ZipFile(tmp, mode='w', compression=zipfile.ZIP_DEFLATED) as zip_file:
