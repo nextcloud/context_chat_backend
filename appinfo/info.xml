@@ -37,6 +37,14 @@ Setup background job workers as described here: https://docs.nextcloud.com/serve
 			<image>nextcloud/context_chat_backend</image>
 			<image-tag>4.3.0</image-tag>
 		</docker-install>
+		<routes>
+			<route>
+				<url>downloadLogs</url>
+				<verb>GET</verb>
+				<access_level>ADMIN</access_level>
+				<headers_to_exclude>[]</headers_to_exclude>
+			</route>
+		</routes>
 		<environment-variables>
 			<variable>
 				<name>EXTERNAL_DB</name>
