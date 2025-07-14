@@ -1,4 +1,3 @@
-#ruff: noqa: I001
 #
 # SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
@@ -61,7 +60,7 @@ class EmbeddingModelLoader(Loader):
 			if pid.value > 0 and psutil.pid_exists(pid.value):
 				return
 
-			proc = subprocess.Popen(  # noqa: S603
+			proc = subprocess.Popen(
 				['./main_em.py'],
 				stdout=self.logfile,
 				stderr=self.logfile,
