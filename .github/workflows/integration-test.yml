@@ -187,14 +187,12 @@ jobs:
           sed -i 's/nodaemon=true/nodaemon=false/' supervisord.conf
           # set the correct logfile
           sed -i 's/std.*_logfile=.*/stdout_logfile=backend_logs/' supervisord.conf
-          # remove user=root
-          sed -i -r '/user=root/d' supervisord.conf
           # enable supervisorctl
           sed -i -r 's/^#(\[supervisorctl\]|serverurl=.*)/\1/' supervisord.conf
           sudo apt-get update && sudo apt-get install -y supervisor
-          supervisord -c supervisord.conf
+          sudo supervisord -c supervisord.conf
           # Save the process ID (PID)
-          supervisorctl pid app > ../pid.txt
+          sudo supervisorctl pid app > ../pid.txt
 
       - name: Register backend
         run: |
