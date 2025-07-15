@@ -183,16 +183,9 @@ jobs:
           pip install -r requirements.txt
           cp example.env .env
           echo "NEXTCLOUD_URL=http://localhost:8080" >> .env
-          # daemon mode
-          sed -i 's/nodaemon=true/nodaemon=false/' supervisord.conf
-          # set the correct logfile
-          sed -i 's/std.*_logfile=.*/stdout_logfile=backend_logs/' supervisord.conf
-          # enable supervisorctl
-          sed -i -r 's/^#(\[supervisorctl\]|serverurl=.*)/\1/' supervisord.conf
-          sudo apt-get update && sudo apt-get install -y supervisor
-          sudo supervisord -c supervisord.conf
-          # Save the process ID (PID)
-          sudo supervisorctl pid app > ../pid.txt
+          python3 -u ./main_em.py > em_backend_logs 2>&1 &
+          python3 -u ./main.py > backend_logs 2>&1 &
+          echo $! > ../pid.txt          # Save the process ID (PID)
 
       - name: Register backend
         run: |
@@ -271,6 +264,7 @@ jobs:
           cat data/nextcloud.log
           echo '--------------------------------------------------'
           cat context_chat_backend/backend_logs || echo "No main backend logs"
+          cat context_chat_backend/em_backend_logs || echo "No main backend logs"
           echo '--------------------------------------------------'
           tail -v -n +1 context_chat_backend/persistent_storage/logs/* || echo "No logs in logs directory"
 
