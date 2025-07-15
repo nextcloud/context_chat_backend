@@ -16,6 +16,7 @@ from langchain_unstructured import UnstructuredLoader
 from odfdo import Document
 from pandas import read_csv, read_excel
 from pypdf import PdfReader
+from pypdf.errors import FileNotDecryptedError as PdfFileNotDecryptedError
 from striprtf import striprtf
 
 logger = logging.getLogger('ccb.doc_loader')
@@ -133,6 +134,9 @@ def decode_source(source: UploadFile) -> str | None:
 		result = source.file.read().decode('utf-8', 'ignore')
 		source.file.close()
 		return result
+	except PdfFileNotDecryptedError:
+		logger.warning(f'PDF file ({source.filename}) is encrypted and cannot be read')
+		return None
 	except Exception:
 		logger.exception(f'Error decoding source file ({source.filename})', stack_info=True)
 		return None
