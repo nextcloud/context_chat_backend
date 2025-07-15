@@ -84,8 +84,8 @@ class JSONFormatter(logging.Formatter):
 		return message
 
 
-def get_logging_config() -> dict:
-	with open('logger_config.yaml') as f:
+def get_logging_config(config_path: str) -> dict:
+	with open(config_path) as f:
 		try:
 			yaml = YAML(typ='safe')
 			config: dict = yaml.load(f)

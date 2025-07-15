@@ -13,6 +13,8 @@ from context_chat_backend.controller import app  # isort: skip
 from context_chat_backend.utils import to_int  # isort: skip
 from context_chat_backend.logger import get_logging_config, setup_logging  # isort: skip
 
+LOGGER_CONFIG_NAME = 'logger_config.yaml'
+
 def _setup_log_levels(debug: bool):
 	'''
 	Set log levels for the modules at once for a cleaner usage later.
@@ -40,7 +42,7 @@ def _setup_log_levels(debug: bool):
 
 
 if __name__ == '__main__':
-	logging_config = get_logging_config()
+	logging_config = get_logging_config(LOGGER_CONFIG_NAME)
 	setup_logging(logging_config)
 	app_config: TConfig = app.extra['CONFIG']
 	_setup_log_levels(app_config.debug)
