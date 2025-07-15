@@ -15,7 +15,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 logger = logging.getLogger('ccb.ocs_utils')
 
-def _sign_request(headers: dict, username: str = '') -> None:
+def sign_request(headers: dict, username: str = '') -> None:
 	headers['EX-APP-ID'] = getenv('APP_ID')
 	headers['EX-APP-VERSION'] = getenv('APP_VERSION')
 	headers['OCS-APIRequest'] = 'true'
@@ -124,7 +124,7 @@ def ocs_call(
 		headers.update({'Content-Type': 'application/json'})
 		data_bytes = json.dumps(json_data).encode('utf-8')
 
-	_sign_request(headers, kwargs.get('username', ''))
+	sign_request(headers, kwargs.get('username', ''))
 
 	with httpx.Client(verify=verify_ssl) as client:
 		ret = client.request(

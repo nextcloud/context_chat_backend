@@ -46,6 +46,8 @@ COPY main.py .
 COPY main_em.py .
 COPY config.?pu.yaml .
 COPY logger_config.yaml .
+COPY logger_config_em.yaml .
 COPY hwdetect.sh .
+COPY supervisord.conf /etc/supervisor/supervisord.conf
 
-ENTRYPOINT [ "./dockerfile_scripts/entrypoint.sh" ]
+ENTRYPOINT ["supervisord", "-c", "/etc/supervisor/supervisord.conf"]

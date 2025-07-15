@@ -6,17 +6,11 @@
 
 import gc
 import logging
-import multiprocessing as mp
-import os
-import signal
-import subprocess
 from abc import ABC, abstractmethod
-from datetime import datetime
 from time import sleep, time
 from typing import Any
 
 import httpx
-import psutil
 import torch
 from fastapi import FastAPI
 from langchain.llms.base import LLM
@@ -39,45 +33,21 @@ class Loader(ABC):
 	def offload(self):
 		...
 
-pid = mp.Value('i', 0)
 
 class EmbeddingModelLoader(Loader):
 	def __init__(self, config: TConfig):
 		self.config = config
-		logfile_path = os.path.join(
-			os.environ['EM_SERVER_LOG_PATH'],
-			f'embedding_server_{datetime.now().strftime("%Y-%m-%d")}.log',
-		)
-		self.logfile = open(logfile_path, 'a+')
 
 	def load(self):
-		global pid
-
 		emconf = self.config.embedding
-
-		# start the embedding server if workers are > 0
-		if emconf.workers > 0:
-			# compare with None, as PID can be 0, you never know
-			if pid.value > 0 and psutil.pid_exists(pid.value):
-				return
-
-			proc = subprocess.Popen(  # noqa: S603
-				['./main_em.py'],
-				stdout=self.logfile,
-				stderr=self.logfile,
-				stdin=None,
-				close_fds=True,
-				env=os.environ,
-			)
-			pid.value = proc.pid
-
 		last_resp, last_exc = None, None
 		# poll for heartbeat
 		try_ = 0
-		while try_ < 20:
-			with httpx.Client() as client:
+		with httpx.Client() as client:
+			while try_ < 20:
 				try:
 					# test the server is up
+					# todo: replace with a tcp connection check
 					response = client.post(
 						f'{emconf.protocol}://{emconf.host}:{emconf.port}/v1/embeddings',
 						json={'input': 'hello'},
@@ -98,10 +68,7 @@ class EmbeddingModelLoader(Loader):
 		) from last_exc
 
 	def offload(self):
-		global pid
-		if pid.value > 0 and psutil.pid_exists(pid.value):
-			os.kill(pid.value, signal.SIGTERM)
-		self.logfile.close()
+		...
 
 
 class VectorDBLoader(Loader):

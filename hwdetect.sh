@@ -47,6 +47,7 @@ if [ "$1" = "config" ]; then
 		exit 0
 	fi
 
+# todo: use fallback config instead of copying it to persistent storage
 	echo "Copying config file to the persistent storage..."
 	if [ "$accel" = "CUDA" ]; then
 		cp "config.gpu.yaml" "$APP_PERSISTENT_STORAGE/config.yaml"

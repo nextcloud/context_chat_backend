@@ -4,4 +4,4 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 apt-get update
-apt-get install -y --no-install-recommends vim git pciutils libgomp1 libreoffice
+apt-get install -y --no-install-recommends vim git pciutils libgomp1 libreoffice supervisor
