@@ -16,9 +16,8 @@ vectordb:
     # 'connection' overrides the env var 'CCB_DB_URL'
 
 embedding:
-  protocol: http
-  host: localhost
-  port: 5000
+  # local embedding service
+  base_url: http://localhost:5000/v1
   workers: 1
   offload_after_mins: 15 # in minutes
   request_timeout: 1800 # in seconds
@@ -30,6 +29,17 @@ embedding:
     n_batch: 16
     n_ctx: 8192
     n_gpu_layers: -1
+
+# # openai embedding service
+# embedding:
+#   base_url: https://api.openai.com/v1
+#   auth: # also supports username and password
+#     apikey:
+#   model: text-embedding-3-small
+#   workers: 0
+#   offload_after_mins: 15 # in minutes
+#   request_timeout: 1680 # in seconds
+
 
 llm:
   nc_texttotext:

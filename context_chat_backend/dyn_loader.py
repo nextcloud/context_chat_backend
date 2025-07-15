@@ -15,7 +15,6 @@ from datetime import datetime
 from time import sleep, time
 from typing import Any
 
-import httpx
 import psutil
 import torch
 from fastapi import FastAPI
@@ -23,7 +22,7 @@ from langchain.llms.base import LLM
 
 from .models.loader import init_model
 from .network_em import NetworkEmbeddings
-from .types import EmbeddingException, LoaderException, TConfig
+from .types import LoaderException, TConfig
 from .vectordb.base import BaseVectorDB
 from .vectordb.loader import get_vector_db
 from .vectordb.types import DbException
@@ -42,7 +41,7 @@ class Loader(ABC):
 pid = mp.Value('i', 0)
 
 class EmbeddingModelLoader(Loader):
-	def __init__(self, config: TConfig):
+	def __init__(self, config: TConfig) -> None:
 		self.config = config
 		logfile_path = os.path.join(
 			os.environ['EM_SERVER_LOG_PATH'],
@@ -73,23 +72,18 @@ class EmbeddingModelLoader(Loader):
 
 		# poll for heartbeat
 		try_ = 0
+		em_model = NetworkEmbeddings(app_config=self.config)
 		while try_ < 20:
-			with httpx.Client() as client:
-				try:
-					# test the server is up
-					response = client.post(
-						f'{emconf.protocol}://{emconf.host}:{emconf.port}/v1/embeddings',
-						json={'input': 'hello'},
-						timeout=20, # seconds
-					)
-					if response.status_code == 200:
-						return
-				except Exception:
-					logger.debug(f'Try {try_} failed in exception')
-				try_ += 1
-				sleep(3)
+			try:
+				# test the server is up
+				em_model.embed_query('heartbeat')
+				return
+			except Exception:
+				logger.debug(f'Try {try_} failed in exception', exc_info=True)
+			try_ += 1
+			sleep(3)
 
-		raise EmbeddingException('Error: the embedding server is not responding')
+		logger.error('Error: the embedding server is not responding')
 
 	def offload(self):
 		global pid

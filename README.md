@@ -115,6 +115,13 @@ Make sure to restart the app after changing the config file. For docker, this wo
 
 This is a file copied from one of the two configurations (config.cpu.yaml or config.gpu.conf) during app startup if `config.yaml` is not already present to the persistent storage. See [Repair section](#repair) on details on the repair step that removes the config if you have a custom config.
 
+The default way is to spawn an embedding server backed by llama.cpp, where the local model runs on either CPU or GPU. The other option is to use a remote model from a OpenAI-compatible API. The configuration for the remote model is also present in the sample config files.
+API key or username/password for the remote API can be stored in the config file itself or environment variables can be used. `CCB_EM_APIKEY` for the API key and `CCB_EM_USERNAME` and `CCB_EM_PASSWORD` for the username and password respectively.
+To indicate the use of environment variables, set the value of `auth` in the config file to `from_env`, like so:
+```yaml
+auth: from_env
+```
+
 ## Repair
 v2.1.0 introduces repair steps. These run on app startup.
 

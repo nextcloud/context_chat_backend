@@ -88,10 +88,11 @@ if __name__ == '__main__':
 		if not os.path.isfile(em_conf.llama['model']):
 			raise ValueError('Error: Model file not found at the updated path')
 
-	server_settings = ServerSettings(
-		host=em_conf.host,
-		port=em_conf.port,
-	)
+	base_url = URL(em_conf.base_url)
+	host = base_url.components.hostname or base_url.path or '127.0.0.1'
+	port = base_url.components.port or 5000
+
+	server_settings = ServerSettings(host=host, port=port)
 	model_settings = [ModelSettings(model_alias='em_model', embedding=True, **em_conf.llama)]
 	app = create_app(
 		server_settings=server_settings,
@@ -107,8 +108,8 @@ if __name__ == '__main__':
 
 	uvicorn.run(
 		app=app,
-		host=em_conf.host,
-		port=em_conf.port,
+		host=host,
+		port=port,
 		http='h11',
 		interface='asgi3',
 		# todo

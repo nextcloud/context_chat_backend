@@ -2,10 +2,13 @@
 # SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+import os
+
 from ruamel.yaml import YAML
 
 from .models.loader import models
 from .types import TConfig
+from .utils import value_of
 from .vectordb.loader import vector_dbs
 
 
@@ -47,6 +50,33 @@ def get_config(file_path: str) -> TConfig:
 			f'Error: llm model should be at least one of {models["llm"]} in the config file'
 		)
 
+	# convert protocol, host and port to base_url
+	embedding = config.get('embedding')
+	if embedding is None:
+		raise AssertionError('Error: embedding should be defined in the config file')
+	if not isinstance(embedding, dict):
+		raise AssertionError('Error: embedding should be a dictionary')
+	if 'protocol' in embedding and 'host' in embedding and 'port' in embedding:
+		embedding['base_url'] = f"{embedding['protocol']}://{embedding['host']}:{embedding['port']}"
+		del embedding['protocol']
+		del embedding['host']
+		del embedding['port']
+
+	if embedding.get('auth') == 'from_env' and (
+		value_of(os.getenv('CCB_EM_APIKEY'))
+		or (
+			value_of(os.getenv('CCB_EM_USERNAME'))
+			and value_of(os.getenv('CCB_EM_PASSWORD'))
+		)
+	):
+		raise AssertionError(
+			'Error: either CCB_EM_APIKEY or both CCB_EM_USERNAME and CCB_EM_PASSWORD should be defined'
+		)
+
+	if embedding.get('llama'):
+		embedding['options'] = embedding['llama']
+		del embedding['llama']
+
 	return TConfig(
 		debug=config.get('debug', False),
 		uvicorn_log_level=config.get('uvicorn_log_level', 'info'),
@@ -58,6 +88,6 @@ def get_config(file_path: str) -> TConfig:
 		doc_parser_worker_limit=config.get('doc_parser_worker_limit', 10),
 
 		vectordb=vectordb,
-		embedding=config.get('embedding', {}), # for a more appropriate response
+		embedding=embedding,
 		llm=llm,
 	)
