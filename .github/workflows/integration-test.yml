@@ -48,6 +48,8 @@ jobs:
               - 'project.toml'
               - 'requirements.txt'
               - 'logger_config.yaml'
+              - 'logger_config_em.yaml'
+              - 'supervisord.conf'
               - '.github/workflows/integration-test.yml'
 
   integration:
@@ -181,6 +183,7 @@ jobs:
           pip install -r requirements.txt
           cp example.env .env
           echo "NEXTCLOUD_URL=http://localhost:8080" >> .env
+          python3 -u ./main_em.py > em_backend_logs 2>&1 &
           python3 -u ./main.py > backend_logs 2>&1 &
           echo $! > ../pid.txt          # Save the process ID (PID)
 
@@ -260,7 +263,8 @@ jobs:
         run: |
           cat data/nextcloud.log
           echo '--------------------------------------------------'
-          cat context_chat_backend/backend_logs || echo "No backend logs"
+          cat context_chat_backend/backend_logs || echo "No main backend logs"
+          cat context_chat_backend/em_backend_logs || echo "No main backend logs"
           echo '--------------------------------------------------'
           tail -v -n +1 context_chat_backend/persistent_storage/logs/* || echo "No logs in logs directory"
 
