@@ -1,5 +1,6 @@
 apscheduler
 chromadb
+cryptography
 ctransformers
 epub2txt
 fastapi
