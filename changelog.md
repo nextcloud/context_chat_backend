@@ -8,6 +8,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 4.4.0 - 2025-07-21
+
+### Fixed
+- improve source tracking so no file stat is lost (#190) @kyteinsky
+- improve OCS signing error messages (#189) @kyteinsky
+- handle encrypted pdf decryption error (#195) @kyteinsky
+
+### Changed
+- maintenance update (#184) @kyteinsky
+- update issue template to attach logs (#193) @lukasdotcom
+- bump llama_cpp_python (#196) @kyteinsky
+
+### Added
+- add doc search endpoint (#185) @kyteinsky
+- pre download the tokenizer instead of mid operation (#191) @kyteinsky
+- add endpoint for downloading logs (#192) @lukasdotcom
+- use supervisord to manage the processes (#194) @kyteinsky
+
+
 ## 4.3.0 - 2025-05-08
 
 ### Fixed
