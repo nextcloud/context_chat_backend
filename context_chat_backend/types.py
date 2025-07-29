@@ -42,3 +42,11 @@ class LoaderException(Exception):
 
 class EmbeddingException(Exception):
 	...
+
+class RetryableEmbeddingException(EmbeddingException):
+	"""
+	Exception that indicates that the embedding request can be retried.
+
+	This keeps the indexing loop running and adds to the retry list.
+	The parent exception would break the loop and stop the indexing process.
+	"""

@@ -7,17 +7,16 @@
 import gc
 import logging
 from abc import ABC, abstractmethod
-from time import sleep, time
+from time import time
 from typing import Any
 
-import httpx
 import torch
 from fastapi import FastAPI
 from langchain.llms.base import LLM
 
 from .models.loader import init_model
 from .network_em import NetworkEmbeddings
-from .types import EmbeddingException, LoaderException, TConfig
+from .types import LoaderException, TConfig
 from .vectordb.base import BaseVectorDB
 from .vectordb.loader import get_vector_db
 from .vectordb.types import DbException
