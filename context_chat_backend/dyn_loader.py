@@ -34,47 +34,9 @@ class Loader(ABC):
 		...
 
 
-class EmbeddingModelLoader(Loader):
-	def __init__(self, config: TConfig):
-		self.config = config
-
-	def load(self):
-		emconf = self.config.embedding
-		last_resp, last_exc = None, None
-		# poll for heartbeat
-		try_ = 0
-		with httpx.Client() as client:
-			while try_ < 20:
-				try:
-					# test the server is up
-					# todo: replace with a tcp connection check
-					response = client.post(
-						f'{emconf.protocol}://{emconf.host}:{emconf.port}/v1/embeddings',
-						json={'input': 'hello'},
-						timeout=20, # seconds
-					)
-					if response.status_code == 200:
-						return
-					last_resp = response
-				except Exception as e:
-					last_exc = e
-					logger.debug(f'Try {try_} failed in exception')
-				try_ += 1
-				sleep(3)
-
-		raise EmbeddingException(
-			'Error: the embedding server is not responding or could not be started. '
-			+ (f'\nLast error: {last_resp.status_code} {last_resp.text}' if last_resp else '')
-		) from last_exc
-
-	def offload(self):
-		...
-
-
 class VectorDBLoader(Loader):
-	def __init__(self, em_loader: EmbeddingModelLoader, config: TConfig) -> None:
+	def __init__(self, config: TConfig) -> None:
 		self.config = config
-		self.em_loader = em_loader
 
 	def load(self) -> BaseVectorDB:
 		try:
@@ -83,14 +45,12 @@ class VectorDBLoader(Loader):
 			raise LoaderException() from e
 
 		try:
-			self.em_loader.load()
 			embedding_model = NetworkEmbeddings(app_config=self.config)
 			return client_klass(embedding_model, **self.config.vectordb[1])  # type: ignore
 		except DbException as e:
 			raise LoaderException() from e
 
 	def offload(self) -> None:
-		self.em_loader.offload()
 		clear_cache()
 
 
