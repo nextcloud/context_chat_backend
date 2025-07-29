@@ -20,6 +20,7 @@ LOGGER_CONFIG_NAME = 'logger_config_em.yaml'
 # todo: config and env var for this
 MODEL_ALIAS = 'em_model'
 STARTUP_CHECK_SEC = 10
+MAX_TRIES = 180  # 30 minutes max
 
 
 if __name__ == '__main__':
@@ -43,22 +44,23 @@ if __name__ == '__main__':
 	if app_config.debug:
 		logger.setLevel(logging.DEBUG)
 
-	_max_tries = 120 # 20 minutes max
+	_max_tries = MAX_TRIES
 	_enabled = False
+	_last_err = None
 	_headers = {}
 	sign_request(_headers)
 	# wait for the main process to be ready, check the /enabled endpoint
 	while _max_tries > 0:
 		with httpx.Client() as client:
-			ret = client.get(f'http://{os.environ["APP_HOST"]}:{os.environ["APP_PORT"]}/enabled', headers=_headers)
-			if ret.status_code != 200:
-				print(f'Error checking main app status: {ret.text}', flush=True)
-				sleep(STARTUP_CHECK_SEC)
-				_max_tries -= 1
-				continue
+			try:
+				ret = client.get(f'http://{os.environ["APP_HOST"]}:{os.environ["APP_PORT"]}/enabled', headers=_headers)
+				ret.raise_for_status()
 
-			if not ret.json().get('enabled', False):
-				print('Main app is not enabled, sleeping for a while...', flush=True)
+				if not ret.json().get('enabled', False):
+					raise RuntimeError('Main app is not enabled, sleeping for a while...')
+			except (httpx.RequestError, RuntimeError) as e:
+				print(f'{MAX_TRIES-_max_tries+1}/{MAX_TRIES}: Error checking main app status: {e}', flush=True)
+				_last_err = e
 				sleep(STARTUP_CHECK_SEC)
 				_max_tries -= 1
 				continue
@@ -67,8 +69,8 @@ if __name__ == '__main__':
 			break
 
 	if not _enabled:
-		print('Failed waiting for the main app to be enabled, exiting...', flush=True)
-		exit(0)
+		logger.error('Failed waiting for the main app to be enabled, exiting...', exc_info=_last_err)
+		exit(1)
 
 	# update model path to be in the persistent storage if it is not already valid
 	if 'model' not in em_conf.llama:
