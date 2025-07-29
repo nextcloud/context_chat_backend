@@ -33,7 +33,7 @@ from .chain.context import do_doc_search
 from .chain.ingest.injest import embed_sources
 from .chain.one_shot import process_context_query, process_query
 from .config_parser import get_config
-from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, VectorDBLoader
+from .dyn_loader import LLMModelLoader, VectorDBLoader
 from .models.types import LlmException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
@@ -89,7 +89,6 @@ async def lifespan(app: FastAPI):
 	t.start()
 	yield
 	vectordb_loader.offload()
-	embedding_loader.offload()
 	llm_loader.offload()
 
 
@@ -101,9 +100,7 @@ app.extra['CONFIG'] = app_config
 
 # loaders
 
-# global embedding_loader so the server is not started multiple times
-embedding_loader = EmbeddingModelLoader(app_config)
-vectordb_loader = VectorDBLoader(embedding_loader, app_config)
+vectordb_loader = VectorDBLoader(app_config)
 llm_loader = LLMModelLoader(app, app_config)
 
 
