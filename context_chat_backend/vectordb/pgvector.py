@@ -17,7 +17,7 @@ from langchain_core.embeddings import Embeddings
 from langchain_postgres.vectorstores import Base, PGVector
 
 from ..chain.types import InDocument, ScopeType
-from ..types import EmbeddingException
+from ..types import EmbeddingException, RetryableEmbeddingException
 from ..utils import timed
 from .base import BaseVectorDB
 from .types import DbException, SafeDbException, UpdateAccessOp
@@ -130,6 +130,10 @@ class VectorDB(BaseVectorDB):
 				raise DbException('Error: getting a list of all users from access list') from e
 
 	def add_indocuments(self, indocuments: list[InDocument]) -> tuple[list[str], list[str]]:
+		"""
+		Raises
+			EmbeddingException: if the embedding request definitively fails
+		"""
 		added_sources = []
 		retry_sources = []
 		batch_size = PG_BATCH_SIZE // 5
@@ -164,12 +168,18 @@ class VectorDB(BaseVectorDB):
 					})
 					retry_sources.append(indoc.source_id)
 					continue
-				except EmbeddingException as e:
-					logger.exception('Error adding documents to vectordb', exc_info=e, extra={
+				except RetryableEmbeddingException as e:
+					# temporary error, continue with the next document
+					logger.exception('Error adding documents to vectordb, should be retried later.', exc_info=e, extra={
 						'source_id': indoc.source_id,
 					})
 					retry_sources.append(indoc.source_id)
 					continue
+				except EmbeddingException as e:
+					logger.exception('Error adding documents to vectordb', exc_info=e, extra={
+						'source_id': indoc.source_id,
+					})
+					raise
 				except Exception as e:
 					logger.exception('Error adding documents to vectordb', exc_info=e, extra={
 						'source_id': indoc.source_id,

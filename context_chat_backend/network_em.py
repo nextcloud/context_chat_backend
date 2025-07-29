@@ -10,7 +10,7 @@ import httpx
 from langchain_core.embeddings import Embeddings
 from pydantic import BaseModel
 
-from .types import EmbeddingException, TConfig
+from .types import EmbeddingException, RetryableEmbeddingException, TConfig
 
 logger = logging.getLogger('ccb.nextwork_em')
 
@@ -66,7 +66,26 @@ class NetworkEmbeddings(Embeddings, BaseModel):
 				logger.debug('Retrying embedding request in 5 secs', extra={'try': try_})
 				sleep(5)
 				return self._get_embedding(input_, try_ - 1)
-			raise EmbeddingException('Error: request to get embeddings failed') from e
+			raise RetryableEmbeddingException('Error: request to get embeddings failed') from e
+		except httpx.ConnectError as e:
+			if self.app_config.embedding.workers > 0:
+				logger.error(
+					'Error connecting to the embedding server, check if it is running and the logs',
+					exc_info=e,
+				)
+				raise EmbeddingException('Error: failed to connect to the embedding service') from e
+			logger.error('Error connecting to the remote embedding service', exc_info=e)
+			raise EmbeddingException('Error: failed to connect to the remote embedding service') from e
+		except httpx.NetworkError as e:
+			if try_ > 0:
+				logger.debug('Network error while getting embeddings, retrying in 5 secs', extra={'try': try_})
+				sleep(5)
+				return self._get_embedding(input_, try_ - 1)
+			logger.error('Network error while getting embeddings', exc_info=e)
+			raise EmbeddingException('Error: network error while getting embeddings') from e
+		except Exception as e:
+			logger.error('Unexpected error while getting embeddings', exc_info=e)
+			raise EmbeddingException('Error: unexpected error while getting embeddings') from e
 
 		# converts TypedDict to a pydantic model
 		resp = CreateEmbeddingResponse(**response.json())

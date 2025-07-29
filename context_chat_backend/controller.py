@@ -385,8 +385,8 @@ def _(sources: list[UploadFile]):
 			target=embed_sources,
 			args=(vectordb_loader, app.extra['CONFIG'], sources)
 		)
-	except DbException as e:
-		raise e
+	except (DbException, EmbeddingException):
+		raise
 	except Exception as e:
 		raise DbException('Error: failed to load sources') from e
 	finally:
