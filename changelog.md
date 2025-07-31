@@ -8,6 +8,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+
+## 4.4.1 - 2025-07-31
+
+### Fixed
+
+- fail fast for fatal embedding server errors (#198) @kyteinsky
+- no initial check for the embedding loader (#198) @kyteinsky
+- better retry mechanism in the embedding server (#198) @kyteinsky
+
+
 ## 4.4.0 - 2025-07-21
 
 ### Fixed
