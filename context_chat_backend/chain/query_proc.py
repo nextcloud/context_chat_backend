@@ -3,12 +3,23 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 import logging
+from sys import maxsize as SYS_MAXSIZE
 
 from langchain.llms.base import LLM
+from transformers import GPT2Tokenizer
 
 from ..types import TConfig
 
 logger = logging.getLogger('ccb.chain')
+TOKENIZER = GPT2Tokenizer.from_pretrained('gpt2')
+
+
+def get_num_tokens(text: str) -> int:
+	'''
+	Returns the number of tokens in the text using the fast GPT2 tokenizer.
+	'''
+	return len(TOKENIZER.encode(text, max_length=SYS_MAXSIZE, truncation=True))
+
 
 def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, text_chunks: list[str]) -> str:
 	'''
@@ -36,8 +47,8 @@ def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, text_
 		) \
 		or 4096
 
-	query_tokens = llm.get_num_tokens(query)
-	template_tokens = llm.get_num_tokens(template.format(context='', question=''))
+	query_tokens = get_num_tokens(query)
+	template_tokens = get_num_tokens(template.format(context='', question=''))
 
 	# remaining tokens after the template, query and 'to be' generated tokens
 	remaining_tokens = n_ctx - template_tokens - query_tokens - n_gen
@@ -45,7 +56,7 @@ def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, text_
 	# If the query is too long to fit in the context, truncate it (keeping the template)
 	if remaining_tokens <= 0:
 		new_remaining_tokens = n_ctx - template_tokens - n_gen
-		while query and llm.get_num_tokens(query) > new_remaining_tokens:
+		while query and get_num_tokens(query) > new_remaining_tokens:
 			query = ' '.join(query.split()[:-10])
 
 		if not query:
@@ -57,7 +68,7 @@ def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, text_
 
 	while text_chunks and remaining_tokens > 0:
 		context = text_chunks.pop(0)
-		context_tokens = llm.get_num_tokens(context)
+		context_tokens = get_num_tokens(context)
 
 		if context_tokens <= remaining_tokens:
 			accepted_chunks.append(context)
