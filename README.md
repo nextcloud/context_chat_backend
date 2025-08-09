@@ -5,6 +5,8 @@
 # Nextcloud Assistant Context Chat Backend
 
 [![REUSE status](https://api.reuse.software/badge/github.com/nextcloud/context_chat_backend)](https://api.reuse.software/info/github.com/nextcloud/context_chat_backend)
+This fork introduces a pluggable Retrieval-Augmented Generation (RAG) backend architecture, defaulting to an R2R Graph RAG backend with scaffolding for other providers. The aim is to keep a minimal diff from upstream while enabling backend selection and arms-length database connections via environment variables so the RAG store can live in its own container or an existing DB with a CCBE schema. Provide connection details in the `.env` and CCBE will connect seamlessly. See [PRD.md](PRD.md) for details.
+
 
 > [!NOTE]
 > Be mindful to install the backend before the Context Chat php app (Context Chat php app would sends all the user-accessible files to the backend for indexing in the background. It is not an issue even if the request fails to an uninitialised backend since those files would be tried again in the next background job run.)
