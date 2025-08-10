@@ -1,81 +1,91 @@
-# PRD — Pluggable RAG backends for Nextcloud Context Chat Backend (CCBE), defaulting to R2R
+Got it—here’s a cleaned-up PRD that (1) keeps **CCBE’s current/built-in RAG path as the default and first-class**, (2) adds a **pluggable backend seam** with minimal diffs, and (3) documents an **exhaustive, test-verified endpoint surface** so every Nextcloud AppAPI call is handled regardless of backend. I’ve folded in the hard-earned lessons from your bring-up (init semantics, `Query` clash, `collection_ids` type, etc.) and made sure the “swap to R2R (or others)” path is simple, env-driven, and diff-friendly.
+
+---
+
+# PRD — Pluggable RAG backends for Nextcloud Context Chat Backend (CCBE)
+
+### Default = **current built-in backend** (upstream), optional adapters: **R2R**, Pinecone, Supabase
 
 ## 1) Overview
 
 **Problem**
-CCBE today bundles retrieval/storage logic tightly to a specific vector DB path, often in-process with the backend. We want a fork that supports a *pluggable* Retrieval-Augmented Generation (RAG) backend that can run independently—possibly in its own container or an existing DB with a CCBE schema—and is selected and connected via `.env`, while keeping a very small, reviewable diff from upstream so maintainers can adopt it.
+CCBE’s retrieval/storage is currently tied to a single in-tree path. We want a fork that introduces a *thin, optional* backend adapter layer so maintainers can keep the default behavior intact, while enabling users to point CCBE at an external RAG backend (e.g., **Sciphi R2R** graph RAG, Pinecone, Supabase, etc.) by **.env** only. Diffs to upstream should be small and obvious to maximize adoption.
 
-**Proposal**
-Introduce a thin **backend adapter interface** and one concrete implementation for the **R2R Graph RAG** backend (default), plus scaffolding for **pgvector**, **Pinecone**, and **Supabase**. Retain all existing CCBE endpoint contracts. Selection and connection details come from environment variables so the RAG database can live at arm's length. Code paths stay minimal and isolated.
+**Approach**
+
+* Add a **RAG backend interface** (one file) and **adapters** (one module per provider).
+* **Default to the built-in upstream backend** (no behavior change).
+* Include a production-ready **R2R adapter** (opt-in via env).
+* Keep **all HTTP endpoints identical**; only the data-layer calls are swapped.
 
 **Non-goals**
 
-* No UI changes in Nextcloud.
-* No breaking changes to existing CCBE HTTP endpoints or request/response payloads.
-* No deviation from AppAPI handshake & lifecycle semantics.
+* No UI changes.
+* No breaking changes to payloads or status codes.
+* No deviation from Nextcloud **AppAPI** lifecycle.
 
 ---
 
 ## 2) Goals & Success Criteria
 
-### Functional goals
+### Functional
 
-1. **Backend selection via env**
+1. **Zero change by default**
 
-   * `.env`: `RAG_BACKEND=r2r|pgvector|pinecone|supabase`
-   * Default: `r2r`.
-2. **Arms-length storage**
+   * If `RAG_BACKEND` is unset or `builtin`, CCBE behaves exactly as upstream (built-in backend path).
 
-   * RAG database runs independently (e.g., separate container or existing DB schema) and CCBE connects using `.env` connection details.
-3. **Drop-in adoption**
+2. **Env-selectable backend**
 
-   * Upstream endpoint paths, headers, and status codes remain identical.
-   * Code changes localized; fork can be rebased easily.
-4. **R2R working E2E** (fast path)
+   * `.env`: `RAG_BACKEND=builtin|r2r|pinecone|supabase`
+   * Each backend reads its own connection/env vars.
 
-   * Registration succeeds (`/enabled`, `/heartbeat`, `/init` semantics respected`).
-   * `/loadSources` ingests files into R2R collections keyed by user IDs.
-   * `/query` returns answers using retrieved context from the selected backend.
+3. **Full endpoint parity**
+
+   * Every existing CCBE endpoint keeps method, path, parameters, and response shape.
+   * **Exhaustive** docs generated at build/test time from FastAPI router (see §6 + §9).
+
+4. **R2R: fast working path**
+
+   * `/enabled`, `/heartbeat`, `/init` behave per AppAPI.
+   * `/loadSources` ingests to **R2R collections keyed by user IDs**, no per-character UUID bugs.
+   * `/query` returns answers using retrieved context from R2R.
+
 5. **Plugin architecture**
 
-   * Backends implement a common interface (detailed below).
-   * New providers can be added by dropping in a module.
+   * Backends implement one interface; swapping is wiring-only.
 
-### Non-functional goals
+### Non-functional
 
-* Clear logging (debuggable in container logs).
-* Minimal new dependencies (R2R client lib only, others optional).
-* Keep diffs small: new `backends/` folder + tiny wiring changes.
-* Document all endpoints & plugin contract inline in repo.
+* Minimal new deps (R2R client optional).
+* Clear logs for AppAPI handshakes & ingestion.
+* Small, reviewable diff.
 
-### Acceptance criteria
+### Acceptance
 
-* Registration log shows: `PUT /enabled?enabled=1` → 200, `POST /init` → 200 (empty `{}`), background progress hits 100.
-* Uploading sources logs “Document created with ID …” and **does not** split collection UUIDs into characters.
-* Switching `RAG_BACKEND=pgvector` keeps the app booting; unimplemented methods raise friendly “not implemented” with 501 (until fully implemented).
-* Diff to upstream is small and easy to review.
+* Unset/`builtin`: identical behavior to upstream (spot-check endpoints).
+* `r2r`: E2E succeeds (registration, ingest, query).
+* Unimplemented adapters return **501** with a friendly message.
+* Auto-doc job emits the **complete** endpoint list (used in tests).
 
 ---
 
 ## 3) Architecture
 
-### 3.1 New module layout
-
 ```
 context_chat_backend/
   backends/
-    base.py            # abstract interface
-    r2r.py             # R2R Graph RAG implementation (default)
-    pgvector_adapter.py  # thin adapter over existing vector flow
-    pinecone.py        # scaffold
-    supabase.py        # scaffold
+    base.py              # abstract interface (tiny)
+    builtin_pgvector.py  # wraps current upstream storage/retrieval (default)
+    r2r.py               # Sciphi R2R adapter (opt-in)
+    pinecone.py          # scaffold
+    supabase.py          # scaffold
 ```
 
-### 3.2 Backend adapter interface
+### Backend interface (single seam)
 
 ```python
 # backends/base.py
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 class RagBackend:
     # Collections / tenancy
@@ -83,353 +93,282 @@ class RagBackend:
         """Ensure per-user collections; return {user_id: collection_id}."""
 
     # Documents
-    def find_document_by_title(self, title: str) -> dict | None:
-        """Return provider's doc object (id, metadata, collection_ids…), else None."""
-
+    def list_documents(self, *, offset: int = 0, limit: int = 100) -> list[dict]: ...
+    def find_document_by_title(self, title: str) -> dict | None: ...
+    def delete_document(self, document_id: str) -> None: ...
     def upsert_document(
         self,
         file_path: str,
         metadata: Mapping[str, Any],
-        collection_ids: Sequence[str]
-    ) -> str:
-        """Create or replace; return document_id."""
-
-    def delete_document(self, document_id: str) -> None: ...
-
-    def list_documents(self, offset: int = 0, limit: int = 100) -> list[dict]: ...
+        collection_ids: Sequence[str],     # IMPORTANT: list, not comma-joined string
+    ) -> str:                              # returns document_id
+        ...
 
     # Retrieval
     def search(
         self,
+        *,
         user_id: str,
         query: str,
         ctx_limit: int,
         scope_type: str | None = None,
         scope_list: Sequence[str] | None = None,
-    ) -> list[dict]:
-        """Return ranked docs/chunks with text + metadata."""
+    ) -> list[dict]:  # [{text, score, metadata, doc_id, ...}]
+        ...
 ```
 
-### 3.3 Backend selection
+### Backend selection (startup)
 
-* At startup (in `main.py`), read `RAG_BACKEND` and instantiate the matching adapter; store it as `app.state.rag_backend`.
-* Controller endpoints call `request.app.state.rag_backend`.
+* In `main.py`, read `RAG_BACKEND` and create the adapter once:
 
-### 3.4 Minimal diffs strategy
+  * `builtin` → `BuiltinBackend()` (wraps current code paths).
+  * `r2r` → `R2RBackend()`.
+  * others → scaffolds (501).
+* Store as `app.state.rag_backend`.
 
-* **Do not** change existing route paths or shapes.
-* Add only:
-
-  * The new `backends/` package.
-  * A small initialization block in `main.py`.
-  * Small substitutions in controller where we currently touch vectordb/ingest/search—call the adapter instead.
-* Keep middleware and guards identical in behavior.
+**Diff strategy:** only add `backends/` + small glue in `main.py` and at the current data-layer touch points in `controller.py`. No route shape changes.
 
 ---
 
-## 4) R2R backend details (default)
+## 4) R2R adapter specifics (opt-in)
 
-### 4.1 Env & config
+**Env**
 
 ```
 RAG_BACKEND=r2r
 R2R_BASE_URL=http://127.0.0.1:7272
 ```
 
-### 4.2 Collections policy
+**Lessons baked in**
 
-* Map **user IDs** (from `UploadFile.headers['userIds']`) to R2R collections with `ensure_collections()`.
-* **Important lesson**: treat `userIds` as a **comma-separated string** → split to a **list of strings**.
+* Parse `UploadFile.headers['userIds']` as a **comma-separated list** of user IDs; trim empties.
+* `ensure_collections()` maps each userId → an R2R collection; returns a dict; use its **values** (UUIDs) as `collection_ids`.
+* **Pass `collection_ids` as a list of UUID strings** to the create/upsert call.
+  *Do not* pass a single comma-joined string (causes per-character UUID parse errors).
+* Upsert policy:
 
-### 4.3 Document upsert semantics
+  * If a doc with the same `title` exists:
 
-* If a document with the same `title` exists:
-
-  * Compare `metadata.modified` and `metadata.content-length`. If identical → no re-ingest; only **fix collection membership** (add/remove).
-  * If different → delete and recreate.
-* **Important lesson**: pass `collection_ids` as a **list of UUID strings**, **not** a comma-joined string. (Passing a string leads to per-character UUID parsing errors.)
-* Create via temp file preserving extension; use `ingestion_mode="fast"`.
-
-### 4.4 Retrieval
-
-* `search()` queries R2R returning text + metadata.
-* Return simplest shape needed by upstream context assembly (title, page_content, metadata).
+    * If `modified` *and* `content-length` match → no re-ingest; just **reconcile collection membership** (add/remove).
+    * Otherwise delete and recreate.
+* For health checks, call `client.system.settings()` once at startup or in `/init` worker; surface clear errors.
 
 ---
 
-## 5) Other providers (scaffolds)
+## 5) Built-in backend (default)
 
-### 5.1 pgvector
-
-* Adapter wraps existing CCBE vectordb/search calls.
-* Env:
-
-  ```
-  RAG_BACKEND=pgvector
-  CCB_DB_URL=postgresql+psycopg://user:pass@host:port/db
-  ```
-* Implement: ensure_collections (collection per user), upsert (embedding flow unchanged), search.
-
-### 5.2 Pinecone / Supabase
-
-* Provide **skeletons** with clear `NotImplementedError` and env keys:
-
-  ```
-  RAG_BACKEND=pinecone
-  PINECONE_API_KEY=...
-  PINECONE_INDEX=...
-  ```
-
-  ```
-  RAG_BACKEND=supabase
-  SUPABASE_URL=...
-  SUPABASE_ANON_KEY=...
-  ```
-* Endpoint behavior: return 501 with `"backend not implemented"` if selected without complete implementation.
+* The **default** remains the current upstream storage/retrieval implementation (“builtin\_pgvector” here), wrapped in `BuiltinBackend` so routes don’t change.
+* No behavior changes when `RAG_BACKEND` is unset/`builtin`.
+* This keeps maintainers comfortable and makes the diff easy to accept.
 
 ---
 
-## 6) Endpoints (document & keep stable)
+## 6) Endpoint surface (exhaustive & stable)
 
-> All endpoints must keep existing paths, auth headers, and content shapes. Add docstrings and README endpoint docs.
+> Keep all methods, paths, params, and payloads **unchanged**.
+> Below is the **canonical list** + a **test-verified generator** (see §9) that extracts the router table at build time to guarantee completeness. If the app has more endpoints than listed, the CI will fail until docs include them.
 
-1. `GET /heartbeat`
+### 6.1 Liveness & lifecycle (AppAPI)
 
-   * Returns `200 OK` plain `"OK"`.
-   * Purpose: AppAPI health check.
+1. `GET /heartbeat` → `200 "OK"`
+   Health probe used by AppAPI.
 
-2. `GET /`
+2. `GET /` → existing root → unchanged (debug/info).
 
-   * Debug root; unchanged.
+3. `GET /enabled` → `{"enabled": bool}`
+   Returns current enabled state.
 
-3. `GET /enabled`
+4. `PUT /enabled?enabled=0|1` → `200 {"enabled": bool}`
+   Toggle enabled state.
+   **Pitfall fixed:** use `from fastapi import Query as FQuery` to avoid name clash with Pydantic `Query`.
 
-   * Returns `{"enabled": bool}`; used by AppAPI to check readiness.
+5. `POST /init` → **return immediately** with `{}` and `200`
+   Start a background worker that:
 
-4. `PUT /enabled?enabled=0|1`
+   * Verifies backend connectivity.
+   * Reports progress to Nextcloud via `PUT /ocs/v1.php/apps/app_api/ex-app/status` with `{"progress": 1..100}`; include `{"error": "..."}`
+     if fatal. Don’t block the endpoint.
 
-   * Toggle app enabled state.
-   * **Lesson**: use `fastapi.Query` for the param, not a Pydantic model named `Query` (name collision). E.g.:
+### 6.2 Ingestion
 
-     ```python
-     from fastapi import Query as FQuery
+6. `PUT /loadSources` (multipart form-data, one or many files) → `200 [document_id, ...]`
+   Per file, CCBE expects headers:
 
-     def set_enabled(enabled: int = FQuery(1)): ...
-     ```
+   * `userIds`: comma-separated user IDs (tenancy/collections)
+   * `title`: logical document title
+   * `modified`: ISO date/time string (source system mtime)
+   * `provider`: source system label (e.g., “nextcloud”)
+   * `content-length`: integer byte size (used to detect changes)
 
-5. `POST /init`
+   Flow (unchanged externally):
 
-   * **Return immediately** with `{}` and `200`.
-   * Spawn background job:
+   * Parse `userIds` → list → `ensure_collections()` → `collection_ids` (list of UUIDs).
+   * Find existing doc by `title`; compare `modified` and `content-length` to decide noop vs delete+recreate.
+   * Upsert using a temp file (preserve extension).
+   * Return the created/updated document IDs.
 
-     * Validate backend connectivity (e.g., `client.system.settings()` for R2R).
-     * Warm caches (optional).
-     * **Report progress** via OCS `PUT /ocs/v1.php/apps/app_api/ex-app/status` (values 1–100; include `"error"` if fatal).
+### 6.3 Query
 
-       * **Lesson**: Do not block this endpoint; 404/501 also acceptable per AppAPI, but we’ll implement it cleanly.
+7. `POST /query` → `200 { answer, context, ... }`
+   **Body (unchanged)** includes (names from upstream):
 
-6. `PUT /loadSources`
+   * `userId` (string) — active user/tenancy context
+   * `query` (string) — the question
+   * `ctxLimit` (int, optional) — retrieval depth/chunk count
+   * `scopeType` (optional) — e.g., “collections”, “documents”, etc.
+   * `scopeList` (optional) — list of IDs for the chosen scope
 
-   * Multipart files with headers:
+   Flow:
 
-     * `userIds` (comma-separated), `title`, `modified`, `provider`, `content-length`.
-   * For each `UploadFile`:
+   * Adapter `.search()` returns ranked text+metadata.
+   * CCBE assembles the prompt and generates answer as upstream does.
 
-     * Parse `userIds` → list.
-     * `ensure_collections(user_ids)` → `collection_ids`.
-     * Check `find_document_by_title(title)`.
-     * Upsert with `collection_ids` **list**, not string.
-     * Return array of created/updated document IDs.
-   * **Guarded by enabled state**.
-
-7. `/query` (POST)
-
-   * Unchanged schema. Adapter `.search()` feeds context; LLM generation path unchanged.
-
-8. Any delete/update-access endpoints present upstream
-
-   * Rewire to adapter (`delete_document`, collection membership operations).
-
----
-
-## 7) Middleware & lifecycle
-
-* Keep `VersionHeaderMiddleware` that sets `EX-APP-VERSION` from `APP_VERSION` env.
-* Add middleware in `main.py` **once** (avoid double-adding in `controller.py`).
-* Respect and log AppAPI headers (`aa-version`, `ex-app-id`, etc.) for traceability.
+> If your tree includes any other route (e.g., document/admin utilities), it must remain unchanged and be wired to the adapter where it touches storage. The **router auto-export** in §9 will ensure we don’t miss any.
 
 ---
 
-## 8) Config & Environment
-
-Backends receive connection strings, URLs, and credentials via environment variables so CCBE can talk to databases running outside of the application container.
-
-Example `.env`:
+## 7) Config & Env
 
 ```
+# Common
 APP_VERSION=4.0.2
-NEXTCLOUD_URL=http://your-nc:8080
-RAG_BACKEND=r2r
+RAG_BACKEND=builtin           # default; set to r2r|pinecone|supabase to switch
 
 # R2R
 R2R_BASE_URL=http://127.0.0.1:7272
 
-# pgvector (if used)
-CCB_DB_URL=postgresql+psycopg://root:rootpassword@localhost:4445/nextcloud
-
-# pinecone (scaffold)
+# Pinecone (scaffold)
 PINECONE_API_KEY=
 PINECONE_INDEX=
+PINECONE_ENV=
 
-# supabase (scaffold)
+# Supabase (scaffold)
 SUPABASE_URL=
 SUPABASE_ANON_KEY=
+SUPABASE_TABLE=
 ```
 
 ---
 
-## 9) Error handling & logging
+## 8) Logging & errors
 
-* Wrap adapter calls; surface concise errors to clients, detailed traces to logs.
-* **Lessons baked in**:
-
-  * If `collection_ids` is a string → raise a clear `400` with `"collection_ids must be a list of UUID strings"`.
-  * If Pydantic validation fails for params → return the validation detail rather than crashing the server.
-* Log request headers at debug level for `/heartbeat`, `/init`, `/enabled`, `/loadSources` to aid AppAPI integration debugging.
+* Log AppAPI headers at debug for `/enabled`, `/heartbeat`, `/init`, `/loadSources`.
+* If `collection_ids` is not a list (e.g., a string), return `400` with a clear message.
+* Keep concise client errors; detailed traces in server logs.
+* When adapter is selected but not implemented → `501 {"detail": "backend not implemented"}`.
 
 ---
 
-## 10) Security
+## 9) Documentation & “exhaustive list” guarantee
 
-* Only Nextcloud should call these endpoints; keep existing auth header checks/guards.
-* No credentials logged.
-* Large files: stream to temp files, close handles reliably.
+* **Auto-export endpoint doc** at build/test time by introspecting FastAPI’s router:
 
----
-
-## 11) Testing plan
-
-1. **Unit tests**
-
-   * Adapter selection from env.
-   * R2R `ensure_collections` (new vs existing).
-   * Upsert behavior (no-op vs re-ingest based on metadata).
-   * `collection_ids` type safety (list required).
-2. **Integration (local)**
-
-   * Simulate AppAPI flow: `GET /heartbeat` → `PUT /enabled` → `POST /init` (verify background progress reaches 100).
-   * `/loadSources`: upload with headers; verify creation, re-upload idempotency.
-   * `/query`: sanity run.
-3. **Regression**
-
-   * Verify renaming of request models avoids FastAPI `Query` collisions.
-   * Verify `VersionHeaderMiddleware` appears on all responses.
+  * Generate `docs/endpoints.md` from `app.routes` (method, path, params, bodies, response\_model if any).
+  * CI fails if the generated file differs from the committed one (forces docs to stay exhaustive and current).
+* Keep a human-readable section in `README.md` linking to `docs/endpoints.md`, with request/response examples.
 
 ---
 
-## 12) Developer guidance for minimal diff
+## 10) Testing
 
-* **Do**:
+**Unit**
 
-  * Add `backends/` package.
-  * In `main.py`:
+* Backend selection from env.
+* Built-in backend smoke (unchanged behavior).
+* R2R:
 
-    * Instantiate adapter based on `RAG_BACKEND`.
-    * Add `VersionHeaderMiddleware`.
-    * Include router as upstream does.
-  * In controller:
+  * `ensure_collections()` (existing vs new).
+  * Upsert policy (noop vs delete+recreate) using `modified` and `content-length`.
+  * `collection_ids` type checks.
+* `/enabled` param handling via `FQuery`.
 
-    * Replace direct vectordb / ingest calls with adapter calls at seam points.
-    * Keep function signatures and routes identical.
-* **Don’t**:
+**Integration**
 
-  * Move or rename existing endpoints.
-  * Change response shapes.
-  * Add global side effects in adapter modules.
+* AppAPI flow: `GET /heartbeat` → `PUT /enabled` → `POST /init` (background progress hits 100).
+* `/loadSources`: upload 2 files with headers; reupload without changes → noop; change `modified` or `content-length` → re-ingest.
+* `/query`: basic retrieval+answer path.
 
----
+**Regression**
 
-## 13) Implementation notes (from practical lessons)
-
-* **Init**: per AppAPI docs, return `{}` immediately and send progress asynchronously; accept that AppAPI considers 404/501 as “skip,” but we implement a proper `200 {}`.
-* **Enabled**: parse `enabled` via `fastapi.Query` to avoid Pydantic model collisions (`Query` name clash).
-* **Upload**: `userIds` header → split on commas; pass **list** of collection IDs to provider SDKs (R2R included).
-* **Temp files**: preserve file extension for R2R content type inference.
-* **R2R health**: call `client.system.settings()` at startup to fail fast if unreachable.
-* **Don’t add middleware in `controller.py`**; add it **once** in `main.py`.
-* **Keep EX-APP-VERSION** on every response.
+* Version header middleware present on all responses (whatever upstream uses).
+* Router auto-export matches docs.
 
 ---
 
-## 14) Rollout & timeline
+## 11) Implementation notes (lessons applied)
 
-* **Day 1–2**: Add `backends/` base + R2R adapter; env selection; wire up ingest/search seams.
-* **Day 3**: Implement `/init` progress worker; finalize `/enabled` semantics; logging.
-* **Day 4**: Write tests; docs for all endpoints and plugin interface.
-* **Day 5**: Manual E2E with Nextcloud AppAPI register/unregister cycle; open PR (small diff).
-
----
-
-## 15) Open questions
-
-* Should we persist a mapping of `title → document_id` locally to avoid paging through provider lists? (R2R call may be paginated.)
-* For R2R search, do we want per-chunk versus full-doc retrieval? (MVP: whatever R2R returns that is simplest to pipe to existing context assembly.)
-* Any quota/backoff policies needed for large batch ingestions?
+* **Init endpoint**: return `{}` immediately; send progress asynchronously via OCS until `100`. If fatal, include `{"error": "..."}`.
+* **Enabled param**: avoid `Query` name collisions—`from fastapi import Query as FQuery`.
+* **R2R ingestion**: `collection_ids` must be a **list**; never a joined string.
+* **Temp files**: keep extension to preserve type inference.
+* **Middleware**: add once (e.g., in `main.py`), not in the router module.
+* **Headers**: parse `userIds` safely, trim whitespace, ignore empties.
 
 ---
 
-## 16) Documentation deliverables (in-repo)
+## 12) Minimal-diff plan
 
-* `README.md`:
+* Add `backends/` (4 files: `base.py`, `builtin_pgvector.py`, `r2r.py`, plus two small scaffolds).
+* In `main.py`:
 
-  * How to choose a backend via `.env`.
-  * R2R quick start.
-  * Endpoint reference (paths, methods, headers, sample requests/responses).
-  * Plugin authoring guide (how to add a new backend).
-* Inline docstrings on adapter methods and endpoints.
+  * Build adapter from `RAG_BACKEND`, store on `app.state.rag_backend`.
+  * (If not already present) add version header middleware once.
+* In `controller.py`:
+
+  * Replace direct storage calls with adapter methods at seam points.
+  * **Do not** change route decorators, function signatures, or payload models.
+* Add a tiny script that dumps the router map to `docs/endpoints.md` during CI.
 
 ---
 
-## 17) Example snippets
+## 13) Timeline
 
-### Selecting backend (main.py)
+* **Day 1**: Add interface + `BuiltinBackend` wrapper (no behavior change). Wire selection.
+* **Day 2**: Implement `R2RBackend` (collections, upsert, search) with lessons above.
+* **Day 3**: `/init` background worker + OCS progress, logging.
+* **Day 4**: Tests + router auto-doc.
+* **Day 5**: E2E with Nextcloud AppAPI; open PR (small diff).
+
+---
+
+## 14) Open questions
+
+* Should we cache `title → document_id` to avoid paging on “find by title” for large corpora? (Configurable, optional.)
+* Do we need chunk-level vs doc-level retrieval harmonization across backends? (Hide in adapter; keep route output stable.)
+* Rate limiting/backoff for large batch ingests?
+
+---
+
+### Example glue (sketch)
 
 ```python
+# main.py
 import os
 from fastapi import FastAPI
-from .middleware import VersionHeaderMiddleware
 from .controller import router
+from .backends.builtin_pgvector import BuiltinBackend
 from .backends.r2r import R2RBackend
-from .backends.pgvector_adapter import PgVectorBackend
-# from .backends.pinecone import PineconeBackend
-# from .backends.supabase import SupabaseBackend
 
 def build_backend(kind: str):
-    match (kind or "r2r").lower():
-        case "r2r": return R2RBackend()
-        case "pgvector": return PgVectorBackend()
-        case "pinecone": raise NotImplementedError("pinecone backend not implemented")
-        case "supabase": raise NotImplementedError("supabase backend not implemented")
-        case _: raise ValueError(f"Unknown RAG_BACKEND: {kind}")
+    k = (kind or "builtin").lower()
+    if k == "builtin": return BuiltinBackend()  # wraps upstream code paths
+    if k == "r2r":     return R2RBackend()
+    raise NotImplementedError(f"{k} backend not implemented")
 
 app = FastAPI()
-app.add_middleware(VersionHeaderMiddleware)
-app.state.rag_backend = build_backend(os.getenv("RAG_BACKEND", "r2r"))
+app.state.rag_backend = build_backend(os.getenv("RAG_BACKEND", "builtin"))
 app.include_router(router)
 ```
 
-### Using adapter in `/loadSources` (controller seam)
-
 ```python
+# controller seam (ingest)
 backend = request.app.state.rag_backend
-user_ids = [u.strip() for u in source.headers["userIds"].split(",") if u.strip()]
+user_ids = [u.strip() for u in src.headers["userIds"].split(",") if u.strip()]
 mapping = backend.ensure_collections(user_ids)
-collection_ids = list(mapping.values())  # list, not string!
-
-# upsert via temp file
+collection_ids = list(mapping.values())  # MUST be a list of UUID strings
 doc_id = backend.upsert_document(temp_path, metadata, collection_ids)
 ```
 
 ---
 
-This PRD gives the codex agents a clear map: keep the surface stable, add a tiny, well-defined plugin seam, make R2R the default and production-ready, and capture the specific pitfalls we hit (init semantics, FastAPI `Query` collision, and the `collection_ids` list vs string bug) so we reach a working R2R build fast with minimal churn.
+**Bottom line:** upstream stays default (no surprises), the adapter seam is tiny and isolated, R2R is a drop-in via env, and every endpoint is documented and test-verified so Nextcloud AppAPI always gets a valid response—no matter which backend is selected.
