@@ -1,262 +1,331 @@
-<!--
-  - SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
-  - SPDX-License-Identifier: AGPL-3.0-or-later
--->
+
 # Nextcloud Assistant Context Chat Backend
 
 [![REUSE status](https://api.reuse.software/badge/github.com/nextcloud/context_chat_backend)](https://api.reuse.software/info/github.com/nextcloud/context_chat_backend)
-This fork introduces a pluggable Retrieval-Augmented Generation (RAG) backend architecture, defaulting to an R2R Graph RAG backend with scaffolding for other providers. The aim is to keep a minimal diff from upstream while enabling backend selection and arms-length database connections via environment variables so the RAG store can live in its own container or an existing DB with a CCBE schema. Provide connection details in the `.env` and CCBE will connect seamlessly. See [PRD.md](PRD.md) for details.
 
+This fork introduces a **pluggable Retrieval-Augmented Generation (RAG) backend** architecture with **zero-change upstream behavior by default**.
 
-> [!NOTE]
-> Be mindful to install the backend before the Context Chat php app (Context Chat php app would sends all the user-accessible files to the backend for indexing in the background. It is not an issue even if the request fails to an uninitialised backend since those files would be tried again in the next background job run.)
+* **Default (no config needed):** the **current built-in backend** used by upstream CCBE.
+* **Opt-in:** swap to an external backend—e.g., **R2R Graph RAG**, Pinecone, Supabase—via `.env` only. The RAG store can live in its own container or a managed service.
+
+The diff to upstream is intentionally small (adapter layer + light wiring). See **[PRD.md](PRD.md)** for the full spec, including endpoint guarantees and the plugin interface.
+
+> \[!NOTE]
+> Install the backend **before** the Context Chat PHP app. Context Chat will background-index user-accessible files; failed attempts to an uninitialized backend are retried on the next job run.
 >
-> The HTTP request timeout is 50 minutes for all requests and can be changed with the `request_timeout` app config for the php app `context_chat` using the occ command (`occ config:app:set context_chat request_timeout --value=3000`, value is in seconds). The same also needs to be done for docker socket proxy. See [Slow responding ExApps](https://github.com/cloud-py-api/docker-socket-proxy?tab=readme-ov-file#slow-responding-exapps)
+> The HTTP request timeout is 50 minutes by default and can be changed with `occ config:app:set context_chat request_timeout --value=3000` (seconds). If you use Docker socket proxy, align that too. See: [Slow responding ExApps](https://github.com/cloud-py-api/docker-socket-proxy?tab=readme-ov-file#slow-responding-exapps)
 >
-> An end-to-end example on how to build and register the backend manually (with CUDA) is at the end of this readme
+> An end-to-end CUDA example is at the end of this README.
 >
-> See the [NC Admin docs](https://docs.nextcloud.com/server/latest/admin_manual/ai/app_context_chat.html) for requirements and known limitations.
+> Admin docs: [https://docs.nextcloud.com/server/latest/admin\_manual/ai/app\_context\_chat.html](https://docs.nextcloud.com/server/latest/admin_manual/ai/app_context_chat.html)
+
+---
+
+## Choose your RAG backend (via `.env`)
+
+By default, this fork behaves exactly like upstream (built-in backend). To opt-in to another backend, set:
+
+```bash
+# Default: upstream behavior (no changes to your setup)
+RAG_BACKEND=builtin
+
+# Optional: R2R Graph RAG
+# RAG_BACKEND=r2r
+# R2R_BASE_URL=http://127.0.0.1:7272
+
+# Optional: Pinecone (scaffold)
+# RAG_BACKEND=pinecone
+# PINECONE_API_KEY=
+# PINECONE_INDEX=
+# PINECONE_ENV=
+
+# Optional: Supabase (scaffold)
+# RAG_BACKEND=supabase
+# SUPABASE_URL=
+# SUPABASE_ANON_KEY=
+# SUPABASE_TABLE=
+```
+
+* **`builtin` (default):** exact upstream behavior; no code path changes.
+* **`r2r`:** uses an external **R2R** server. Make sure `R2R_BASE_URL` is reachable from CCBE.
+* **`pinecone` / `supabase`:** scaffolds included; selecting them returns HTTP `501` until implemented.
+
+> Endpoint paths, request/response shapes, and status codes remain identical for all backends.
+
+---
+
+## R2R quick start (optional)
+
+1. Run or reach an R2R server (e.g., `http://127.0.0.1:7272`).
+2. Set:
+
+   ```bash
+   RAG_BACKEND=r2r
+   R2R_BASE_URL=http://127.0.0.1:7272
+   ```
+3. Start CCBE. On `/init`, the backend verifies connectivity.
+4. Upload sources (Nextcloud will do this automatically via the Context Chat app).
+
+   * The `loadSources` endpoint expects a `userIds` header as a **comma-separated list**.
+   * Collections are created per user and linked automatically.
+5. Query as usual. CCBE’s query endpoint and answer shape are unchanged.
+
+**Integration lessons baked in**
+
+* `/init` returns `{}` immediately and reports progress (1–100) asynchronously via OCS.
+* The `PUT /enabled?enabled=0|1` param is parsed with `fastapi.Query` (no Pydantic name clash).
+* For ingestion, **`collection_ids` must be a list of UUID strings** (not a comma-joined string).
+* The `userIds` header is parsed as comma-separated → list → mapped to per-user collections.
+
+---
 
 ## Simple Install
 
-Install the given apps for Context Chat to work as desired **in the given order**:
-- [AppAPI from the Apps page](https://apps.nextcloud.com/apps/app_api)
-- [Context Chat Backend (same major and minor version as Context Chat app below) from the External Apps page](https://apps.nextcloud.com/apps/context_chat_backend)
-- [Context Chat (same major and minor version as the backend) from the Apps page](https://apps.nextcloud.com/apps/context_chat)
-- [Assistant from the Apps page](https://apps.nextcloud.com/apps/assistant). The OCS API or the `occ` commands can also be used to interact with this app but it recommended to do that through a Task Processing OCP API consumer like the Assistant app, which is also the officially supported universal UI for all the AI providers.
-- Text2Text Task Processing Provider like [llm2 from the External Apps page](https://apps.nextcloud.com/apps/llm2) or [integration_openai from the Apps page](https://apps.nextcloud.com/apps/integration_openai)
+Install these **in order**:
 
-> [!NOTE]
-> See [AppAPI's deploy daemon configuration](#configure-the-appapis-deploy-daemon)
+* [AppAPI (Apps page)](https://apps.nextcloud.com/apps/app_api)
+* [Context Chat Backend (External Apps page)](https://apps.nextcloud.com/apps/context_chat_backend) — **use the same major/minor version as the Context Chat app**
+* [Context Chat (Apps page)](https://apps.nextcloud.com/apps/context_chat) — **same major/minor as the backend**
+* [Assistant (Apps page)](https://apps.nextcloud.com/apps/assistant) — recommended universal UI / OCP Task Processing consumer
+* A Text2Text provider like [llm2 (External Apps)](https://apps.nextcloud.com/apps/llm2) or [integration\_openai (Apps)](https://apps.nextcloud.com/apps/integration_openai)
+
+> \[!NOTE]
+> See [AppAPI’s deploy daemon config](#configure-the-appapis-deploy-daemon).
 >
-> For GPU Support: enable gpu support in the Deploy Daemon's configuration (Admin settings -> AppAPI)
+> For GPU: enable GPU in AppAPI’s Deploy Daemon (Admin settings → AppAPI).
 
-> [!IMPORTANT]
-> To avoid task processing execution delay, setup at 4 background job workers in the main server (where Nextcloud is installed). The setup process is documented here: https://docs.nextcloud.com/server/latest/admin_manual/ai/overview.html#improve-ai-task-pickup-speed
+> \[!IMPORTANT]
+> To avoid task execution delay, configure **4 background job workers** on the main server:
+> [https://docs.nextcloud.com/server/latest/admin\_manual/ai/overview.html#improve-ai-task-pickup-speed](https://docs.nextcloud.com/server/latest/admin_manual/ai/overview.html#improve-ai-task-pickup-speed)
+
+---
 
 ## Complex Install (without docker)
 
-0. Install the required apps from [Simple Install](#simple-install) other than Context Chat Backend and setup background job workers
+0. Install everything from [Simple Install](#simple-install) **except** Context Chat Backend; set up background workers.
 1. `python -m venv .venv`
 2. `. .venv/bin/activate`
 3. `pip install --upgrade pip setuptools wheel`
-4. Install requirements `pip install -r requirements.txt`
-5. Copy example.env to .env and fill in the variables
-6. Ensure the config file at `persistent_storage/config.yaml` points to the correct config file (cpu vs gpu). If you're unsure, delete it. It will be recreated upon launching the application. The default is to point to the gpu config.
-7. Configure `persistent_storage/config.yaml` for the model name, model type and its parameters (which also includes model file's path and model id as per requirements, see example config)
-8. Setup postgresql externally or use `dockerfile_scripts/pgsql/install.sh` to install it on a Debian-family system.
-9. Set the env var `EXTERNAL_DB` or the `connection` key in the `pgvector` config to the postgresql connection string if you're using an external database.
-10. Start the database (see `dockerfile_scripts/pgsql/setup.sh` for an example)
+4. `pip install -r requirements.txt`
+5. Copy `example.env` → `.env` and set variables (see **Choose your RAG backend** above).
+6. Ensure `persistent_storage/config.yaml` points to the right config (cpu vs gpu). If unsure, delete it—on launch, it’s recreated (defaults to GPU).
+7. Edit `persistent_storage/config.yaml` for model/config needs.
+8. Set up PostgreSQL externally or use `dockerfile_scripts/pgsql/install.sh` (Debian-family).
+9. Set `EXTERNAL_DB` or the `pgvector.connection` in config to your Postgres connection string if using external DB.
+10. Start the DB (see `dockerfile_scripts/pgsql/setup.sh`).
 11. `./main.py`
-12. [Follow the below steps to register the app in the app ecosystem](#register-as-an-ex-app)
+12. [Register as an Ex-App](#register-as-an-ex-app)
+
+> Using `RAG_BACKEND=r2r`? Your external R2R handles retrieval/storage; some local `vectordb`/embedding config entries may not apply.
+
+---
 
 ## Complex Install (with docker)
 
-0. Install the required apps from [Simple Install](#simple-install) other than Context Chat Backend and setup background job workers
+0. Install from [Simple Install](#simple-install) **except** Context Chat Backend; set up background workers.
 1. Build the image
-    *(this is a good place to edit the example.env file before building the container)*
-    `docker build -t context_chat_backend . -f Dockerfile`
 
-2. `docker run -p 10034:10034 context_chat_backend` (Use `--add-host=host.docker.internal:host-gateway` if your nextcloud server runs locally. Adjust `NEXTCLOUD_URL` env var accordingly.)
-3. A volume can be mounted for `persistent_storage` if you wish with `-v $(pwd)/persistent_storage:/app/persistent_storage` (In this case, ensure the config file at `$(pwd)/persistent_storage/config.yaml` points to the correct config or just remove it if you're unsure. The default is to point to the gpu config.)
-4. [Refer to AppAPI's deploy daemon guide](#configure-the-appapis-deploy-daemon)
-5. [Follow the below steps to register the app in the app ecosystem](#register-as-an-ex-app)
+   ```bash
+   # Good moment to edit example.env (add RAG_BACKEND and provider vars)
+   docker build -t context_chat_backend . -f Dockerfile
+   ```
+2. Run
+
+   ```bash
+   docker run -p 10034:10034 \
+     --env-file example.env \
+     context_chat_backend
+   ```
+
+   * If Nextcloud runs locally: add `--add-host=host.docker.internal:host-gateway` and align `NEXTCLOUD_URL`.
+3. (Optional) Mount persistence
+
+   ```bash
+   -v $(pwd)/persistent_storage:/app/persistent_storage
+   ```
+
+   Ensure `persistent_storage/config.yaml` points to the correct config (or delete it to autogenerate).
+4. [Configure AppAPI’s deploy daemon](#configure-the-appapis-deploy-daemon)
+5. [Register as an Ex-App](#register-as-an-ex-app)
+
+---
 
 ## Register as an Ex-App
-**1. Create a manual deploy daemon:**
-```
+
+**1) Create a manual deploy daemon**
+
+```bash
 occ app_api:daemon:register --net host manual_install "Manual Install" manual-install http <host> <nextcloud_url>
 ```
-`host` will be `localhost` if nextcloud can access localhost or `host.docker.internal` if nextcloud is inside a docker container and the backend app is on localhost.
 
-If nextcloud is inside a container, `--add-host` option would be required by your nextcloud container. [See example above, pt. 2](#complex-install-with-docker)
+* `host` is `localhost` if Nextcloud can reach it directly; or `host.docker.internal` if Nextcloud runs in Docker and the backend is on the host.
+* If Nextcloud is containerized, add `--add-host` to the Nextcloud container (see docker example above).
 
-**2. Register the app using the deploy daemon (be mindful of the port number and the app's version):**
-```
+**2) Register the app (adapt version/port)**
+
+```bash
 occ app_api:app:register context_chat_backend manual_install --json-info \
 "{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"4.4.1\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system_app\":0}" \
 --force-scopes --wait-finish
 ```
-The command to unregister is given below (force is used to also remove apps whose container has been removed)
-```
+
+Unregister:
+
+```bash
 occ app_api:app:unregister context_chat_backend --force
 ```
 
-## Configure the AppAPI's deploy daemon
-Ensure that docker is installed and the default deploy daemon is working in Admin settings -> AppAPI
-Docker socket proxy is the recommended for the deploy daemon. Installation steps can be found here: https://github.com/cloud-py-api/docker-socket-proxy
+---
 
-An alternative method would be to provide the Nextcloud's web server user access to `/var/run/docker.sock`, the docker socket and use deployment configuration in the default deploy daemon of AppAPI.
+## Configure the AppAPI’s deploy daemon
 
-Mount the docker.sock in the Nextcloud container if you happen to use a containerized install of Nextcloud and ensure correct permissions for the web server user to access it.
+Ensure Docker is installed and the default deploy daemon works (Admin settings → AppAPI).
 
-- for docker compose
-```
-volumes:
+**Recommended:** Docker socket proxy
+[https://github.com/cloud-py-api/docker-socket-proxy](https://github.com/cloud-py-api/docker-socket-proxy)
+
+Alternative: grant the web server user access to `/var/run/docker.sock`.
+
+* Compose:
+
+  ```yaml
+  volumes:
     - /var/run/docker.sock:/var/run/docker.sock:ro
-```
+  ```
+* Docker:
 
-- for docker container, use this option with the `docker run` command
-```
--v /var/run/docker.sock:/var/run/docker.sock:ro
-```
+  ```bash
+  -v /var/run/docker.sock:/var/run/docker.sock:ro
+  ```
+
+---
 
 ## Logs
-Logs are stored in the `logs/` directory in the persistent directory. In a docker container, it should be at `/nc_app_context_chat_backend/logs/`. The log file is named `ccb.log` and is set to otate at 20 MB with 10 backups. These logs are in JSONL format, i.e. each line is a valid JSON object.
-Now only warning and above logs are printed to the console. All the debug logs are written to the log file if `debug` is set to `true` in the config file.
-The logs of the embedding server are written to `logs/embedding_server_[date].log` in the persistent directory, it rotates with date change and is not in JSONL format, just raw stdout and stderr from the embedding server's process.
+
+Logs live under `logs/` inside the persistent directory. In Docker: `/nc_app_context_chat_backend/logs/`.
+
+* Main log: `ccb.log`, JSONL, rotates at **20 MB** with **10 backups**.
+* Console prints warnings and above; set `debug: true` in config to get verbose logs in the file.
+* Embedding server logs: `logs/embedding_server_[date].log` (raw stdout/stderr, rotates daily).
+
+---
 
 ## Configuration
-Configuration resides inside the persistent storage as `config.yaml`. The location is `$APP_PERSISTENT_STORAGE`. By default it would be at `/nc_app_context_chat_backend_data/config.yaml` inside the container.
 
-All the options in the top of the file can be changed normally but for the sections `vectordb`, `embedding`, and `llm`, only the first key from the list is used. The rest is ignored.
-Some of the possible options for the loaders/adaptors in the special sections can be found in the provided example config files itself. The rest of the options can be found in langchain's documentation.
-For llm->llama as an example, they can be found here: https://api.python.langchain.com/en/latest/llms/langchain_community.llms.llamacpp.LlamaCpp.html
+The effective config is `$APP_PERSISTENT_STORAGE/config.yaml`
+(default: `/nc_app_context_chat_backend_data/config.yaml` in the container).
 
-Make sure to restart the app after changing the config file. For docker, this would mean restarting the container (`docker restart nc_app_context_chat_backend` or the container name/id).
+* Top-level options are editable. In sections `vectordb`, `embedding`, and `llm`, only the **first** listed key is used.
+* See the example configs for common loader/adapter options; check LangChain docs for others (e.g., LlamaCpp options: [https://api.python.langchain.com/en/latest/llms/langchain\_community.llms.llamacpp.LlamaCpp.html](https://api.python.langchain.com/en/latest/llms/langchain_community.llms.llamacpp.LlamaCpp.html)).
 
-This is a file copied from one of the two configurations (config.cpu.yaml or config.gpu.conf) during app startup if `config.yaml` is not already present to the persistent storage. See [Repair section](#repair) on details on the repair step that removes the config if you have a custom config.
+Restart the app after changes (e.g., `docker restart nc_app_context_chat_backend`).
+
+> If `RAG_BACKEND=r2r`, the external R2R server owns the vector store; local `vectordb` settings may be ignored.
+
+---
 
 ## Repair
-v2.1.0 introduces repair steps. These run on app startup.
 
-`repair2001_date20240412153300.py` removes the existing config.yaml in the persistent storage for the
-hardware detection to run and place a suitable config (based on accelerator detected) in its place.  
-To skip this step (or steps in the future), populate the `repair.info` file with the repair file name(s).  
-Use the below command inside the container or add the repair filename manually in the repair.info file inside the docker container at `/nc_app_context_chat_backend_data`
+v2.1.0 adds repair steps (run at startup).
 
-`echo repair2001_date20240412153300.py > "$APP_PERSISTENT_STORAGE/repair.info"`
+`repair2001_date20240412153300.py` removes the existing `config.yaml` so hardware detection can choose an appropriate default (CPU/GPU).
+To skip a repair step, add its filename to `repair.info`:
 
-#### How to generate a repair step file
-`APP_VERSION` should at least be incremented at the minor level (MAJOR.MINOR.PATCH)
-
-`APP_VERSION="2.1.0" ./genrepair.sh`
-
-## End-to-End Example for Building and Registering the Backend Manually (with CUDA)
-
-**1. Build the image**
+```bash
+echo repair2001_date20240412153300.py > "$APP_PERSISTENT_STORAGE/repair.info"
 ```
+
+Generate a repair file (bump **MINOR** at least):
+
+```bash
+APP_VERSION="2.1.0" ./genrepair.sh
+```
+
+---
+
+## End-to-End Example: Build & Register (CUDA)
+
+**1) Build**
+
+```bash
 cd /your/path/to/the/cloned/repository
 docker build --no-cache -f Dockerfile -t context_chat_backend_dev:latest .
 ```
 
-- ***Parameter explanation:***
+**2) Run**
 
-    `--no-cache`
-
-    Tells Docker to build the image without using any cache from previous builds.
-
-    `-f Dockerfile`
-
-    The *-f* or *--file* option specifies the name of the Dockerfile to use for the build. In this case *Dockerfile*
-
-    `-t context_chat_backend_dev:latest`
-
-    The *-t* or *--tag* option allows you to name and optionally tag your image, so you can refer to it later.
-    In this case we name it *context_chat_backend_dev* with the latest version
-
-    `.`
-
-    This final argument specifies the build context to the Docker daemon. In most cases, it's the path to a directory containing the Dockerfile and any other files needed for the build. Using `.` means "use the current directory as the build context."
-
-**2. Run the image**
-```
-Hint:
-Adjust the example.env to your needs so that it fits your environment
+```text
+Hint: adjust example.env (RAG_BACKEND, etc.) to your environment.
 ```
 
-```
+```bash
 docker run \
-    -v ./config.yaml:/app/config.yaml \
-    -v ./context_chat_backend:/app/context_chat_backend \
-    -v /var/run/docker.sock:/var/run/docker.sock \
-    --env-file example.env \
-    -p 10034:10034 \
-    -e CUDA_VISIBLE_DEVICES=0 \
-    -v persistent_storage:/app/persistent_storage \
-    --gpus=all \
-    context_chat_backend_dev:latest
+  -v ./config.yaml:/app/config.yaml \
+  -v ./context_chat_backend:/app/context_chat_backend \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  --env-file example.env \
+  -p 10034:10034 \
+  -e CUDA_VISIBLE_DEVICES=0 \
+  -v persistent_storage:/app/persistent_storage \
+  --gpus=all \
+  context_chat_backend_dev:latest
 ```
 
-- ***Parameter explanation:***
+**3) Register**
 
-	`-v ./config.yaml:/app/config.yaml`
-
-	Mounts the config_cuda.yaml which will be used inside the running image
-
-	`-v ./context_chat_backend:/app/context_chat_backend`
-
-	Mounts the context_chat_backend into the docker image
-
-	`-v /var/run/docker.sock:/var/run/docker.sock`
-
-	Mounts the Docker socket file from the host into the container. This is done to allow the Docker client running inside the container to communicate with the Docker daemon on the host, essentially controlling Docker and GPU from within the container.
-
-	`-v persistent_storage:/app/persistent_storage`
-
-	Mounts the persistent storage into the docker instance to keep downloaded models stored for the future.
-
-	`--env-file example.env`
-
-	Specifies an environment file named example.env to load environment variables from. Please adjust it for your needs.
-
-	`-p 10034:10034`
-
-	This publishes a container's port (10034) to the host (10034). Please align it with your environment file
-
-	`-e CUDA_VISIBLE_DEVICES=0`
-
-	Used to limit which GPUs are visible to CUDA applications running in the container. In this case, it restricts visibility to only the first GPU.
-
-	`--gpus all`
-
-	Grants the container access to all GPUs available on the host. This is crucial for running GPU-accelerated applications inside the container.
-
-	`context_chat_backend_dev:latest`
-
-	Specifies the image to use for creating the container. In this case we have build the image in 1.) with the specified tag
-
-**3. Register context_chat_backend**
-```
-Hint:
-Make sure the previous build cuda_backend_dev docker image is running as the next steps will connect to it on the specified port
+```text
+Hint: ensure the container from step 2 is running on the specified port.
 ```
 
-```
-cd /var/www/<your_nextcloud_instance_webroot> # For example /var/www/nextcloud/
+```bash
+cd /var/www/<your_nextcloud_instance_webroot>
 sudo -u www-data php occ app_api:app:unregister context_chat_backend
 sudo -u www-data php occ app_api:app:register \
-    context_chat_backend \
-    manual_install \
-    --json-info "{\"appid\":\"context_chat_backend\",\
-                  \"name\":\"Context Chat Backend\",\
-                  \"daemon_config_name\":\"manual_install\",\
-                  \"version\":\"4.4.1\",\
-                  \"secret\":\"12345\",\
-                  \"port\":10034,\
-                  \"scopes\":[],\
-                  \"system_app\":0}" \
-    --force-scopes \
-    --wait-finish
+  context_chat_backend \
+  manual_install \
+  --json-info "{\"appid\":\"context_chat_backend\",\
+                \"name\":\"Context Chat Backend\",\
+                \"daemon_config_name\":\"manual_install\",\
+                \"version\":\"4.4.1\",\
+                \"secret\":\"12345\",\
+                \"port\":10034,\
+                \"scopes\":[],\
+                \"system_app\":0}" \
+  --force-scopes \
+  --wait-finish
 ```
 
-If successfully registered the output will be like this
+Successful output should include:
+
 ```
-	ExApp context_chat_backend successfully unregistered.  
-	ExApp context_chat_backend deployed successfully.  
-	ExApp context_chat_backend successfully registered.
+ExApp context_chat_backend successfully unregistered.
+ExApp context_chat_backend deployed successfully.
+ExApp context_chat_backend successfully registered.
 ```
 
-And your docker container should show that the application has been enabled:
+Container logs will show enable/init:
+
 ```
-	App enabled  
-	TRACE: 172.17.0.1:51422 - ASGI [4] Send {'type': 'http.response.start', 'status': 200, 'headers': '<...>'}  
-	INFO: 172.17.0.1:51422 - "PUT /enabled?enabled=1 HTTP/1.1" 200 OK  
-	TRACE: 172.17.0.1:51422 - ASGI [4] Send {'type': 'http.response.body', 'body': '<12 bytes>'}  
-	TRACE: 172.17.0.1:51422 - ASGI [4] Completed  
-	TRACE: 172.17.0.1:51422 - HTTP connection lost  
-	INFO: 172.17.0.1:51408 - "POST /init HTTP/1.1" 200 OK  
-	TRACE: 172.17.0.1:51408 - ASGI [3] Send {'type': 'http.response.start', 'status': 200, 'headers': '<...>'}  
-	TRACE: 172.17.0.1:51408 - ASGI [3] Send {'type': 'http.response.body', 'body': '<2 bytes>'}  
-	TRACE: 172.17.0.1:51408 - ASGI [3] Completed
+App enabled
+INFO: ... "PUT /enabled?enabled=1 HTTP/1.1" 200 OK
+INFO: ... "POST /init HTTP/1.1" 200 OK
 ```
+
+---
+
+## Troubleshooting & integration notes
+
+* **AppAPI init:** `/init` should return `{}` immediately; progress is reported asynchronously (1–100) via OCS `PUT /ocs/v1.php/apps/app_api/ex-app/status`. Include `"error"` if initialization fails fatally.
+* **Enabled toggle:** use `PUT /enabled?enabled=0|1`. Internally we use `fastapi.Query` (aliased) to avoid Pydantic’s `Query` name collision.
+* **Source ingestion:** the `userIds` file header must be a **comma-separated list** (e.g., `abc, def`).
+  For external backends like R2R, **`collection_ids` are sent as a list of UUID strings**—never as a single comma-joined string.
+* **Logs:** set `debug: true` in config to capture detailed traces in `ccb.log`.
+
+---
+
+## Endpoint compatibility
+
+All CCBE endpoints keep their **paths, methods, parameters, and payloads unchanged**, regardless of backend.
+This repo generates an exhaustive router map in CI to ensure parity. See **`docs/endpoints.md`** for the full, up-to-date list and examples.
+
+---
