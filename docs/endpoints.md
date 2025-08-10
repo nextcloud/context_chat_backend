@@ -1,0 +1,15 @@
+GET /
+PUT /enabled
+GET /enabled
+POST /init
+POST /updateAccessDeclarative
+POST /updateAccess
+POST /updateAccessProvider
+POST /deleteSources
+POST /deleteProvider
+POST /deleteUser
+POST /countIndexedDocuments
+PUT /loadSources
+POST /query
+POST /docSearch
+GET /downloadLogs
