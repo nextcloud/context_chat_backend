@@ -1,6 +1,4 @@
-Got it—here’s a cleaned-up PRD that (1) keeps **CCBE’s current/built-in RAG path as the default and first-class**, (2) adds a **pluggable backend seam** with minimal diffs, and (3) documents an **exhaustive, test-verified endpoint surface** so every Nextcloud AppAPI call is handled regardless of backend. I’ve folded in the hard-earned lessons from your bring-up (init semantics, `Query` clash, `collection_ids` type, etc.) and made sure the “swap to R2R (or others)” path is simple, env-driven, and diff-friendly.
 
----
 
 # PRD — Pluggable RAG backends for Nextcloud Context Chat Backend (CCBE)
 
