@@ -628,6 +628,7 @@ def _(query: Query, request: Request) -> LLMOutput:
             stop=stop,
             userid=query.userId,
         ).strip()
+
         unique_sources: list[str] = list(
             {cast(str, d.metadata["source"]) for d in docs if d.metadata.get("source")}
         )
