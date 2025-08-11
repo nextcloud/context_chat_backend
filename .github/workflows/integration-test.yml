@@ -216,8 +216,8 @@ jobs:
 
       - name: Run the prompts
         run: |
-          ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' &
-          ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' &
+          ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' > worker1_logs 2>&1 &
+          ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' > worker2_logs 2>&1 &
 
           OUT1=$(./occ context_chat:prompt admin "Which factors are taken into account for the Ethical AI Rating?")
           echo "$OUT1"
@@ -259,15 +259,40 @@ jobs:
             echo "Memory usage during prompt is stable. No memory leak detected."
           fi
 
-      - name: Show logs
+      - name: Show server logs
         if: always()
         run: |
           cat data/nextcloud.log
-          echo '--------------------------------------------------'
+
+      - name: Show context_chat specific logs
+        if: always()
+        run: |
+          cat data/context_chat.log
+
+      - name: Show task processing worker logs
+        if: always()
+        run: |
+          tail -v -n +1 worker?_logs || echo "No worker logs"
+
+      - name: Show main app logs
+        if: always()
+        run: |
           cat context_chat_backend/backend_logs || echo "No main backend logs"
+
+      - name: Show main app JSON logs
+        if: always()
+        run: |
+          tail -v -n +1 context_chat_backend/persistent_storage/logs/ccb.log* || echo "No logs in logs directory"
+
+      - name: Show embedding server logs
+        if: always()
+        run: |
           cat context_chat_backend/em_backend_logs || echo "No main backend logs"
-          echo '--------------------------------------------------'
-          tail -v -n +1 context_chat_backend/persistent_storage/logs/* || echo "No logs in logs directory"
+
+      - name: Show embedding server JSON logs
+        if: always()
+        run: |
+          tail -v -n +1 context_chat_backend/persistent_storage/logs/em_server.log* || echo "No logs in logs directory"
 
   summary:
     permissions:
