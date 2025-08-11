@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.5
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
@@ -20,12 +21,12 @@ WORKDIR /app
 
 # Install dependencies
 ADD dockerfile_scripts/install_deps.sh dockerfile_scripts/install_deps.sh
-RUN ./dockerfile_scripts/install_deps.sh
+RUN --mount=type=cache,target=/var/lib/apt/lists --mount=type=cache,target=/var/cache/apt ./dockerfile_scripts/install_deps.sh
 ADD dockerfile_scripts/install_py11.sh dockerfile_scripts/install_py11.sh
-RUN ./dockerfile_scripts/install_py11.sh
+RUN --mount=type=cache,target=/var/lib/apt/lists --mount=type=cache,target=/var/cache/apt ./dockerfile_scripts/install_py11.sh
 ADD dockerfile_scripts/pgsql dockerfile_scripts/pgsql
-RUN ./dockerfile_scripts/pgsql/install.sh
-RUN apt-get autoclean
+RUN --mount=type=cache,target=/var/lib/apt/lists --mount=type=cache,target=/var/cache/apt ./dockerfile_scripts/pgsql/install.sh
+RUN --mount=type=cache,target=/var/lib/apt/lists --mount=type=cache,target=/var/cache/apt apt-get autoclean
 ADD dockerfile_scripts/entrypoint.sh dockerfile_scripts/entrypoint.sh
 
 # Restore interactivity
@@ -35,10 +36,10 @@ ENV DEBIAN_FRONTEND dialog
 COPY requirements.txt .
 
 # Install requirements
-RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel
-RUN python3 -m pip install --no-cache-dir https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.13-cu122/llama_cpp_python-0.3.13-cp311-cp311-linux_x86_64.whl
+RUN --mount=type=cache,target=/root/.cache/pip python3 -m pip install --upgrade pip setuptools wheel
+RUN --mount=type=cache,target=/root/.cache/pip python3 -m pip install https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.13-cu122/llama_cpp_python-0.3.13-cp311-cp311-linux_x86_64.whl
 RUN sed -i '/llama_cpp_python/d' requirements.txt
-RUN python3 -m pip install --no-cache-dir -r requirements.txt && python3 -m pip cache purge
+RUN --mount=type=cache,target=/root/.cache/pip python3 -m pip install -r requirements.txt
 
 # Copy application files
 COPY context_chat_backend context_chat_backend

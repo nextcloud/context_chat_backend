@@ -1,0 +1,6 @@
+# Ignore files and directories not needed for the image build
+.git
+.github
+.docker-cache
+persistent_storage
+docs
