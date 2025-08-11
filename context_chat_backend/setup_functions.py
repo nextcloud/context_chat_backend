@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+import logging
 import os
 import subprocess
 
@@ -12,11 +13,17 @@ from .repair import runner
 __all__ = ['ensure_config_file', 'repair_run', 'setup_env_vars']
 
 
+logger = logging.getLogger(__name__)
+
+
 def ensure_config_file():
-	'''
-	Ensures the config file is present.
-	'''
-	subprocess.run(['./hwdetect.sh', 'config'], check=True, shell=False)  # noqa: S603
+        '''
+        Ensures the config file is present.
+        '''
+        try:
+                subprocess.run(['./hwdetect.sh', 'config'], check=True, shell=False)  # noqa: S603
+        except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+                logger.warning('hardware detection skipped: %s', exc)
 
 
 def repair_run():

@@ -2,19 +2,22 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping, Sequence
-from typing import Any
+
+from typing import Any, cast
 
 from .base import RagBackend
 
-try:
-    from r2r import R2RClient
+try:  # pragma: no cover - r2r is optional
+    from r2r import R2RClient as _R2RClient  # type: ignore[import]
 except Exception:  # pragma: no cover - dependency optional
-    R2RClient = None  # type: ignore
+    _R2RClient = None
+
+R2RClient = cast(Any, _R2RClient)
 
 
 class R2RBackend(RagBackend):
     def __init__(self) -> None:
-        if R2RClient is None:
+        if _R2RClient is None:
             raise RuntimeError("r2r package is not installed")
         base = os.getenv("R2R_BASE_URL", "http://127.0.0.1:7272")
         self.client = R2RClient(base)

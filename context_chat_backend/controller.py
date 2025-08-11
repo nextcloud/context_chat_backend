@@ -17,13 +17,13 @@ import tempfile
 import threading
 import time
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from functools import wraps
 from pathlib import Path
 from threading import Event, Thread
 from time import sleep
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 import requests
 from fastapi import BackgroundTasks, Body, FastAPI, Query as FQuery, Request, UploadFile
@@ -85,7 +85,7 @@ def enabled_handler(enabled: bool, _: NextcloudApp | AsyncNextcloudApp) -> str:
     return ""
 
 
-def _get_user_ids(headers: dict[str, str]) -> list[str]:
+def _get_user_ids(headers: Mapping[str, str]) -> list[str]:
     raw = headers.get("userIds") or headers.get("userids") or ""
     return [u.strip() for u in raw.split(",") if u.strip()]
 
@@ -267,7 +267,7 @@ def _(request: Request):
 
 @app.put("/enabled")
 def _(enabled: int = FQuery(default=1, description="Enable=1 or Disable=0")):
-    enabled_handler(bool(enabled), None)
+    enabled_handler(bool(enabled), None)  # type: ignore[arg-type]
     return JSONResponse("", 200)
 
 
@@ -628,7 +628,10 @@ def _(query: Query, request: Request) -> LLMOutput:
             stop=stop,
             userid=query.userId,
         ).strip()
-        unique_sources: list[str] = list({d.metadata.get("source") for d in docs if d.metadata.get("source")})
+
+        unique_sources: list[str] = list(
+            {cast(str, d.metadata["source"]) for d in docs if d.metadata.get("source")}
+        )
         return LLMOutput(output=output, sources=unique_sources)
 
     if app_config.llm[0] == "nc_texttotext":
