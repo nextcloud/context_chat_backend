@@ -1,0 +1,11 @@
+version: '3.9'
+
+services:
+  ccbe:
+    build: .
+    env_file: .env
+    ports:
+      - "10034:10034"
+    volumes:
+      - ./persistent_storage:/app/persistent_storage
+    restart: unless-stopped
