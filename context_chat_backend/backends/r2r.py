@@ -1,35 +1,52 @@
+"""R2R backend using direct HTTP requests.
+
+This backend communicates with an external R2R service over the network
+instead of relying on the optional :mod:`r2r` Python package.  The service
+base URL is taken from the ``R2R_BASE_URL`` environment variable and defaults
+to ``http://127.0.0.1:7272``.
+
+Only a minimal subset of the R2R API is implemented - enough for the Context
+Chat backend to manage collections, documents and to perform search queries.
+"""
+
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Mapping, Sequence
+from typing import Any
 
-from typing import Any, cast
+import httpx
 
 from .base import RagBackend
 
-try:  # pragma: no cover - r2r is optional
-    from r2r import R2RClient as _R2RClient  # type: ignore[import]
-except Exception:  # pragma: no cover - dependency optional
-    _R2RClient = None
-
-R2RClient = cast(Any, _R2RClient)
-
 
 class R2RBackend(RagBackend):
-    def __init__(self) -> None:
-        if _R2RClient is None:
-            raise RuntimeError("r2r package is not installed")
-        base = os.getenv("R2R_BASE_URL", "http://127.0.0.1:7272")
-        self.client = R2RClient(base)
-        # fail fast on boot used by /init job as well
-        self.client.system.settings()
+    """Implementation of :class:`RagBackend` that talks to an R2R service."""
 
-    # ----------- Collections
+    def __init__(self) -> None:
+        base = os.getenv("R2R_BASE_URL", "http://127.0.0.1:7272").rstrip("/")
+        self._client = httpx.Client(base_url=base, timeout=30.0)
+        # fail fast - used by the /init job as well
+        resp = self._client.get("/v3/system/settings")
+        resp.raise_for_status()
+
+    # ------------------------------------------------------------------
+    # Utility helpers
+    def _request(self, method: str, path: str, **kwargs) -> dict[str, Any]:
+        resp = self._client.request(method, f"/v3/{path.lstrip('/')}", **kwargs)
+        resp.raise_for_status()
+        return resp.json() if resp.content else {}
+
+    # ------------------------------------------------------------------
+    # Collections
     def ensure_collections(self, user_ids: Sequence[str]) -> dict[str, str]:
         offset, limit = 0, 100
         existing: dict[str, str] = {}
         while True:
-            coll = self.client.collections.list(offset=offset, limit=limit)
+            coll = self._request(
+                "GET", "collections", params={"offset": offset, "limit": limit}
+            )
             results = coll.get("results", [])
             if not results:
                 break
@@ -42,16 +59,23 @@ class R2RBackend(RagBackend):
             if uid in existing:
                 mapping[uid] = existing[uid]
             else:
-                created = self.client.collections.create(
-                    name=uid,
-                    description=f"Auto-generated collection for user {uid}",
+                created = self._request(
+                    "POST",
+                    "collections",
+                    json={
+                        "name": uid,
+                        "description": f"Auto-generated collection for user {uid}",
+                    },
                 )
-                mapping[uid] = created["results"]["id"]
+                mapping[uid] = created.get("results", {}).get("id")
         return mapping
 
-    # ----------- Documents
+    # ------------------------------------------------------------------
+    # Documents
     def list_documents(self, offset: int = 0, limit: int = 100) -> list[dict]:
-        docs = self.client.documents.list(limit=limit, offset=offset)
+        docs = self._request(
+            "GET", "documents", params={"offset": offset, "limit": limit}
+        )
         return docs.get("results", [])
 
     def find_document_by_title(self, title: str) -> dict | None:
@@ -77,34 +101,45 @@ class R2RBackend(RagBackend):
         existing = self.find_document_by_title(metadata.get("title", ""))
         if existing:
             em = existing.get("metadata", {})
-            same = em.get("modified") == metadata.get("modified") and em.get("content-length") == metadata.get(
+            same = em.get("modified") == metadata.get("modified") and em.get(
                 "content-length"
-            )
+            ) == metadata.get("content-length")
             if same:
                 current = set(existing.get("collection_ids", []))
                 target = set(collection_ids)
                 add = target - current
                 rem = current - target
                 for cid in add:
-                    self.client.collections.add_document(cid, existing["id"])
+                    self._request("POST", f"collections/{cid}/documents/{existing['id']}")
                 for cid in rem:
-                    self.client.collections.remove_document(cid, existing["id"])
+                    self._request(
+                        "DELETE", f"collections/{cid}/documents/{existing['id']}"
+                    )
                 return existing["id"]
 
             self.delete_document(existing["id"])
 
-        created = self.client.documents.create(
-            file_path=file_path,
-            metadata=metadata,
-            collection_ids=list(collection_ids),
-            ingestion_mode="fast",
-        )
-        return created["results"]["document_id"]
+        with open(file_path, "rb") as fh:
+            files = {
+                "file": (
+                    metadata.get("filename") or os.path.basename(file_path),
+                    fh,
+                    "application/octet-stream",
+                )
+            }
+            data = {
+                "metadata": json.dumps(metadata),
+                "collection_ids": json.dumps(list(collection_ids)),
+                "ingestion_mode": "fast",
+            }
+            created = self._request("POST", "documents", data=data, files=files)
+        return created.get("results", {}).get("document_id", "")
 
     def delete_document(self, document_id: str) -> None:
-        self.client.documents.delete(id=document_id)
+        self._request("DELETE", f"documents/{document_id}")
 
-    # ----------- Retrieval (minimal shape)
+    # ------------------------------------------------------------------
+    # Retrieval (minimal shape)
     def search(
         self,
         user_id: str,
@@ -113,12 +148,15 @@ class R2RBackend(RagBackend):
         scope_type: str | None = None,
         scope_list: Sequence[str] | None = None,
     ) -> list[dict]:
-        resp = self.client.search.query(
-            query=query,
-            user_id=user_id,
-            top_k=ctx_limit,
-            scope_type=scope_type,
-            scope_list=list(scope_list) if scope_list else None,
+        payload = {
+            "query": query,
+            "user_id": user_id,
+            "top_k": ctx_limit,
+            "scope_type": scope_type,
+            "scope_list": list(scope_list) if scope_list else None,
+        }
+        resp = self._request(
+            "POST", "search/query", json={k: v for k, v in payload.items() if v is not None}
         )
         out = []
         for hit in resp.get("results", []):
@@ -129,3 +167,4 @@ class R2RBackend(RagBackend):
                 }
             )
         return out
+
