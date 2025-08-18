@@ -32,7 +32,8 @@ RAG_BACKEND=builtin
 # Optional: R2R Graph RAG
 # RAG_BACKEND=r2r
 # R2R_BASE_URL=http://127.0.0.1:7272
-# R2R_API_TOKEN=your_token_here
+# R2R_API_KEY=your_api_key_here  # sent as X-API-Key
+# R2R_API_TOKEN=your_token_here  # optional bearer token
 
 # Optional: Pinecone (scaffold)
 # RAG_BACKEND=pinecone
@@ -48,7 +49,8 @@ RAG_BACKEND=builtin
 ```
 
 * **`builtin` (default):** exact upstream behavior; no code path changes.
-* **`r2r`:** uses an external **R2R** server. Make sure `R2R_BASE_URL` is reachable from CCBE.
+* **`r2r`:** uses an external **R2R** server. Make sure `R2R_BASE_URL` is reachable from CCBE. If authentication is required,
+  set `R2R_API_KEY` (sent as `X-API-Key`) and/or `R2R_API_TOKEN` (bearer token).
 * **`pinecone` / `supabase`:** scaffolds included; selecting them returns HTTP `501` until implemented.
 
 > Endpoint paths, request/response shapes, and status codes remain identical for all backends.
@@ -63,6 +65,7 @@ RAG_BACKEND=builtin
    ```bash
    RAG_BACKEND=r2r
    R2R_BASE_URL=http://127.0.0.1:7272
+   # R2R_API_KEY=your_api_key_here  # sent as X-API-Key
    # R2R_API_TOKEN=your_token_here
    ```
 3. Start CCBE. On `/init`, the backend verifies connectivity.
