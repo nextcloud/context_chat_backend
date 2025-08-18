@@ -32,6 +32,7 @@ RAG_BACKEND=builtin
 # Optional: R2R Graph RAG
 # RAG_BACKEND=r2r
 # R2R_BASE_URL=http://127.0.0.1:7272
+# R2R_API_TOKEN=your_token_here
 
 # Optional: Pinecone (scaffold)
 # RAG_BACKEND=pinecone
@@ -62,6 +63,7 @@ RAG_BACKEND=builtin
    ```bash
    RAG_BACKEND=r2r
    R2R_BASE_URL=http://127.0.0.1:7272
+   # R2R_API_TOKEN=your_token_here
    ```
 3. Start CCBE. On `/init`, the backend verifies connectivity.
 4. Upload sources (Nextcloud will do this automatically via the Context Chat app).

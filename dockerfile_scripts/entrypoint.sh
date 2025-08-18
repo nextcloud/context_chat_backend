@@ -6,9 +6,14 @@
 set -e
 
 source /etc/environment;
-"$(dirname $(realpath $0))/pgsql/setup.sh";
-source /etc/environment;
+
+if [ -z "${RAG_BACKEND}" ] || [ "${RAG_BACKEND,,}" = "builtin" ]; then
+    "$(dirname $(realpath $0))/pgsql/setup.sh";
+    source /etc/environment;
+fi
 
 python3 -u ./main.py;
 
-"$(dirname $(realpath $0))/pgsql/setup.sh" stop
+if [ -z "${RAG_BACKEND}" ] || [ "${RAG_BACKEND,,}" = "builtin" ]; then
+    "$(dirname $(realpath $0))/pgsql/setup.sh" stop
+fi
