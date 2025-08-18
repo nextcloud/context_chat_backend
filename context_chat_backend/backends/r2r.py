@@ -3,7 +3,9 @@
 This backend communicates with an external R2R service over the network
 instead of relying on the optional :mod:`r2r` Python package.  The service
 base URL is taken from the ``R2R_BASE_URL`` environment variable and defaults
-to ``http://127.0.0.1:7272``.
+to ``http://127.0.0.1:7272``.  If the target instance requires authentication,
+set ``R2R_API_TOKEN`` to a bearer token so all requests include an
+``Authorization`` header.
 
 Only a minimal subset of the R2R API is implemented - enough for the Context
 Chat backend to manage collections, documents and to perform search queries.
@@ -26,7 +28,9 @@ class R2RBackend(RagBackend):
 
     def __init__(self) -> None:
         base = os.getenv("R2R_BASE_URL", "http://127.0.0.1:7272").rstrip("/")
-        self._client = httpx.Client(base_url=base, timeout=30.0)
+        token = os.getenv("R2R_API_TOKEN")
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        self._client = httpx.Client(base_url=base, timeout=30.0, headers=headers)
         # fail fast - used by the /init job as well
         resp = self._client.get("/v3/system/settings")
         resp.raise_for_status()
@@ -167,4 +171,3 @@ class R2RBackend(RagBackend):
                 }
             )
         return out
-
