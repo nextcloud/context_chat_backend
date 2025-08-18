@@ -59,19 +59,30 @@ setup_env_vars()
 repair_run()
 ensure_config_file()
 logger = logging.getLogger("ccb.controller")
+RAG_BACKEND = os.getenv("RAG_BACKEND", "builtin").lower()
 
-models_to_fetch = {
-    # embedding model
-    "https://huggingface.co/Ralriki/multilingual-e5-large-instruct-GGUF/resolve/8738f8d3d8f311808479ecd5756607e24c6ca811/multilingual-e5-large-instruct-q6_k.gguf": {  # noqa: E501
-        "save_path": os.path.join(persistent_storage(), "model_files", "multilingual-e5-large-instruct-q6_k.gguf")
-    },
-    # tokenizer model for estimating token count of queries
-    "gpt2": {
-        "cache_dir": os.path.join(persistent_storage(), "model_files/hub"),
-        "allow_patterns": ["config.json", "merges.txt", "tokenizer.json", "tokenizer_config.json", "vocab.json"],
-        "revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
-    },
-}
+models_to_fetch = {}
+if RAG_BACKEND == "builtin":
+    models_to_fetch = {
+        # embedding model
+        "https://huggingface.co/Ralriki/multilingual-e5-large-instruct-GGUF/resolve/8738f8d3d8f311808479ecd5756607e24c6ca811/multilingual-e5-large-instruct-q6_k.gguf": {  # noqa: E501
+            "save_path": os.path.join(
+                persistent_storage(), "model_files", "multilingual-e5-large-instruct-q6_k.gguf"
+            )
+        },
+        # tokenizer model for estimating token count of queries
+        "gpt2": {
+            "cache_dir": os.path.join(persistent_storage(), "model_files/hub"),
+            "allow_patterns": [
+                "config.json",
+                "merges.txt",
+                "tokenizer.json",
+                "tokenizer_config.json",
+                "vocab.json",
+            ],
+            "revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+        },
+    }
 app_enabled = Event()
 
 
@@ -141,8 +152,21 @@ async def lifespan(app: FastAPI):
     logger.info(f"App enable state at startup: {app_enabled.is_set()}")
     t = Thread(target=background_thread_task, args=())
     t.start()
+
+    if RAG_BACKEND == "r2r":
+        import asyncio
+        from .startup_tests import run_startup_tests
+
+        async def _run_tests() -> None:
+            await asyncio.sleep(1)
+            base = f"http://{os.getenv('APP_HOST', '127.0.0.1')}:{os.getenv('APP_PORT', '9000')}"
+            await run_startup_tests(base)
+
+        app.state.startup_test = asyncio.create_task(_run_tests())
+
     yield
-    vectordb_loader.offload()
+    if vectordb_loader is not None:
+        vectordb_loader.offload()
     llm_loader.offload()
 
 
@@ -154,7 +178,7 @@ app.extra["CONFIG"] = app_config
 
 # loaders
 
-vectordb_loader = VectorDBLoader(app_config)
+vectordb_loader = VectorDBLoader(app_config) if RAG_BACKEND == "builtin" else None
 llm_loader = LLMModelLoader(app, app_config)
 
 
@@ -285,6 +309,7 @@ def _(background: BackgroundTasks, request: Request):
 @app.post("/updateAccessDeclarative")
 @enabled_guard(app)
 def _(
+    request: Request,
     userIds: Annotated[list[str], Body()],
     sourceId: Annotated[str, Body()],
 ):
@@ -302,6 +327,9 @@ def _(
     if not is_valid_source_id(sourceId):
         return JSONResponse("Invalid source id", 400)
 
+    if getattr(request.app.state, "rag_backend", None):
+        return JSONResponse("Operation not supported", 501)
+
     exec_in_proc(target=decl_update_access, args=(vectordb_loader, userIds, sourceId))
 
     return JSONResponse("Access updated")
@@ -310,6 +338,7 @@ def _(
 @app.post("/updateAccess")
 @enabled_guard(app)
 def _(
+    request: Request,
     op: Annotated[UpdateAccessOp, Body()],
     userIds: Annotated[list[str], Body()],
     sourceId: Annotated[str, Body()],
@@ -329,6 +358,9 @@ def _(
     if not is_valid_source_id(sourceId):
         return JSONResponse("Invalid source id", 400)
 
+    if getattr(request.app.state, "rag_backend", None):
+        return JSONResponse("Operation not supported", 501)
+
     exec_in_proc(target=update_access, args=(vectordb_loader, op, userIds, sourceId))
 
     return JSONResponse("Access updated")
@@ -337,6 +369,7 @@ def _(
 @app.post("/updateAccessProvider")
 @enabled_guard(app)
 def _(
+    request: Request,
     op: Annotated[UpdateAccessOp, Body()],
     userIds: Annotated[list[str], Body()],
     providerId: Annotated[str, Body()],
@@ -356,6 +389,9 @@ def _(
     if not is_valid_provider_id(providerId):
         return JSONResponse("Invalid provider id", 400)
 
+    if getattr(request.app.state, "rag_backend", None):
+        return JSONResponse("Operation not supported", 501)
+
     exec_in_proc(target=update_access, args=(vectordb_loader, op, userIds, providerId))
 
     return JSONResponse("Access updated")
@@ -363,7 +399,7 @@ def _(
 
 @app.post("/deleteSources")
 @enabled_guard(app)
-def _(sourceIds: Annotated[list[str], Body(embed=True)]):
+def _(request: Request, sourceIds: Annotated[list[str], Body(embed=True)]):
     logger.debug(
         "Delete sources request",
         extra={
@@ -376,6 +412,12 @@ def _(sourceIds: Annotated[list[str], Body(embed=True)]):
     if len(sourceIds) == 0:
         return JSONResponse("No sources provided", 400)
 
+    backend = getattr(request.app.state, "rag_backend", None)
+    if backend:
+        for sid in sourceIds:
+            backend.delete_document(sid)
+        return JSONResponse("All valid sources deleted")
+
     res = exec_in_proc(target=delete_by_source, args=(vectordb_loader, sourceIds))
     if res is False:
         return JSONResponse("Error: VectorDB delete failed, check vectordb logs for more info.", 400)
@@ -385,11 +427,14 @@ def _(sourceIds: Annotated[list[str], Body(embed=True)]):
 
 @app.post("/deleteProvider")
 @enabled_guard(app)
-def _(providerKey: str = Body(embed=True)):
+def _(request: Request, providerKey: str = Body(embed=True)):
     logger.debug("Delete sources by provider for all users request", extra={"provider_key": providerKey})
 
     if value_of(providerKey) is None:
         return JSONResponse("Invalid provider key provided", 400)
+
+    if getattr(request.app.state, "rag_backend", None):
+        return JSONResponse("Operation not supported", 501)
 
     exec_in_proc(target=delete_by_provider, args=(vectordb_loader, providerKey))
 
@@ -398,11 +443,14 @@ def _(providerKey: str = Body(embed=True)):
 
 @app.post("/deleteUser")
 @enabled_guard(app)
-def _(userId: str = Body(embed=True)):
+def _(request: Request, userId: str = Body(embed=True)):
     logger.debug("Remove access list for user, and orphaned sources", extra={"user_id": userId})
 
     if value_of(userId) is None:
         return JSONResponse("Invalid userId provided", 400)
+
+    if getattr(request.app.state, "rag_backend", None):
+        return JSONResponse("Operation not supported", 501)
 
     exec_in_proc(target=delete_user, args=(vectordb_loader, userId))
 
@@ -411,7 +459,12 @@ def _(userId: str = Body(embed=True)):
 
 @app.post("/countIndexedDocuments")
 @enabled_guard(app)
-def _():
+def _(request: Request):
+    backend = getattr(request.app.state, "rag_backend", None)
+    if backend:
+        count = len(backend.list_documents())
+        return JSONResponse({"all": count})
+
     counts = exec_in_proc(target=count_documents_by_provider, args=(vectordb_loader,))
     return JSONResponse(counts)
 
@@ -643,7 +696,24 @@ def _(query: Query, request: Request) -> LLMOutput:
 
 @app.post("/docSearch")
 @enabled_guard(app)
-def _(query: Query) -> list[SearchResult]:
+def _(query: Query, request: Request) -> list[SearchResult]:
+    backend = getattr(request.app.state, "rag_backend", None)
+    if backend:
+        hits = backend.search(
+            user_id=query.userId,
+            query=query.query,
+            ctx_limit=query.ctxLimit,
+            scope_type=query.scopeType,
+            scope_list=query.scopeList,
+        )
+        return [
+            {
+                "source_id": h.get("metadata", {}).get("source", ""),
+                "title": h.get("metadata", {}).get("title", ""),
+            }
+            for h in hits
+        ]
+
     # useContext from Query is not used here
     return exec_in_proc(
         target=do_doc_search,
