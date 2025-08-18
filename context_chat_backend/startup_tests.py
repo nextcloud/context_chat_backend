@@ -1,7 +1,7 @@
 import asyncio
 import logging
+from collections.abc import Iterable
 from io import BytesIO
-from typing import Iterable
 
 import httpx
 
