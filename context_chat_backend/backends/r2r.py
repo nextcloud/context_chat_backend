@@ -36,8 +36,10 @@ class R2RBackend(RagBackend):
         if api_key:
             headers["X-API-Key"] = api_key
         self._client = httpx.Client(base_url=base, timeout=30.0, headers=headers)
-        # fail fast - used by the /init job as well
-        resp = self._client.get("/v3/system/settings")
+        # fail fast - used by the /init job as well.  The settings endpoint
+        # requires elevated permissions, so use the public health check
+        # instead to verify connectivity.
+        resp = self._client.get("/v3/health")
         resp.raise_for_status()
 
     # ------------------------------------------------------------------
