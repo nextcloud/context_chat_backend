@@ -234,6 +234,7 @@ RAG_BACKEND=builtin           # default; set to r2r|pinecone|supabase to switch
 
 # R2R
 R2R_BASE_URL=http://127.0.0.1:7272
+R2R_API_KEY=            # sent as X-API-Key
 R2R_API_TOKEN=
 
 # Pinecone (scaffold)
