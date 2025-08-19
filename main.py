@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 import logging
+from importlib import import_module
 from os import getenv
 
 import uvicorn
@@ -21,15 +22,16 @@ def build_backend() -> RagBackend | None:
     kind = (getenv("RAG_BACKEND") or "builtin").lower()
     if kind in ("", "builtin"):
         return None
-    if kind == "r2r":
-        from context_chat_backend.backends.r2r import R2RBackend
-
-        return R2RBackend()
-    if kind == "pinecone":
-        raise NotImplementedError("Pinecone backend not implemented")
-    if kind == "supabase":
-        raise NotImplementedError("Supabase backend not implemented")
-    raise ValueError(f"Unknown RAG_BACKEND={kind}")
+    module_name = f"context_chat_backend.backends.{kind}"
+    try:
+        module = import_module(module_name)
+    except ModuleNotFoundError as exc:
+        raise ValueError(f"Unknown RAG_BACKEND={kind}") from exc
+    class_name = "".join(part.capitalize() for part in kind.split("_")) + "Backend"
+    backend_cls = getattr(module, class_name, None)
+    if backend_cls is None:
+        raise ValueError(f"Backend '{module_name}' does not define {class_name}")
+    return backend_cls()
 
 
 app.state.rag_backend = build_backend()
