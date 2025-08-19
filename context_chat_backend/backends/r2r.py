@@ -36,10 +36,10 @@ class R2RBackend(RagBackend):
         if api_key:
             headers["X-API-Key"] = api_key
         self._client = httpx.Client(base_url=base, timeout=30.0, headers=headers)
-        # fail fast - used by the /init job as well.  The settings endpoint
-        # requires elevated permissions, so use the public health check
-        # instead to verify connectivity.
-        resp = self._client.get("/v3/health")
+        # fail fast - used by the /init job as well.  ``/v3/system/status`` is a
+        # public endpoint that does not require special permissions and is the
+        # recommended way to verify service availability.
+        resp = self._client.get("/v3/system/status")
         resp.raise_for_status()
 
     # ------------------------------------------------------------------
@@ -163,12 +163,10 @@ class R2RBackend(RagBackend):
             "query": query,
             "user_id": user_id,
             "top_k": ctx_limit,
-            "scope_type": scope_type,
-            "scope_list": list(scope_list) if scope_list else None,
         }
-        resp = self._request(
-            "POST", "search/query", json={k: v for k, v in payload.items() if v is not None}
-        )
+        if scope_type and scope_list:
+            payload["scope"] = {"type": scope_type, "ids": list(scope_list)}
+        resp = self._request("POST", "retrieval/search", json=payload)
         out = []
         for hit in resp.get("results", []):
             out.append(

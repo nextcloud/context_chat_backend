@@ -28,6 +28,7 @@ ADD dockerfile_scripts/pgsql dockerfile_scripts/pgsql
 RUN --mount=type=cache,target=/var/lib/apt/lists --mount=type=cache,target=/var/cache/apt ./dockerfile_scripts/pgsql/install.sh
 RUN --mount=type=cache,target=/var/lib/apt/lists --mount=type=cache,target=/var/cache/apt apt-get autoclean
 ADD dockerfile_scripts/entrypoint.sh dockerfile_scripts/entrypoint.sh
+ADD dockerfile_scripts/run_embedding.sh dockerfile_scripts/run_embedding.sh
 
 # Restore interactivity
 ENV DEBIAN_FRONTEND dialog
