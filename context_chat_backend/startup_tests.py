@@ -99,14 +99,26 @@ async def _per_route_checks(base_url: str, client: httpx.AsyncClient) -> None:
 
 async def run_startup_tests(base_url: str) -> None:
     async with httpx.AsyncClient(timeout=10.0) as client:
+        headers: dict[str, str] = {}
+        sign_request(headers)
         enabled = False
         try:
-            resp = await client.get(f"{base_url}/enabled")
+            resp = await client.get(f"{base_url}/enabled", headers=headers)
             if resp.status_code == 200:
-                body = resp.text.strip().lower()
-                enabled = body == "true" or body == "1"
+                enabled = resp.json().get("enabled", False)
         except Exception as e:  # pragma: no cover - network issues
             logger.error("GET /enabled failed", exc_info=e)
+
+        if not enabled:
+            try:
+                resp = await client.put(
+                    f"{base_url}/enabled", params={"enabled": 1}, headers=headers
+                )
+                enabled = resp.status_code == 200
+                if enabled:
+                    logger.info("App enabled via PUT /enabled")
+            except Exception as e:  # pragma: no cover - network issues
+                logger.error("PUT /enabled failed", exc_info=e)
 
         if enabled:
             try:
@@ -114,7 +126,9 @@ async def run_startup_tests(base_url: str) -> None:
             except Exception as e:  # pragma: no cover - network issues
                 logger.error("Document lifecycle test failed", exc_info=e)
         else:
-            logger.info("Context Chat disabled; skipping document lifecycle test")
+            logger.error(
+                "Context Chat disabled; skipping document lifecycle test"
+            )
 
         await _per_route_checks(base_url, client)
 
