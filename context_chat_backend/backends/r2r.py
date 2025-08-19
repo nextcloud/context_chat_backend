@@ -22,22 +22,6 @@ import httpx
 
 from .base import RagBackend
 
-
-class _Auth(httpx.Auth):
-    """Attach API credentials to every request."""
-
-    def __init__(self, api_key: str | None, token: str | None) -> None:
-        self.api_key = api_key
-        self.token = token
-
-    def auth_flow(self, request: httpx.Request):  # type: ignore[override]
-        if self.api_key:
-            request.headers["X-API-Key"] = self.api_key
-        if self.token:
-            request.headers["Authorization"] = f"Bearer {self.token}"
-        yield request
-
-
 class R2rBackend(RagBackend):
     """Implementation of :class:`RagBackend` that talks to an R2R service."""
 
@@ -45,10 +29,13 @@ class R2rBackend(RagBackend):
         base = os.getenv("R2R_BASE_URL", "http://127.0.0.1:7272").rstrip("/")
         token = os.getenv("R2R_API_TOKEN")
         api_key = os.getenv("R2R_API_KEY")
-        self._client = httpx.Client(
-            base_url=base, timeout=30.0, auth=_Auth(api_key, token)
-        )
-        # fail fast - used by the /init job as well.  ``/v3/system/status`` is a
+        headers: dict[str, str] = {}
+        if api_key:
+            headers["X-API-Key"] = api_key
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        self._client = httpx.Client(base_url=base, timeout=30.0, headers=headers)
+        # Fail fast - used by the /init job as well. ``/v3/system/status`` is a
         # public endpoint that does not require special permissions and is the
         # recommended way to verify service availability.
         resp = self._client.get("/v3/system/status")
