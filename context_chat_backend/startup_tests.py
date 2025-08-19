@@ -5,6 +5,8 @@ from io import BytesIO
 
 import httpx
 
+from .ocs_utils import sign_request
+
 logger = logging.getLogger("ccb.startup_test")
 
 
@@ -22,8 +24,10 @@ async def _document_lifecycle(base_url: str, client: httpx.AsyncClient) -> None:
     }
 
     files = {"sources": (filename, BytesIO(content), "text/plain", headers)}
+    req_headers: dict[str, str] = {}
+    sign_request(req_headers)
     try:
-        resp = await client.put(f"{base_url}/loadSources", files=files)
+        resp = await client.put(f"{base_url}/loadSources", files=files, headers=req_headers)
     except Exception as e:  # pragma: no cover - network issues
         logger.error("PUT /loadSources failed", exc_info=e)
         return
@@ -38,7 +42,7 @@ async def _document_lifecycle(base_url: str, client: httpx.AsyncClient) -> None:
     logger.info("Loaded test document", extra={"source_id": source_id})
 
     query_payload = {"userId": user_id, "query": "hello", "useContext": True}
-    resp = await client.post(f"{base_url}/docSearch", json=query_payload)
+    resp = await client.post(f"{base_url}/docSearch", json=query_payload, headers=req_headers)
     if resp.status_code == 200 and resp.json():
         logger.info("docSearch returned results", extra={"hits": len(resp.json())})
     else:
@@ -47,7 +51,9 @@ async def _document_lifecycle(base_url: str, client: httpx.AsyncClient) -> None:
             extra={"status": resp.status_code, "body": resp.text},
         )
 
-    resp = await client.post(f"{base_url}/deleteSources", json={"sourceIds": [source_id]})
+    resp = await client.post(
+        f"{base_url}/deleteSources", json={"sourceIds": [source_id]}, headers=req_headers
+    )
     if resp.status_code == 200:
         logger.info("deleteSources succeeded")
     else:
@@ -55,7 +61,7 @@ async def _document_lifecycle(base_url: str, client: httpx.AsyncClient) -> None:
             "deleteSources failed", extra={"status": resp.status_code, "body": resp.text}
         )
 
-    resp = await client.post(f"{base_url}/docSearch", json=query_payload)
+    resp = await client.post(f"{base_url}/docSearch", json=query_payload, headers=req_headers)
     if resp.status_code == 200 and not resp.json():
         logger.info("Deletion verified: no results returned")
     else:
@@ -66,8 +72,10 @@ async def _document_lifecycle(base_url: str, client: httpx.AsyncClient) -> None:
 
 
 async def _check_route(client: httpx.AsyncClient, method: str, url: str) -> None:
+    headers: dict[str, str] = {}
+    sign_request(headers)
     try:
-        resp = await client.request(method, url)
+        resp = await client.request(method, url, headers=headers)
         logger.info(
             "Checked route",
             extra={"method": method, "url": url, "status": resp.status_code},
