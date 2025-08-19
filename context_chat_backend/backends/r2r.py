@@ -22,7 +22,6 @@ import httpx
 
 from .base import RagBackend
 
-
 class R2rBackend(RagBackend):
     """Implementation of :class:`RagBackend` that talks to an R2R service."""
 
