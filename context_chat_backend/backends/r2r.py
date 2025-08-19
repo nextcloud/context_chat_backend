@@ -38,7 +38,7 @@ class _Auth(httpx.Auth):
         yield request
 
 
-class R2RBackend(RagBackend):
+class R2rBackend(RagBackend):
     """Implementation of :class:`RagBackend` that talks to an R2R service."""
 
     def __init__(self) -> None:
@@ -188,3 +188,7 @@ class R2RBackend(RagBackend):
                 }
             )
         return out
+
+
+# Backwards compatibility for earlier imports
+R2RBackend = R2rBackend
