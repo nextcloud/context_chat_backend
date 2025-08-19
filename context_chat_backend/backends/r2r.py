@@ -45,11 +45,13 @@ class R2rBackend(RagBackend):
         for key, value in headers.items():
             curl_parts.extend(["-H", f"{key}: {value}"])
         curl_parts.append(f"{base}/v3/system/status")
+
         cmd = " ".join(shlex.quote(part) for part in curl_parts)
         logger.info("R2R healthcheck command: %s", cmd)
         # Logging is configured after backend initialization. Use ``print``
         # so the command is still visible in container logs during startup.
         print(f"R2R healthcheck command: {cmd}", flush=True)
+
 
         # Fail fast - used by the /init job as well. ``/v3/system/status`` is a
         # public endpoint that does not require special permissions and is the
@@ -65,9 +67,11 @@ class R2rBackend(RagBackend):
         for key, value in self._client.headers.items():
             curl_parts.extend(["-H", f"{key}: {value}"])
         curl_parts.append(f"{self._client.base_url}{url_path}")
+
         cmd = " ".join(shlex.quote(part) for part in curl_parts)
         logger.info("R2R request: %s", cmd)
         print(f"R2R request: {cmd}", flush=True)
+
 
         resp = self._client.request(method, url_path, **kwargs)
         resp.raise_for_status()
