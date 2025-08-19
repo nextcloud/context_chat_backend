@@ -14,13 +14,17 @@ Chat backend to manage collections, documents and to perform search queries.
 from __future__ import annotations
 
 import json
+import logging
 import os
+import shlex
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 import httpx
 
 from .base import RagBackend
+
+logger = logging.getLogger(__name__)
 
 class R2rBackend(RagBackend):
     """Implementation of :class:`RagBackend` that talks to an R2R service."""
@@ -35,6 +39,18 @@ class R2rBackend(RagBackend):
         if token:
             headers["Authorization"] = f"Bearer {token}"
         self._client = httpx.Client(base_url=base, timeout=30.0, headers=headers)
+
+        # Echo the curl command for lifecycle checks and easier debugging.
+        curl_parts = ["curl", "-i"]
+        for key, value in headers.items():
+            curl_parts.extend(["-H", f"{key}: {value}"])
+        curl_parts.append(f"{base}/v3/system/status")
+        cmd = " ".join(shlex.quote(part) for part in curl_parts)
+        logger.info("R2R healthcheck command: %s", cmd)
+        # Logging is configured after backend initialization. Use ``print``
+        # so the command is still visible in container logs during startup.
+        print(f"R2R healthcheck command: {cmd}", flush=True)
+
         # Fail fast - used by the /init job as well. ``/v3/system/status`` is a
         # public endpoint that does not require special permissions and is the
         # recommended way to verify service availability.
@@ -44,7 +60,16 @@ class R2rBackend(RagBackend):
     # ------------------------------------------------------------------
     # Utility helpers
     def _request(self, method: str, path: str, **kwargs) -> dict[str, Any]:
-        resp = self._client.request(method, f"/v3/{path.lstrip('/')}", **kwargs)
+        url_path = f"/v3/{path.lstrip('/')}"
+        curl_parts = ["curl", "-i", "-X", method.upper()]
+        for key, value in self._client.headers.items():
+            curl_parts.extend(["-H", f"{key}: {value}"])
+        curl_parts.append(f"{self._client.base_url}{url_path}")
+        cmd = " ".join(shlex.quote(part) for part in curl_parts)
+        logger.info("R2R request: %s", cmd)
+        print(f"R2R request: {cmd}", flush=True)
+
+        resp = self._client.request(method, url_path, **kwargs)
         resp.raise_for_status()
         return resp.json() if resp.content else {}
 
