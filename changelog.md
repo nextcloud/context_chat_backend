@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 
+## Unreleased
+
+### Fixed
+- tolerate updated R2R `retrieval/search` responses during startup checks
+
+
 ## 4.4.1 - 2025-07-31
 
 ### Fixed
