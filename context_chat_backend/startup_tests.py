@@ -62,6 +62,43 @@ async def _call(
     return resp
 
 
+async def _verify_deletion_with_retry(
+    client: httpx.AsyncClient,
+    base_url: str,
+    query_payload: dict,
+    headers: dict[str, str],
+    retries: int = 3,
+    initial_delay: float = 0.1,
+) -> bool:
+    """Ensure /docSearch yields no results after deletion.
+
+    Retries the search with exponential backoff before logging an error.
+    """
+
+    delay = initial_delay
+    resp: httpx.Response | None = None
+    for attempt in range(retries):
+        resp = await _call(
+            client,
+            "POST",
+            f"{base_url}/docSearch",
+            json=query_payload,
+            headers=headers,
+        )
+        if resp.status_code == 200 and not resp.json():
+            logger.info("Deletion verified: no results returned")
+            return True
+        if attempt < retries - 1:
+            await asyncio.sleep(delay)
+            delay *= 2
+    if resp is not None:
+        logger.error(
+            "Deletion verification failed",
+            extra={"status": resp.status_code, "body": resp.text},
+        )
+    return False
+
+
 async def _document_lifecycle(base_url: str, client: httpx.AsyncClient) -> None:
     """End-to-end test: upload -> list -> update -> search -> delete."""
     user_id = "startup-test-user"
@@ -129,16 +166,9 @@ async def _document_lifecycle(base_url: str, client: httpx.AsyncClient) -> None:
 
     # verify deletion
     await _call(client, "POST", f"{base_url}/countIndexedDocuments", headers=req_headers)
-    resp = await _call(
-        client, "POST", f"{base_url}/docSearch", json=query_payload, headers=req_headers
+    await _verify_deletion_with_retry(
+        client, base_url, query_payload, req_headers
     )
-    if resp.status_code == 200 and not resp.json():
-        logger.info("Deletion verified: no results returned")
-    else:
-        logger.error(
-            "Deletion verification failed",
-            extra={"status": resp.status_code, "body": resp.text},
-        )
 
 
 async def _check_route(client: httpx.AsyncClient, method: str, url: str) -> None:
