@@ -1,0 +1,172 @@
+R2R API Endpoints Summary
+Retrieval Endpoints
+POST /retrieval/search
+Performs semantic, hybrid vector, and knowledge graph search. Returns raw search results. Supports filters, pagination, and advanced configuration.
+POST /retrieval/rag
+Executes Retrieval-Augmented Generation combining retrieved context with LLM generation. Supports streaming responses, customizable search and generation settings, and optional web search integration.
+POST /retrieval/agent
+Engages a conversational retrieval-augmented generation agent. Supports multi-step reasoning, tool usage, extended thinking modes, conversation context handling, and streaming.
+POST /retrieval/completion
+Generates text completions from LLMs based on input messages. Supports streaming and model configuration.
+POST /retrieval/embedding
+Generates embeddings for provided text using the specified model.
+Documents Endpoints
+POST /documents
+Ingest documents from files, raw text, or chunks. Supports ingestion modes: fast, hi-res, and custom. Asynchronous processing with task tracking.
+GET /documents
+Lists documents accessible to the user with filtering and pagination.
+GET /documents/{id}
+Retrieves metadata and status for a specific document.
+GET /documents/{id}/download
+Downloads the original source file or text of a document.
+GET /documents/{id}/chunks
+Lists semantic chunks of a document.
+PATCH /documents/{id}/metadata
+Appends metadata fields to a document.
+PUT /documents/{id}/metadata
+Replaces metadata of a document.
+DELETE /documents/{id}
+Deletes a document and all associated chunks.
+DELETE /documents/by-filter
+Deletes documents matching provided filters.
+POST /documents/{id}/extract
+Initiates entity and relationship extraction for knowledge graph construction.
+POST /documents/{id}/deduplicate
+Starts entity deduplication process for the document.
+POST /documents/{id}/entities/export and /relationships/export
+Export entities or relationships to CSV (superuser).
+GET /documents/{id}/collections
+Lists collections that include the specified document (superuser only).
+Chunks Endpoints
+GET /chunks
+Lists chunks accessible to the user. Supports pagination and filtering.
+POST /chunks/search
+Performs semantic search across chunks with filtering.
+GET /chunks/{id}
+Retrieves a specific chunk’s content and metadata.
+POST /chunks/{id}
+Updates chunk content and/or metadata.
+DELETE /chunks/{id}
+Deletes a specific chunk.
+Graphs Endpoints
+GET /graphs
+Lists graphs accessible to the user.
+GET /graphs/{collection_id}
+Retrieves detailed information about a graph.
+POST /graphs/{collection_id}/pull
+Pulls extracted entities and relationships from documents into the graph.
+POST /graphs/{collection_id}/reset
+Resets the graph by deleting graph-specific data.
+GET/POST/DELETE /graphs/{collection_id}/entities
+Manage entities in a graph (list, create, update, delete).
+GET/POST/DELETE /graphs/{collection_id}/relationships
+Manage relationships similarly.
+POST /graphs/{collection_id}/communities/build
+Build entity communities for clustering in the graph.
+GET/POST/DELETE /graphs/{collection_id}/communities
+Manage communities in the graph.
+Export endpoints for entities, relationships, communities
+Provide CSV exports of graph data (superuser).
+Collections Endpoints
+POST /collections
+Create a new collection. User creating is added automatically.
+GET /collections
+List accessible collections with filtering and pagination.
+GET /collections/{id}
+Get details for a collection.
+POST /collections/{id}
+Update a collection’s name or description.
+DELETE /collections/{id}
+Delete a collection (does not delete documents).
+POST /collections/{id}/extract
+Extract entities and relationships from all unextracted documents in the collection.
+GET /collections/{id}/documents
+List documents in a collection.
+POST /collections/{id}/documents/{document_id}
+Add a document to a collection.
+DELETE /collections/{id}/documents/{document_id}
+Remove a document from a collection.
+GET /collections/{id}/users
+List users in a collection.
+POST /collections/{id}/users/{user_id}
+Add a user to a collection.
+DELETE /collections/{id}/users/{user_id}
+Remove a user from a collection.
+GET /collections/name/{collection_name}
+Retrieve a collection by name (optionally by owner).
+Export collections to CSV
+Export collection metadata.
+Users Endpoints
+GET /users
+List users (superusers only).
+GET /users/{user_id}
+Retrieve user details.
+POST /users
+Register a new user.
+POST /users/login
+Authenticate and obtain tokens.
+POST /users/logout
+Log out current user.
+POST /users/verify-email
+Verify user's email with code.
+POST /users/send-verification-email
+Send email verification code.
+POST /users/change-password
+Change authenticated user’s password.
+POST /users/request-password-reset
+Request password reset email.
+POST /users/reset-password
+Reset password with token.
+POST /users/refresh-token
+Refresh access token using refresh token.
+POST /users/{id}
+Update user information.
+DELETE /users/{id}
+Delete user account.
+GET /users/{id}/collections
+List collections the user belongs to.
+POST /users/{id}/collections/{collection_id}
+Add user to collection.
+DELETE /users/{id}/collections/{collection_id}
+Remove user from collection.
+GET /users/{id}/api-keys
+List API keys for a user.
+POST /users/{id}/api-keys
+Create a new API key for a user.
+DELETE /users/{id}/api-keys/{key_id}
+Delete a user API key.
+GET /users/{id}/limits
+Fetch system default limits, user overrides and effective limits.
+OAuth endpoints
+For Google and GitHub authorization and callback.
+Prompts Endpoints
+GET /prompts
+List all prompt templates (superuser only).
+POST /prompts
+Create a new prompt.
+POST /prompts/{name}
+Retrieve a specific prompt with optional inputs and overrides.
+PUT /prompts/{name}
+Update an existing prompt.
+DELETE /prompts/{name}
+Delete a prompt.
+Indices Endpoints
+POST /indices
+Create a vector similarity index (HNSW or IVF-Flat) for efficient vector search.
+GET /indices
+List vector indices with filtering and pagination.
+GET /indices/{table_name}/{index_name}
+Retrieve detailed index information.
+PUT /indices/{id}
+Update index configuration.
+DELETE /indices/{table_name}/{index_name}
+Delete a vector index.
+System Endpoints
+GET /system/health
+Check system health.
+GET /system/settings
+Retrieve configuration settings.
+GET /system/status
+Get server status.
+GET /logs/viewer
+View system logs.
