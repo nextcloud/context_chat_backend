@@ -27,7 +27,7 @@ async def test_verify_deletion_retries_until_empty(monkeypatch, caplog) -> None:
         nonlocal calls
         calls += 1
         if calls < 2:
-            return DummyResponse([{"hit": 1}])
+            return DummyResponse([{"title": "gone"}])
         return DummyResponse([])
 
     async def no_sleep(_: float) -> None:
@@ -39,7 +39,11 @@ async def test_verify_deletion_retries_until_empty(monkeypatch, caplog) -> None:
     async with httpx.AsyncClient() as client:
         with caplog.at_level("INFO"):
             result = await startup_tests._verify_deletion_with_retry(
-                client, "http://example.com", {}, {}
+                client,
+                "http://example.com",
+                {},
+                {},
+                deleted_title="gone",
             )
     assert result is True
     assert calls == 2
@@ -53,7 +57,7 @@ async def test_verify_deletion_logs_error_after_retries(monkeypatch, caplog) -> 
     async def fake_call(client, method, url, **kwargs):
         nonlocal calls
         calls += 1
-        return DummyResponse([{"hit": 1}])
+        return DummyResponse([{"title": "still-there"}])
 
     async def no_sleep(_: float) -> None:
         return None
@@ -64,7 +68,13 @@ async def test_verify_deletion_logs_error_after_retries(monkeypatch, caplog) -> 
     async with httpx.AsyncClient() as client:
         with caplog.at_level("ERROR"):
             result = await startup_tests._verify_deletion_with_retry(
-                client, "http://example.com", {}, {}, retries=3, initial_delay=0
+                client,
+                "http://example.com",
+                {},
+                {},
+                deleted_title="still-there",
+                retries=3,
+                initial_delay=0,
             )
     assert result is False
     assert calls == 3
