@@ -64,16 +64,41 @@ class R2rBackend(RagBackend):
     def _request(self, method: str, path: str, **kwargs) -> dict[str, Any]:
         url_path = f"/v3/{path.lstrip('/')}"
         curl_parts = ["curl", "-i", "-X", method.upper()]
-        for key, value in self._client.headers.items():
-            curl_parts.extend(["-H", f"{key}: {value}"])
+        # Merge client headers with any call-specific overrides.
+        headers = dict(self._client.headers)
+        headers.update(kwargs.get("headers") or {})
+        for key, value in headers.items():
+            lower = key.lower()
+            masked = value
+            if lower == "authorization":
+                scheme, _, _ = value.partition(" ")
+                masked = f"{scheme} ***" if scheme else "***"
+            elif lower == "x-api-key":
+                masked = "***"
+            curl_parts.extend(["-H", f"{key}: {masked}"])
+
+        payload: str | None = None
+        if "json" in kwargs and kwargs["json"] is not None:
+            payload = json.dumps(kwargs["json"], sort_keys=True)
+        elif "data" in kwargs and kwargs["data"] is not None:
+            data = kwargs["data"]
+            payload = (
+                json.dumps(data, sort_keys=True)
+                if isinstance(data, dict | list)
+                else str(data)
+            )
+        if payload is not None:
+            curl_parts.extend(["-d", payload])
+            logger.debug("R2R request payload: %s", payload)
+
         curl_parts.append(f"{self._client.base_url}{url_path}")
 
         cmd = " ".join(shlex.quote(part) for part in curl_parts)
         logger.info("R2R request: %s", cmd)
         print(f"R2R request: {cmd}", flush=True)
 
-
         resp = self._client.request(method, url_path, **kwargs)
+        logger.debug("R2R response body: %s", resp.text)
         resp.raise_for_status()
         return resp.json() if resp.content else {}
 
