@@ -67,12 +67,19 @@ async def _verify_deletion_with_retry(
     base_url: str,
     query_payload: dict,
     headers: dict[str, str],
+    deleted_source_id: str | None = None,
+    deleted_title: str | None = None,
     retries: int = 3,
     initial_delay: float = 0.1,
 ) -> bool:
-    """Ensure /docSearch yields no results after deletion.
+    """Ensure a document no longer appears in ``/docSearch`` results.
 
-    Retries the search with exponential backoff before logging an error.
+    The R2R backend may contain pre-existing data, so ``/docSearch`` might
+    still return hits even after we delete the startup test document.
+    Instead of requiring an empty result set, verify that the deleted
+    document identified by ``deleted_source_id`` or ``deleted_title`` is not
+    present.  Retries the search with exponential backoff before logging an
+    error.
     """
 
     delay = initial_delay
@@ -85,9 +92,24 @@ async def _verify_deletion_with_retry(
             json=query_payload,
             headers=headers,
         )
-        if resp.status_code == 200 and not resp.json():
-            logger.info("Deletion verified: no results returned")
-            return True
+        if resp.status_code == 200:
+            results = resp.json()
+            if not results:
+                logger.info("Deletion verified: no results returned")
+                return True
+            missing = True
+            for r in results:
+                sid = r.get("source_id")
+                title = r.get("title")
+                if deleted_source_id and sid == deleted_source_id:
+                    missing = False
+                    break
+                if deleted_title and title == deleted_title:
+                    missing = False
+                    break
+            if missing:
+                logger.info("Deletion verified: document absent in results")
+                return True
         if attempt < retries - 1:
             await asyncio.sleep(delay)
             delay *= 2
@@ -167,7 +189,12 @@ async def _document_lifecycle(base_url: str, client: httpx.AsyncClient) -> None:
     # verify deletion
     await _call(client, "POST", f"{base_url}/countIndexedDocuments", headers=req_headers)
     await _verify_deletion_with_retry(
-        client, base_url, query_payload, req_headers
+        client,
+        base_url,
+        query_payload,
+        req_headers,
+        deleted_source_id=source_id,
+        deleted_title=filename,
     )
 
 
