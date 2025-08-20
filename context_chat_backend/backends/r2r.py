@@ -195,14 +195,31 @@ class R2rBackend(RagBackend):
         if scope_type and scope_list:
             payload["scope"] = {"type": scope_type, "ids": list(scope_list)}
         resp = self._request("POST", "retrieval/search", json=payload)
+        results = resp.get("results", {})
+
+        # Newer R2R versions wrap chunk hits inside
+        # ``results.chunk_search_results`` while older builds
+        # returned a bare list.  Support both shapes and ignore
+        # any unexpected primitives to keep the startup check
+        # resilient across versions.
+        if isinstance(results, list):
+            hits: Sequence[Any] = results
+        elif isinstance(results, dict):
+            hits = results.get("chunk_search_results") or []
+        else:
+            hits = []
+
         out = []
-        for hit in resp.get("results", []):
-            out.append(
-                {
-                    "page_content": hit.get("text") or hit.get("content", ""),
-                    "metadata": hit.get("metadata", {}),
-                }
-            )
+        for hit in hits:
+            if isinstance(hit, str):
+                out.append({"page_content": hit, "metadata": {}})
+            else:
+                out.append(
+                    {
+                        "page_content": hit.get("text") or hit.get("content", ""),
+                        "metadata": hit.get("metadata", {}),
+                    }
+                )
         return out
 
 
