@@ -10,8 +10,18 @@ from .ocs_utils import sign_request
 logger = logging.getLogger("ccb.startup_test")
 
 
+async def _call(
+    client: httpx.AsyncClient, method: str, url: str, **kwargs
+) -> httpx.Response:
+    """Send request and log raw command/response."""
+    logger.info("CMD %s %s %s", method, url, kwargs)
+    resp = await client.request(method, url, **kwargs)
+    logger.info("RESULT %s %s", resp.status_code, resp.text)
+    return resp
+
+
 async def _document_lifecycle(base_url: str, client: httpx.AsyncClient) -> None:
-    """End-to-end test: upload -> search -> delete -> verify deletion."""
+    """End-to-end test: upload -> list -> update -> search -> delete."""
     user_id = "startup-test-user"
     filename = "startup-test.txt"
     content = b"hello world"
@@ -26,13 +36,11 @@ async def _document_lifecycle(base_url: str, client: httpx.AsyncClient) -> None:
     files = {"sources": (filename, BytesIO(content), "text/plain", headers)}
     req_headers: dict[str, str] = {}
     sign_request(req_headers)
-    try:
-        resp = await client.put(f"{base_url}/loadSources", files=files, headers=req_headers)
-    except Exception as e:  # pragma: no cover - network issues
-        logger.error("PUT /loadSources failed", exc_info=e)
-        return
+
+    resp = await _call(
+        client, "PUT", f"{base_url}/loadSources", files=files, headers=req_headers
+    )
     if resp.status_code != 200:
-        logger.error("PUT /loadSources failed", extra={"status": resp.status_code, "body": resp.text})
         return
     loaded = resp.json().get("loaded_sources", [])
     if not loaded:
@@ -41,27 +49,41 @@ async def _document_lifecycle(base_url: str, client: httpx.AsyncClient) -> None:
     source_id = loaded[0]
     logger.info("Loaded test document", extra={"source_id": source_id})
 
+    # list
+    await _call(client, "POST", f"{base_url}/countIndexedDocuments", headers=req_headers)
+
+    # update
+    update_payload = {
+        "op": "add",
+        "userIds": ["startup-test-user2"],
+        "sourceId": source_id,
+    }
+    await _call(
+        client, "POST", f"{base_url}/updateAccess", json=update_payload, headers=req_headers
+    )
+
+    # search
     query_payload = {"userId": user_id, "query": "hello", "useContext": True}
-    resp = await client.post(f"{base_url}/docSearch", json=query_payload, headers=req_headers)
+    resp = await _call(
+        client, "POST", f"{base_url}/docSearch", json=query_payload, headers=req_headers
+    )
     if resp.status_code == 200 and resp.json():
         logger.info("docSearch returned results", extra={"hits": len(resp.json())})
-    else:
-        logger.error(
-            "docSearch failed to return results",
-            extra={"status": resp.status_code, "body": resp.text},
-        )
 
-    resp = await client.post(
-        f"{base_url}/deleteSources", json={"sourceIds": [source_id]}, headers=req_headers
+    # delete
+    await _call(
+        client,
+        "POST",
+        f"{base_url}/deleteSources",
+        json={"sourceIds": [source_id]},
+        headers=req_headers,
     )
-    if resp.status_code == 200:
-        logger.info("deleteSources succeeded")
-    else:
-        logger.error(
-            "deleteSources failed", extra={"status": resp.status_code, "body": resp.text}
-        )
 
-    resp = await client.post(f"{base_url}/docSearch", json=query_payload, headers=req_headers)
+    # verify deletion
+    await _call(client, "POST", f"{base_url}/countIndexedDocuments", headers=req_headers)
+    resp = await _call(
+        client, "POST", f"{base_url}/docSearch", json=query_payload, headers=req_headers
+    )
     if resp.status_code == 200 and not resp.json():
         logger.info("Deletion verified: no results returned")
     else:
@@ -75,11 +97,7 @@ async def _check_route(client: httpx.AsyncClient, method: str, url: str) -> None
     headers: dict[str, str] = {}
     sign_request(headers)
     try:
-        resp = await client.request(method, url, headers=headers)
-        logger.info(
-            "Checked route",
-            extra={"method": method, "url": url, "status": resp.status_code},
-        )
+        await _call(client, method, url, headers=headers)
     except Exception as e:  # pragma: no cover - network issues
         logger.error(
             "Route check failed",
