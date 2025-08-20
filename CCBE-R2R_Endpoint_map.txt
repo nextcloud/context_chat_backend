@@ -1,0 +1,18 @@
+CCBE to R2R Endpoint Mapping
+----------------------------
+CCBE Endpoint -> R2R Endpoint(s)
+GET / -> GET /system/health
+PUT /enabled -> GET /system/health
+GET /enabled -> GET /system/health
+POST /init -> GET /system/status
+POST /updateAccessDeclarative -> POST /collections/{id}/users/{user_id} or DELETE /collections/{id}/users/{user_id}
+POST /updateAccess -> POST /collections/{id}/users/{user_id} or DELETE /collections/{id}/users/{user_id}
+POST /updateAccessProvider -> POST /collections/{id}/documents/{document_id} or DELETE /collections/{id}/documents/{document_id}
+POST /deleteSources -> DELETE /documents/{id}
+POST /deleteProvider -> DELETE /collections/{id}/documents/{document_id}
+POST /deleteUser -> DELETE /users/{id}
+POST /countIndexedDocuments -> GET /documents
+PUT /loadSources -> POST /documents
+POST /query -> POST /retrieval/rag
+POST /docSearch -> POST /retrieval/search
+GET /downloadLogs -> GET /logs/viewer
