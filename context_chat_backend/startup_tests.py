@@ -1,7 +1,18 @@
+"""Startup lifecycle tests.
+
+This module performs a small end-to-end document lifecycle against the
+configured R2R backend when the app starts.  It now uploads a real
+document from the repository and logs every HTTP request as a fully
+reproducible ``curl`` command with headers and payload, making it easier
+to diagnose issues from container logs.
+"""
+
 import asyncio
+import json
 import logging
 from collections.abc import Iterable
 from io import BytesIO
+from pathlib import Path
 
 import httpx
 
@@ -13,8 +24,39 @@ logger = logging.getLogger("ccb.startup_test")
 async def _call(
     client: httpx.AsyncClient, method: str, url: str, **kwargs
 ) -> httpx.Response:
-    """Send request and log raw command/response."""
-    logger.info("CMD %s %s %s", method, url, kwargs)
+    """Send request and log a curl-equivalent command and response."""
+
+    headers: dict[str, str] = kwargs.get("headers", {})
+    parts = ["curl -i", f"-X {method.upper()}"]
+    for key, value in headers.items():
+        parts.append(f"-H '{key}: {value}'")
+
+    body: str | None = None
+    if kwargs.get("json") is not None:
+        body = json.dumps(kwargs["json"], separators=(",", ":"))
+        parts.append("--data-raw @-")
+    elif kwargs.get("data") is not None:
+        raw = kwargs["data"]
+        body = raw if isinstance(raw, str) else raw.decode()
+        parts.append("--data-raw @-")
+    elif kwargs.get("files") is not None:
+        # log file uploads and their content
+        file_logs = []
+        for field, (fname, fileobj, ctype, file_headers) in kwargs["files"].items():
+            parts.append(f"-F '{field}=@{fname};type={ctype}'")
+            for hk, hv in file_headers.items():
+                parts.append(f"-H '{hk}: {hv}'")
+            if hasattr(fileobj, "getvalue"):
+                file_content = fileobj.getvalue().decode("utf-8", "ignore")
+                file_logs.append(f"---{field} content---\n{file_content}\n---end {field}---")
+        if file_logs:
+            body = "\n".join(file_logs)
+
+    curl_cmd = " ".join(parts) + f" {url}"
+    logger.info("CMD %s", curl_cmd)
+    if body:
+        logger.info("BODY\n%s", body)
+
     resp = await client.request(method, url, **kwargs)
     logger.info("RESULT %s %s", resp.status_code, resp.text)
     return resp
@@ -23,8 +65,14 @@ async def _call(
 async def _document_lifecycle(base_url: str, client: httpx.AsyncClient) -> None:
     """End-to-end test: upload -> list -> update -> search -> delete."""
     user_id = "startup-test-user"
-    filename = "startup-test.txt"
-    content = b"hello world"
+    doc_path = Path(__file__).resolve().parent.parent / "R2RAPIEndpointsSummary.txt"
+    try:
+        content = doc_path.read_bytes()
+        filename = doc_path.name
+    except Exception:  # pragma: no cover - file missing
+        filename = "startup-test.txt"
+        content = b"hello world"
+
     headers = {
         "userIds": user_id,
         "title": filename,
@@ -63,7 +111,7 @@ async def _document_lifecycle(base_url: str, client: httpx.AsyncClient) -> None:
     )
 
     # search
-    query_payload = {"userId": user_id, "query": "hello", "useContext": True}
+    query_payload = {"userId": user_id, "query": "Retrieval", "useContext": True}
     resp = await _call(
         client, "POST", f"{base_url}/docSearch", json=query_payload, headers=req_headers
     )
