@@ -333,6 +333,7 @@ def _(
             return JSONResponse("Operation not supported", 501)
         return JSONResponse("Access updated")
 
+
     if not is_valid_source_id(sourceId):
         return JSONResponse("Invalid source id", 400)
 
@@ -361,7 +362,7 @@ def _(
     if len(userIds) == 0:
         return JSONResponse("Empty list of user ids", 400)
 
-    backend = getattr(request.app.state, "rag_backend", None)
+   backend = getattr(request.app.state, "rag_backend", None)
     if backend:
         # Delegate to the external RAG backend when available
         try:
@@ -369,6 +370,7 @@ def _(
         except NotImplementedError:
             return JSONResponse("Operation not supported", 501)
         return JSONResponse("Access updated")
+
 
     if not is_valid_source_id(sourceId):
         return JSONResponse("Invalid source id", 400)
