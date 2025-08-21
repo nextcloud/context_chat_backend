@@ -10,6 +10,7 @@ from .vectordb.types import DbException, SafeDbException, UpdateAccessOp
 # isort: on
 # ruff: noqa: I001
 
+import json
 import logging
 import multiprocessing as mp
 import os
@@ -43,7 +44,14 @@ from .dyn_loader import LLMModelLoader, VectorDBLoader
 from .models.types import LlmException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
-from .utils import JSONResponse, exec_in_proc, is_valid_provider_id, is_valid_source_id, value_of
+from .utils import (
+    JSONResponse,
+    exec_in_proc,
+    is_valid_provider_id,
+    is_valid_source_id,
+    sanitize_source_ids,
+    value_of,
+)
 from .vectordb.service import (
     count_documents_by_provider,
     decl_update_access,
@@ -97,7 +105,22 @@ def enabled_handler(enabled: bool, _: NextcloudApp | AsyncNextcloudApp) -> str:
 
 
 def _get_user_ids(headers: Mapping[str, str]) -> list[str]:
-    raw = headers.get("userIds") or headers.get("userids") or ""
+    raw = (
+        headers.get("userIds")
+        or headers.get("userids")
+        or headers.get("userid")
+        or headers.get("user-id")
+        or headers.get("user_ids")
+        or ""
+    )
+    if raw.startswith("["):
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return []
+        if isinstance(data, list):
+            return [str(u).strip() for u in data if str(u).strip()]
+        return []
     return [u.strip() for u in raw.split(",") if u.strip()]
 
 
@@ -425,15 +448,15 @@ def _(request: Request, sourceIds: Annotated[list[str], Body(embed=True)]):
         },
     )
 
-    sourceIds = [source.strip() for source in sourceIds if source.strip() != ""]
+    sourceIds = sanitize_source_ids(sourceIds)
 
     if len(sourceIds) == 0:
-        return JSONResponse("No sources provided", 400)
+        return JSONResponse("No valid sources provided", 400)
 
     backend = getattr(request.app.state, "rag_backend", None)
     if backend:
         for sid in sourceIds:
-            backend.delete_document(sid)
+            backend.delete_document_by_filename(sid)
         return JSONResponse("All valid sources deleted")
 
     res = exec_in_proc(target=delete_by_source, args=(vectordb_loader, sourceIds))
@@ -504,17 +527,28 @@ def _(request: Request, sources: list[UploadFile]):
             modified = source.headers.get("modified")
             provider = source.headers.get("provider")
             size = int(source.headers.get("content-length", 0))
+            raw_filename = source.filename or ""
+            sanitized = sanitize_source_ids([raw_filename])
+            if not sanitized:
+                logger.error(
+                    "Invalid source filename",
+                    extra={"source_id": source.filename, "title": title},
+                )
+                return JSONResponse(
+                    f"Invalid source filename for: {source.filename}", 400
+                )
+            filename = sanitized[0]
 
             if not (user_ids and title and modified and modified.isdigit() and provider):
                 logger.error(
                     "Invalid/missing headers received",
                     extra={
-                        "source_id": source.filename,
+                        "source_id": filename,
                         "title": title,
                         "headers": source.headers,
                     },
                 )
-                return JSONResponse(f"Invaild/missing headers for: {source.filename}", 400)
+                return JSONResponse(f"Invaild/missing headers for: {filename}", 400)
 
             mapping = backend.ensure_collections(user_ids)
             collection_ids = list(mapping.values())
@@ -528,7 +562,7 @@ def _(request: Request, sources: list[UploadFile]):
                 "provider": provider,
                 "modified": modified,
                 "content-length": size,
-                "filename": source.filename,
+                "filename": filename,
             }
             doc_id = backend.upsert_document(tmp_path, metadata, collection_ids)
             _safe_remove(tmp_path)
