@@ -33,6 +33,9 @@ class R2rBackend(RagBackend):
         base = os.getenv("R2R_BASE_URL", "http://127.0.0.1:7272").rstrip("/")
         token = os.getenv("R2R_API_TOKEN")
         api_key = os.getenv("R2R_API_KEY")
+        self._base_url = base
+        self._has_token = bool(token)
+        self._has_api_key = bool(api_key)
         headers: dict[str, str] = {}
         if api_key:
             headers["X-API-Key"] = api_key
@@ -246,6 +249,15 @@ class R2rBackend(RagBackend):
                     }
                 )
         return out
+
+    def config(self) -> dict[str, Any]:
+        return {
+            "base_url": self._base_url,
+            "auth": {
+                "api_key": self._has_api_key,
+                "token": self._has_token,
+            },
+        }
 
 
 # Backwards compatibility for earlier imports

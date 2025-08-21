@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+import json
 import logging
 from importlib import import_module
 from os import getenv
@@ -68,8 +69,12 @@ if __name__ == "__main__":
     setup_logging(logging_config)
     app_config: TConfig = app.extra["CONFIG"]
     _setup_log_levels(app_config.debug)
-
-    print("App config:\n" + app_config.model_dump_json(indent=2), flush=True)
+    backend = app.state.rag_backend
+    rag_backend_kind = (getenv("RAG_BACKEND") or "builtin").lower()
+    backend_config = backend.config() if backend else {}
+    config_out = app_config.model_dump()
+    config_out["rag_backend"] = [rag_backend_kind, backend_config]
+    print("App config:\n" + json.dumps(config_out, indent=2), flush=True)
 
     uv_log_config = uvicorn.config.LOGGING_CONFIG  # pyright: ignore[reportAttributeAccessIssue]
     uv_log_config["formatters"]["json"] = logging_config["formatters"]["json"]
