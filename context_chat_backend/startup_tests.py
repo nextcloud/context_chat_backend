@@ -132,15 +132,16 @@ async def _document_lifecycle(base_url: str, client: httpx.AsyncClient) -> None:
         filename = "startup-test.txt"
         content = b"hello world"
 
+    source_id = "startup-test__default:1"
     headers = {
         "userIds": user_id,
         "title": filename,
         "type": "text/plain",
         "modified": "1",
-        "provider": "startup-test",
+        "provider": source_id.split(":")[0],
     }
 
-    files = {"sources": (filename, BytesIO(content), "text/plain", headers)}
+    files = {"sources": (source_id, BytesIO(content), "text/plain", headers)}
     req_headers: dict[str, str] = {}
     sign_request(req_headers)
 
