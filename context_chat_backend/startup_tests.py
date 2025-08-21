@@ -161,7 +161,7 @@ async def _document_lifecycle(base_url: str, client: httpx.AsyncClient) -> None:
 
     # update
     update_payload = {
-        "op": "add",
+        "op": "allow",
         "userIds": ["startup-test-user2"],
         "sourceId": source_id,
     }

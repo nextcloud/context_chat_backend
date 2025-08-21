@@ -43,3 +43,7 @@ class RagBackend:
     ) -> list[dict]:
         """Return ranked chunks with at least: text/page_content, metadata dict."""
         raise NotImplementedError
+
+    def config(self) -> dict[str, Any]:
+        """Return a serialisable snapshot of backend configuration."""
+        return {}
