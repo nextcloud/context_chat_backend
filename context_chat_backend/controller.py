@@ -43,7 +43,14 @@ from .dyn_loader import LLMModelLoader, VectorDBLoader
 from .models.types import LlmException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
-from .utils import JSONResponse, exec_in_proc, is_valid_provider_id, is_valid_source_id, value_of
+from .utils import (
+    JSONResponse,
+    exec_in_proc,
+    is_valid_provider_id,
+    is_valid_source_id,
+    sanitize_source_ids,
+    value_of,
+)
 from .vectordb.service import (
     count_documents_by_provider,
     decl_update_access,
@@ -425,10 +432,10 @@ def _(request: Request, sourceIds: Annotated[list[str], Body(embed=True)]):
         },
     )
 
-    sourceIds = [source.strip() for source in sourceIds if source.strip() != ""]
+    sourceIds = sanitize_source_ids(sourceIds)
 
     if len(sourceIds) == 0:
-        return JSONResponse("No sources provided", 400)
+        return JSONResponse("No valid sources provided", 400)
 
     backend = getattr(request.app.state, "rag_backend", None)
     if backend:
