@@ -197,13 +197,19 @@ class R2rBackend(RagBackend):
                     metadata.get("filename") or os.path.basename(file_path),
                     fh,
                     mime or "application/octet-stream",
-                )
+                ),
+                "metadata": (
+                    None,
+                    json.dumps(metadata),
+                    "application/json",
+                ),
+                "collection_ids": (
+                    None,
+                    json.dumps(list(collection_ids)),
+                    "application/json",
+                ),
             }
-            data = {
-                "metadata": json.dumps(metadata),
-                "collection_ids": json.dumps(list(collection_ids)),
-                "ingestion_mode": "fast",
-            }
+            data = {"ingestion_mode": "fast"}
             created = self._request("POST", "documents", data=data, files=files)
         return created.get("results", {}).get("document_id", "")
 
