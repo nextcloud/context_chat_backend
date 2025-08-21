@@ -1,7 +1,7 @@
 # ruff: noqa: I001
 from __future__ import annotations
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 
 class RagBackend:
@@ -32,6 +32,24 @@ class RagBackend:
     def delete_document(self, document_id: str) -> None:
         raise NotImplementedError
 
+    # --- Access control
+    def update_access(
+        self,
+        op: UpdateAccessOp,
+        user_ids: Sequence[str],
+        document_id: str,
+    ) -> None:
+        """Allow or deny ``user_ids`` access to ``document_id``."""
+        raise NotImplementedError
+
+    def decl_update_access(
+        self,
+        user_ids: Sequence[str],
+        document_id: str,
+    ) -> None:
+        """Set exact ``user_ids`` allowed to access ``document_id``."""
+        raise NotImplementedError
+
     # --- Retrieval
     def search(
         self,
@@ -47,3 +65,7 @@ class RagBackend:
     def config(self) -> dict[str, Any]:
         """Return a serialisable snapshot of backend configuration."""
         return {}
+
+
+if TYPE_CHECKING:
+    from context_chat_backend.vectordb.types import UpdateAccessOp

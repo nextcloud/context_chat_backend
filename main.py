@@ -73,6 +73,10 @@ if __name__ == "__main__":
     rag_backend_kind = (getenv("RAG_BACKEND") or "builtin").lower()
     backend_config = backend.config() if backend else {}
     config_out = app_config.model_dump()
+    if backend:
+        # Omit built-in RAG settings when an external backend is used
+        for key in ("vectordb", "embedding", "llm"):
+            config_out.pop(key, None)
     config_out["rag_backend"] = [rag_backend_kind, backend_config]
     print("App config:\n" + json.dumps(config_out, indent=2), flush=True)
 

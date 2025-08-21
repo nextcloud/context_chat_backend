@@ -324,11 +324,17 @@ def _(
     if len(userIds) == 0:
         return JSONResponse("Empty list of user ids", 400)
 
+    backend = getattr(request.app.state, "rag_backend", None)
+    if backend:
+        # Delegate to the external RAG backend when available
+        try:
+            backend.decl_update_access(userIds, sourceId)
+        except NotImplementedError:
+            return JSONResponse("Operation not supported", 501)
+        return JSONResponse("Access updated")
+
     if not is_valid_source_id(sourceId):
         return JSONResponse("Invalid source id", 400)
-
-    if getattr(request.app.state, "rag_backend", None):
-        return JSONResponse("Operation not supported", 501)
 
     exec_in_proc(target=decl_update_access, args=(vectordb_loader, userIds, sourceId))
 
@@ -343,6 +349,8 @@ def _(
     userIds: Annotated[list[str], Body()],
     sourceId: Annotated[str, Body()],
 ):
+    """Allow or deny users access to a document."""
+
     logger.debug(
         "Update access request",
         extra={
@@ -352,16 +360,25 @@ def _(
         },
     )
 
-    if len(userIds) == 0:
+    if not userIds:
         return JSONResponse("Empty list of user ids", 400)
+
+    backend = getattr(request.app.state, "rag_backend", None)
+    if backend is not None:
+        # Delegate to the external RAG backend when available
+        try:
+            backend.update_access(op, userIds, sourceId)
+        except NotImplementedError:
+            return JSONResponse("Operation not supported", 501)
+        return JSONResponse("Access updated")
 
     if not is_valid_source_id(sourceId):
         return JSONResponse("Invalid source id", 400)
 
-    if getattr(request.app.state, "rag_backend", None):
-        return JSONResponse("Operation not supported", 501)
-
-    exec_in_proc(target=update_access, args=(vectordb_loader, op, userIds, sourceId))
+    exec_in_proc(
+        target=update_access,
+        args=(vectordb_loader, op, userIds, sourceId),
+    )
 
     return JSONResponse("Access updated")
 
@@ -386,11 +403,11 @@ def _(
     if len(userIds) == 0:
         return JSONResponse("Empty list of user ids", 400)
 
-    if not is_valid_provider_id(providerId):
-        return JSONResponse("Invalid provider id", 400)
-
     if getattr(request.app.state, "rag_backend", None):
         return JSONResponse("Operation not supported", 501)
+
+    if not is_valid_provider_id(providerId):
+        return JSONResponse("Invalid provider id", 400)
 
     exec_in_proc(target=update_access, args=(vectordb_loader, op, userIds, providerId))
 

@@ -22,6 +22,7 @@ from typing import Any
 
 import httpx
 
+from ..vectordb.types import UpdateAccessOp
 from .base import RagBackend
 
 logger = logging.getLogger(__name__)
@@ -204,6 +205,43 @@ class R2rBackend(RagBackend):
 
     def delete_document(self, document_id: str) -> None:
         self._request("DELETE", f"documents/{document_id}")
+
+    # ------------------------------------------------------------------
+    # Access control helpers
+    def update_access(
+        self,
+        op: UpdateAccessOp,
+        user_ids: Sequence[str],
+        document_id: str,
+    ) -> None:
+        mapping = self.ensure_collections(user_ids)
+        for cid in mapping.values():
+            try:
+                if op is UpdateAccessOp.allow:
+                    self._request("POST", f"collections/{cid}/documents/{document_id}")
+                else:
+                    self._request(
+                        "DELETE", f"collections/{cid}/documents/{document_id}"
+                    )
+            except httpx.HTTPStatusError as exc:  # ignore idempotent errors
+                if exc.response.status_code not in {404, 409}:
+                    raise
+
+    def decl_update_access(
+        self, user_ids: Sequence[str], document_id: str
+    ) -> None:
+        mapping = self.ensure_collections(user_ids)
+        existing = self._request(
+            "GET", f"documents/{document_id}/collections"
+        ).get("results", [])
+        current = {c.get("name", ""): c.get("id", "") for c in existing}
+        target = set(mapping.keys())
+        for name, cid in mapping.items():
+            if name not in current:
+                self._request("POST", f"collections/{cid}/documents/{document_id}")
+        for name, cid in current.items():
+            if name not in target:
+                self._request("DELETE", f"collections/{cid}/documents/{document_id}")
 
     # ------------------------------------------------------------------
     # Retrieval (minimal shape)
