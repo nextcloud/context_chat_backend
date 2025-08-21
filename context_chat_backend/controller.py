@@ -448,16 +448,16 @@ def _(request: Request, sourceIds: Annotated[list[str], Body(embed=True)]):
         },
     )
 
+    backend = getattr(request.app.state, "rag_backend", None)
+    if backend:
+        for sid in sourceIds:
+            backend.delete_document(sid)
+        return JSONResponse("All valid sources deleted")
+
     sourceIds = sanitize_source_ids(sourceIds)
 
     if len(sourceIds) == 0:
         return JSONResponse("No valid sources provided", 400)
-
-    backend = getattr(request.app.state, "rag_backend", None)
-    if backend:
-        for sid in sourceIds:
-            backend.delete_document_by_filename(sid)
-        return JSONResponse("All valid sources deleted")
 
     res = exec_in_proc(target=delete_by_source, args=(vectordb_loader, sourceIds))
     if res is False:
@@ -563,6 +563,7 @@ def _(request: Request, sources: list[UploadFile]):
                 "modified": modified,
                 "content-length": size,
                 "filename": filename,
+                "source": filename,
             }
             doc_id = backend.upsert_document(tmp_path, metadata, collection_ids)
             _safe_remove(tmp_path)

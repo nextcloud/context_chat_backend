@@ -197,7 +197,7 @@ class R2rBackend(RagBackend):
                     metadata.get("filename") or os.path.basename(file_path),
                     fh,
                     mime or "application/octet-stream",
-                )
+                ),
             }
             data = {
                 "metadata": json.dumps(metadata),
