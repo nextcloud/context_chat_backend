@@ -365,6 +365,7 @@ def _(
 
     backend = getattr(request.app.state, "rag_backend", None)
     if backend is not None:
+
         # Delegate to the external RAG backend when available
         try:
             backend.update_access(op, userIds, sourceId)
