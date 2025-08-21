@@ -204,6 +204,7 @@ class R2rBackend(RagBackend):
                 "collection_ids": json.dumps(list(collection_ids)),
                 "ingestion_mode": "fast",
             }
+            data = {"ingestion_mode": "fast"}
             created = self._request("POST", "documents", data=data, files=files)
         return created.get("results", {}).get("document_id", "")
 
