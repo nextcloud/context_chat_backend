@@ -333,7 +333,6 @@ def _(
             return JSONResponse("Operation not supported", 501)
         return JSONResponse("Access updated")
 
-
     if not is_valid_source_id(sourceId):
         return JSONResponse("Invalid source id", 400)
 
@@ -350,6 +349,8 @@ def _(
     userIds: Annotated[list[str], Body()],
     sourceId: Annotated[str, Body()],
 ):
+    """Allow or deny users access to a document."""
+
     logger.debug(
         "Update access request",
         extra={
@@ -359,11 +360,12 @@ def _(
         },
     )
 
-    if len(userIds) == 0:
+    if not userIds:
         return JSONResponse("Empty list of user ids", 400)
 
-   backend = getattr(request.app.state, "rag_backend", None)
-    if backend:
+    backend = getattr(request.app.state, "rag_backend", None)
+    if backend is not None:
+
         # Delegate to the external RAG backend when available
         try:
             backend.update_access(op, userIds, sourceId)
@@ -371,11 +373,13 @@ def _(
             return JSONResponse("Operation not supported", 501)
         return JSONResponse("Access updated")
 
-
     if not is_valid_source_id(sourceId):
         return JSONResponse("Invalid source id", 400)
 
-    exec_in_proc(target=update_access, args=(vectordb_loader, op, userIds, sourceId))
+    exec_in_proc(
+        target=update_access,
+        args=(vectordb_loader, op, userIds, sourceId),
+    )
 
     return JSONResponse("Access updated")
 
