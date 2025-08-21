@@ -23,66 +23,74 @@ def sign_request(headers: dict, username: str = '') -> None:
 
 
 # We assume that the env variables are set
-def _verify_signature(headers: Headers) -> str | None:
-	if headers.get('EX-APP-ID') is None or headers.get('EX-APP-ID') != getenv('APP_ID'):
-		logger.error(f'Invalid EX-APP-ID received: "{headers.get("EX-APP-ID")}", expected "{getenv("APP_ID")}"')
-		return None
+def _verify_signature(headers: Headers) -> tuple[str | None, str | None]:
+        if headers.get('EX-APP-ID') is None or headers.get('EX-APP-ID') != getenv('APP_ID'):
+                err = f'Invalid EX-APP-ID received: "{headers.get("EX-APP-ID")}", expected "{getenv("APP_ID")}"'
+                logger.error(err)
+                return None, err
 
-	if headers.get('EX-APP-VERSION') is None or headers.get('EX-APP-VERSION') != getenv('APP_VERSION'):
-		logger.error(
-			f'Invalid EX-APP-VERSION received: "{headers.get("EX-APP-VERSION")}", expected "{getenv("APP_VERSION")}".'
-			' A reinstall of the app context_chat_backend in app_api keeping the data can potentially fix it.'
-		)
-		return None
+        if headers.get('EX-APP-VERSION') is None or headers.get('EX-APP-VERSION') != getenv('APP_VERSION'):
+                err = (
+                        'Invalid EX-APP-VERSION received: '
+                        f'"{headers.get("EX-APP-VERSION")}", expected '
+                        f'"{getenv("APP_VERSION")}". '
+                        'A reinstall of the app context_chat_backend in app_api '
+                        'keeping the data can potentially fix it.'
+                )
+                logger.error(err)
+                return None, err
 
-	if headers.get('AUTHORIZATION-APP-API') is None:
-		logger.error('Missing AUTHORIZATION-APP-API header')
-		return None
+        if headers.get('AUTHORIZATION-APP-API') is None:
+                err = 'Missing AUTHORIZATION-APP-API header'
+                logger.error(err)
+                return None, err
 
-	auth_aa = b64decode(headers.get('AUTHORIZATION-APP-API', '')).decode('UTF-8', 'ignore')
-	username, app_secret = auth_aa.split(':', maxsplit=1)
+        auth_aa = b64decode(headers.get('AUTHORIZATION-APP-API', '')).decode('UTF-8', 'ignore')
+        username, app_secret = auth_aa.split(':', maxsplit=1)
 
-	if app_secret != getenv('APP_SECRET'):
-		logger.error('Invalid APP_SECRET received')
-		return None
+        if app_secret != getenv('APP_SECRET'):
+                err = 'Invalid APP_SECRET received'
+                logger.error(err)
+                return None, err
 
-	return username
+        return username, None
 
 
 class AppAPIAuthMiddleware:
-	'''
-	Ensures the presence of AppAPI headers and verifies the app secret.
-	It also adds the username to the scope (request.scope)
-	'''
-	def __init__(self, app: ASGIApp) -> None:
-		self.app = app
+        '''
+        Ensures the presence of AppAPI headers and verifies the app secret.
+        It also adds the username to the scope (request.scope)
+        '''
+        def __init__(self, app: ASGIApp) -> None:
+                self.app = app
 
-	async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-		if scope['type'] != 'http':
-			await self.app(scope, receive, send)
-			return
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+                if scope['type'] != 'http':
+                        await self.app(scope, receive, send)
+                        return
 
-		url = URL(scope=scope)
-		if (url.path == '/heartbeat'):
-			# no auth of /heartbeat
-			await self.app(scope, receive, send)
-			return
+                url = URL(scope=scope)
+                if (url.path == '/heartbeat'):
+                        # no auth of /heartbeat
+                        await self.app(scope, receive, send)
+                        return
 
-		headers = Headers(scope=scope)
-		if (username := _verify_signature(headers)) is not None:
-			scope['username'] = username
-			await self.app(scope, receive, send)
-			return
+                headers = Headers(scope=scope)
+                username, err = _verify_signature(headers)
+                if err is None and username is not None:
+                        scope['username'] = username
+                        await self.app(scope, receive, send)
+                        return
 
-		error_response = JSONResponse(
-			content={'error': 'Invalid signature of the request'},
-			status_code=HTTP_401_UNAUTHORIZED,
-		)
-		await error_response(scope, receive, send)
+                error_response = JSONResponse(
+                        content={'error': err or 'Invalid signature of the request'},
+                        status_code=HTTP_401_UNAUTHORIZED,
+                )
+                await error_response(scope, receive, send)
 
 
 def get_nc_url() -> str:
-	return getenv('NEXTCLOUD_URL', '').removesuffix('/index.php').removesuffix('/')
+        return getenv('NEXTCLOUD_URL', '').removesuffix('/index.php').removesuffix('/')
 
 
 def ocs_call(
