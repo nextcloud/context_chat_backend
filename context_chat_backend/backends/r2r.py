@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import mimetypes
 import os
 import shlex
 from collections.abc import Mapping, Sequence
@@ -188,11 +189,14 @@ class R2rBackend(RagBackend):
             self.delete_document(existing["id"])
 
         with open(file_path, "rb") as fh:
+            mime, _ = mimetypes.guess_type(
+                metadata.get("filename") or os.path.basename(file_path)
+            )
             files = {
                 "file": (
                     metadata.get("filename") or os.path.basename(file_path),
                     fh,
-                    "application/octet-stream",
+                    mime or "application/octet-stream",
                 )
             }
             data = {
@@ -203,8 +207,24 @@ class R2rBackend(RagBackend):
             created = self._request("POST", "documents", data=data, files=files)
         return created.get("results", {}).get("document_id", "")
 
+    def find_document_by_filename(self, filename: str) -> dict | None:
+        offset, limit = 0, 100
+        while True:
+            results = self.list_documents(offset=offset, limit=limit)
+            if not results:
+                return None
+            for d in results:
+                if d.get("metadata", {}).get("filename") == filename:
+                    return d
+            offset += limit
+
     def delete_document(self, document_id: str) -> None:
         self._request("DELETE", f"documents/{document_id}")
+
+    def delete_document_by_filename(self, filename: str) -> None:
+        doc = self.find_document_by_filename(filename)
+        if doc:
+            self.delete_document(doc["id"])
 
     # ------------------------------------------------------------------
     # Access control helpers
