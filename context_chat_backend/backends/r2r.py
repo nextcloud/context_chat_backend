@@ -189,9 +189,15 @@ class R2rBackend(RagBackend):
             self.delete_document(existing["id"])
 
         with open(file_path, "rb") as fh:
-            mime, _ = mimetypes.guess_type(
-                metadata.get("filename") or os.path.basename(file_path)
-            )
+            # ``mimetypes.guess_type`` relies on file extensions.  The sanitized
+            # ``metadata['filename']`` often lacks one, so use the temporary file
+            # path (which preserves the original extension) to determine the
+            # content type.  ``metadata`` may optionally include an explicit
+            # ``type``; if guessing fails, fall back to that before using the
+            # generic ``application/octet-stream``.
+            mime, _ = mimetypes.guess_type(os.path.basename(file_path))
+            if not mime:
+                mime = metadata.get("type")
             files = {
                 "file": (
                     metadata.get("filename") or os.path.basename(file_path),
