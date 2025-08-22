@@ -215,6 +215,7 @@ class R2rBackend(RagBackend):
             mime, _ = mimetypes.guess_type(os.path.basename(file_path))
             if not mime:
                 mime = metadata.get("type")
+
             files = [
                 (
                     "file",
