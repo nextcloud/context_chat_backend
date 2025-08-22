@@ -33,7 +33,8 @@ def test_upsert_document_sends_metadata_and_collection_ids(tmp_path):
     doc_id = backend.upsert_document(str(file), metadata, collection_ids)
 
     assert doc_id == "doc1"
-    assert json.loads(captured["data"]["metadata"]) == metadata
-    assert json.loads(captured["data"]["collection_ids"]) == collection_ids
-    assert captured["data"]["ingestion_mode"] == "fast"
-    assert "file" in captured["files"]
+    files = dict(captured["files"])
+    assert json.loads(files["metadata"][1]) == metadata
+    assert json.loads(files["collection_ids"][1]) == collection_ids
+    assert files["ingestion_mode"][1] == "fast"
+    assert "file" in files

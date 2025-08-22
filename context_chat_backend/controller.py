@@ -526,7 +526,6 @@ def _(request: Request, sources: list[UploadFile]):
             title = source.headers.get("title", source.filename)
             modified = source.headers.get("modified")
             provider = source.headers.get("provider")
-            size = int(source.headers.get("content-length", 0))
             raw_filename = source.filename or ""
             sanitized = sanitize_source_ids([raw_filename])
             if not sanitized:
@@ -552,9 +551,13 @@ def _(request: Request, sources: list[UploadFile]):
 
             mapping = backend.ensure_collections(user_ids)
             collection_ids = list(mapping.values())
-            logger.debug("ensured collections", extra={"user_ids": user_ids, "collection_ids": collection_ids})
+            logger.debug(
+                "ensured collections",
+                extra={"user_ids": user_ids, "collection_ids": collection_ids},
+            )
 
             content_bytes = source.file.read()
+            size = len(content_bytes)
             source.file.close()
             tmp_path = _write_temp_file(content_bytes, title)
             metadata = {
@@ -564,6 +567,7 @@ def _(request: Request, sources: list[UploadFile]):
                 "content-length": size,
                 "filename": filename,
                 "source": filename,
+                "type": source.headers.get("type", ""),
             }
             doc_id = backend.upsert_document(tmp_path, metadata, collection_ids)
             _safe_remove(tmp_path)
