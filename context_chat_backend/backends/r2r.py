@@ -13,6 +13,7 @@ Chat backend to manage collections, documents and to perform search queries.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import mimetypes
@@ -164,6 +165,17 @@ class R2rBackend(RagBackend):
         )
         return docs.get("results", [])
 
+    def find_document_by_hash(self, sha256: str) -> dict | None:
+        offset, limit = 0, 100
+        while True:
+            results = self.list_documents(offset=offset, limit=limit)
+            if not results:
+                return None
+            for d in results:
+                if d.get("metadata", {}).get("sha256") == sha256:
+                    return d
+            offset += limit
+
     def find_document_by_title(self, title: str) -> dict | None:
         offset, limit = 0, 100
         while True:
@@ -184,13 +196,22 @@ class R2rBackend(RagBackend):
         if isinstance(collection_ids, str):
             raise ValueError("collection_ids must be a list of UUID strings")
 
-        existing = self.find_document_by_title(metadata.get("title", ""))
+        with open(file_path, "rb") as fh:
+            digest = hashlib.sha256(fh.read()).hexdigest()
+
+        meta = dict(metadata)
+        meta.setdefault("sha256", digest)
+
+        existing = self.find_document_by_hash(digest) or self.find_document_by_title(
+            meta.get("title", "")
+        )
         if existing:
             em = existing.get("metadata", {})
-            same = em.get("modified") == metadata.get("modified") and em.get(
+            same_hash = em.get("sha256") == meta.get("sha256")
+            same_meta = em.get("modified") == meta.get("modified") and em.get(
                 "content-length"
-            ) == metadata.get("content-length")
-            if same:
+            ) == meta.get("content-length")
+            if same_hash or same_meta:
                 current = set(existing.get("collection_ids", []))
                 target = set(collection_ids)
                 add = target - current
@@ -207,25 +228,29 @@ class R2rBackend(RagBackend):
 
         with open(file_path, "rb") as fh:
             # ``mimetypes.guess_type`` relies on file extensions.  The sanitized
-            # ``metadata['filename']`` often lacks one, so use the temporary file
+            # ``meta['filename']`` often lacks one, so use the temporary file
             # path (which preserves the original extension) to determine the
-            # content type.  ``metadata`` may optionally include an explicit
+            # content type.  ``meta`` may optionally include an explicit
             # ``type``; if guessing fails, fall back to that before using the
             # generic ``application/octet-stream``.
             mime, _ = mimetypes.guess_type(os.path.basename(file_path))
             if not mime:
-                mime = metadata.get("type")
+                mime = meta.get("type")
+
+            filename = meta.get("filename")
+            if not filename or not os.path.splitext(filename)[1]:
+                filename = os.path.basename(file_path)
 
             files = [
                 (
                     "file",
                     (
-                        metadata.get("filename") or os.path.basename(file_path),
+                        filename,
                         fh,
                         mime or "application/octet-stream",
                     ),
                 ),
-                ("metadata", (None, json.dumps(metadata), "application/json")),
+                ("metadata", (None, json.dumps(meta), "application/json")),
                 (
                     "collection_ids",
                     (None, json.dumps(list(collection_ids)), "application/json"),
