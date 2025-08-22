@@ -96,6 +96,23 @@ class R2rBackend(RagBackend):
             curl_parts.extend(["-d", payload])
             logger.debug("R2R request payload: %s", payload)
 
+        files_arg = kwargs.get("files")
+        if files_arg:
+            items = files_arg.items() if isinstance(files_arg, dict) else files_arg
+            for key, value in items:
+                if isinstance(value, tuple | list):
+                    filename = value[0] if len(value) > 0 else None
+                    content_type = value[2] if len(value) > 2 else None
+                    if filename is None:
+                        part_val = value[1] if len(value) > 1 else ""
+                        part = f"{key}={part_val}"
+                    else:
+                        ct = f";type={content_type}" if content_type else ""
+                        part = f"{key}=@{filename}{ct}"
+                else:
+                    part = f"{key}={value}"
+                curl_parts.extend(["-F", part])
+
         curl_parts.append(f"{self._client.base_url}{url_path}")
 
         cmd = " ".join(shlex.quote(part) for part in curl_parts)
@@ -198,19 +215,24 @@ class R2rBackend(RagBackend):
             mime, _ = mimetypes.guess_type(os.path.basename(file_path))
             if not mime:
                 mime = metadata.get("type")
-            files = {
-                "file": (
-                    metadata.get("filename") or os.path.basename(file_path),
-                    fh,
-                    mime or "application/octet-stream",
+
+            files = [
+                (
+                    "file",
+                    (
+                        metadata.get("filename") or os.path.basename(file_path),
+                        fh,
+                        mime or "application/octet-stream",
+                    ),
                 ),
-            }
-            data = {
-                "metadata": json.dumps(metadata),
-                "collection_ids": json.dumps(list(collection_ids)),
-                "ingestion_mode": "fast",
-            }
-            created = self._request("POST", "documents", data=data, files=files)
+                ("metadata", (None, json.dumps(metadata), "application/json")),
+                (
+                    "collection_ids",
+                    (None, json.dumps(list(collection_ids)), "application/json"),
+                ),
+                ("ingestion_mode", (None, "fast")),
+            ]
+            created = self._request("POST", "documents", files=files)
         return created.get("results", {}).get("document_id", "")
 
     def find_document_by_filename(self, filename: str) -> dict | None:
