@@ -1,11 +1,14 @@
 # ruff: noqa: S101
+import hashlib
 import json
+from typing import Any
 
 from context_chat_backend.backends.r2r import R2rBackend
 
 
 def test_upsert_document_sends_metadata_and_collection_ids(tmp_path):
     backend = R2rBackend.__new__(R2rBackend)
+    backend.find_document_by_hash = lambda sha256: None
     backend.find_document_by_title = lambda title: None
 
     captured = {}
@@ -34,7 +37,82 @@ def test_upsert_document_sends_metadata_and_collection_ids(tmp_path):
 
     assert doc_id == "doc1"
     files = dict(captured["files"])
-    assert json.loads(files["metadata"][1]) == metadata
+    uploaded = json.loads(files["metadata"][1])
+    for key, value in metadata.items():
+        assert uploaded[key] == value
+    assert "sha256" in uploaded
     assert json.loads(files["collection_ids"][1]) == collection_ids
     assert files["ingestion_mode"][1] == "fast"
     assert "file" in files
+
+
+def test_upsert_document_uses_extension_from_temp_path(tmp_path):
+    backend = R2rBackend.__new__(R2rBackend)
+    backend.find_document_by_hash = lambda sha256: None
+    backend.find_document_by_title = lambda title: None
+
+    captured: dict[str, Any] = {}
+
+    def fake_request(method, path, data=None, files=None):
+        captured["files"] = files
+        return {"results": {"document_id": "doc1"}}
+
+    backend._request = fake_request  # type: ignore[attr-defined]
+
+    file = tmp_path / "doc.txt"
+    file.write_text("hello")
+
+    metadata = {
+        "title": "doc.txt",
+        "filename": "doc",  # no extension
+        "modified": "1",
+        "content-length": "5",
+    }
+
+    backend.upsert_document(str(file), metadata, ["cid1"])
+
+    files = dict(captured["files"])
+    assert files["file"][0] == "doc.txt"
+
+
+def test_upsert_document_reuses_existing_by_hash(tmp_path):
+    backend = R2rBackend.__new__(R2rBackend)
+
+    file = tmp_path / "doc.txt"
+    content = "hello"
+    file.write_text(content)
+    digest = hashlib.sha256(content.encode()).hexdigest()
+
+    def find_by_hash(sha256: str):
+        if sha256 == digest:
+            return {
+                "id": "doc1",
+                "metadata": {"sha256": sha256},
+                "collection_ids": ["cid1"],
+            }
+        return None
+
+    backend.find_document_by_hash = find_by_hash
+    backend.find_document_by_title = lambda title: None
+    backend.delete_document = lambda document_id: None
+
+    calls: list[tuple[str, str, Any]] = []
+
+    def fake_request(method, path, data=None, files=None):
+        calls.append((method, path, files))
+        return {}
+
+    backend._request = fake_request  # type: ignore[attr-defined]
+
+    metadata = {
+        "title": "doc.txt",
+        "filename": "doc.txt",
+        "modified": "1",
+        "content-length": "5",
+    }
+
+    doc_id = backend.upsert_document(str(file), metadata, ["cid1", "cid2"])
+
+    assert doc_id == "doc1"
+    assert any(path == "collections/cid2/documents/doc1" for _, path, _ in calls)
+    assert not any(path == "documents" and files is not None for _, path, files in calls)
