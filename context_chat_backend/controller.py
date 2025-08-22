@@ -34,6 +34,7 @@ from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import persistent_storage, set_handlers
 from pydantic import BaseModel, ValidationInfo, field_validator
 from starlette.responses import FileResponse
+from httpx import HTTPStatusError
 
 from .chain.context import do_doc_search, get_context_chunks
 from .chain.ingest.injest import embed_sources
@@ -447,17 +448,25 @@ def _(request: Request, sourceIds: Annotated[list[str], Body(embed=True)]):
             "source_ids": sourceIds,
         },
     )
+    sourceIds = sanitize_source_ids(sourceIds)
+    if len(sourceIds) == 0:
+        return JSONResponse("No valid sources provided", 400)
 
     backend = getattr(request.app.state, "rag_backend", None)
     if backend:
+        failed: list[str] = []
         for sid in sourceIds:
-            backend.delete_document(sid)
+            try:
+                backend.delete_document(sid)
+            except HTTPStatusError as exc:  # pragma: no cover - log and continue
+                logger.warning(
+                    "Failed to delete source via backend",
+                    extra={"source_id": sid, "error": str(exc)},
+                )
+                failed.append(sid)
+        if failed:
+            return JSONResponse({"message": "Some sources could not be deleted", "failed": failed}, 400)
         return JSONResponse("All valid sources deleted")
-
-    sourceIds = sanitize_source_ids(sourceIds)
-
-    if len(sourceIds) == 0:
-        return JSONResponse("No valid sources provided", 400)
 
     res = exec_in_proc(target=delete_by_source, args=(vectordb_loader, sourceIds))
     if res is False:
