@@ -189,7 +189,7 @@ class R2rBackend(RagBackend):
             "GET",
             "documents",
             action="find_document_by_hash",
-            params={"metadata": json.dumps({"sha256": sha256}), "limit": 1},
+            params={"metadata_filter": json.dumps({"sha256": sha256}), "limit": 1},
         )
         results = resp.get("results", [])
         return results[0] if results else None
@@ -224,16 +224,28 @@ class R2rBackend(RagBackend):
         meta = dict(metadata)
         meta.setdefault("sha256", digest)
 
-        existing = self.find_document_by_hash(digest) or self.find_document_by_title(
-            meta.get("title", "")
+        doc_by_hash = self.find_document_by_hash(digest)
+        existing = (
+            doc_by_hash if doc_by_hash and doc_by_hash.get("metadata", {}).get("sha256") == digest else None
         )
+        if existing is None:
+            existing = self.find_document_by_title(meta.get("title", ""))
+
         if existing:
             em = existing.get("metadata", {})
             same_hash = em.get("sha256") == meta.get("sha256")
-            same_meta = em.get("modified") == meta.get("modified") and em.get(
-                "content-length"
-            ) == meta.get("content-length")
+            same_meta = (
+                em.get("modified") == meta.get("modified")
+                and em.get("content-length") == meta.get("content-length")
+            )
             if same_hash or same_meta:
+                if em != meta:
+                    self._request(
+                        "PUT",
+                        f"documents/{existing['id']}/metadata",
+                        action=f"upsert_document:update_metadata:{existing['id']}",
+                        json=meta,
+                    )
                 current = set(existing.get("collection_ids", []))
                 target = set(collection_ids)
                 add = target - current
@@ -252,6 +264,7 @@ class R2rBackend(RagBackend):
                     )
                 return existing["id"]
 
+            # If the title matches but the hash differs, replace the existing document.
             self.delete_document(existing["id"])
 
         with open(file_path, "rb") as fh:
