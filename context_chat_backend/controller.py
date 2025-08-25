@@ -18,6 +18,7 @@ import tempfile
 import threading
 import time
 import zipfile
+import hashlib
 from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from functools import wraps
@@ -567,6 +568,7 @@ def _(request: Request, sources: list[UploadFile]):
 
             content_bytes = source.file.read()
             size = len(content_bytes)
+            digest = hashlib.sha256(content_bytes).hexdigest()
             source.file.close()
             tmp_path = _write_temp_file(content_bytes, title)
             metadata = {
@@ -577,8 +579,11 @@ def _(request: Request, sources: list[UploadFile]):
                 "filename": filename,
                 "source": filename,
                 "type": source.headers.get("type", ""),
+                "sha256": digest,
             }
-            doc_id = backend.upsert_document(tmp_path, metadata, collection_ids)
+            doc_id = backend.upsert_document(
+                tmp_path, metadata, collection_ids, precomputed_sha256=digest
+            )
             _safe_remove(tmp_path)
             loaded_ids.append(doc_id)
 
