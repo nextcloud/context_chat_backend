@@ -177,15 +177,22 @@ class R2rBackend(RagBackend):
         return docs.get("results", [])
 
     def find_document_by_hash(self, sha256: str) -> dict | None:
-        offset, limit = 0, 100
-        while True:
-            results = self.list_documents(offset=offset, limit=limit)
-            if not results:
-                return None
-            for d in results:
-                if d.get("metadata", {}).get("sha256") == sha256:
-                    return d
-            offset += limit
+        """Return document whose ``metadata.sha256`` matches ``sha256``.
+
+        Instead of iterating through every document, leverage R2R's metadata
+        filtering so that the hash comparison happens server-side.  Only a
+        single result is requested which makes the check effectively
+        constant-time even for large collections.
+        """
+
+        resp = self._request(
+            "GET",
+            "documents",
+            action="find_document_by_hash",
+            params={"metadata": json.dumps({"sha256": sha256}), "limit": 1},
+        )
+        results = resp.get("results", [])
+        return results[0] if results else None
 
     def find_document_by_title(self, title: str) -> dict | None:
         offset, limit = 0, 100
@@ -203,12 +210,16 @@ class R2rBackend(RagBackend):
         file_path: str,
         metadata: Mapping[str, Any],
         collection_ids: Sequence[str],
+        *,
+        precomputed_sha256: str | None = None,
     ) -> str:
         if isinstance(collection_ids, str):
             raise ValueError("collection_ids must be a list of UUID strings")
 
-        with open(file_path, "rb") as fh:
-            digest = hashlib.sha256(fh.read()).hexdigest()
+        digest = precomputed_sha256
+        if digest is None:
+            with open(file_path, "rb") as fh:
+                digest = hashlib.sha256(fh.read()).hexdigest()
 
         meta = dict(metadata)
         meta.setdefault("sha256", digest)

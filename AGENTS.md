@@ -5,3 +5,5 @@
 - Prefer small, focused commits with clear messages.
 - Before committing, run `pre-commit run --files <files>` for any touched files and ensure `ruff`, `pyright`, and `pytest` succeed.
 - Ensure all R2R HTTP calls include the proper `X-API-Key` or Bearer token as documented in `r2rdocs.txt`.
+- Keep `docs/endpoints.md` and `docs/ccbe_r2r_mapping.md` in sync with the codebase. Update them whenever FastAPI routes or R2R
+  interactions change.
