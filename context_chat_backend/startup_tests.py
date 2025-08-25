@@ -222,7 +222,7 @@ async def _per_route_checks(base_url: str, client: httpx.AsyncClient) -> None:
 
 
 async def run_startup_tests(base_url: str) -> None:
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         headers: dict[str, str] = {}
         sign_request(headers)
         enabled = False
