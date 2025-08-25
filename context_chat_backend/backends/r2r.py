@@ -240,11 +240,14 @@ class R2rBackend(RagBackend):
             )
             if same_hash or same_meta:
                 if em != meta:
+                    meta_list = [
+                        {"key": key, "value": value} for key, value in meta.items()
+                    ]
                     self._request(
                         "PUT",
                         f"documents/{existing['id']}/metadata",
                         action=f"upsert_document:update_metadata:{existing['id']}",
-                        json=meta,
+                        json=meta_list,
                     )
                 current = set(existing.get("collection_ids", []))
                 target = set(collection_ids)
