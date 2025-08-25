@@ -27,7 +27,7 @@ import httpx
 from ..vectordb.types import UpdateAccessOp
 from .base import RagBackend
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("ccb.r2r")
 
 class R2rBackend(RagBackend):
     """Implementation of :class:`RagBackend` that talks to an R2R service."""
@@ -54,9 +54,6 @@ class R2rBackend(RagBackend):
 
         cmd = " ".join(shlex.quote(part) for part in curl_parts)
         logger.info("R2R healthcheck command: %s", cmd)
-        # Logging is configured after backend initialization. Use ``print``
-        # so the command is still visible in container logs during startup.
-        print(f"R2R healthcheck command: {cmd}", flush=True)
 
 
         # Fail fast - used by the /init job as well. ``/v3/system/status`` is a
@@ -67,7 +64,9 @@ class R2rBackend(RagBackend):
 
     # ------------------------------------------------------------------
     # Utility helpers
-    def _request(self, method: str, path: str, **kwargs) -> dict[str, Any]:
+    def _request(
+        self, method: str, path: str, *, action: str | None = None, **kwargs
+    ) -> dict[str, Any]:
         url_path = f"/v3/{path.lstrip('/')}"
         curl_parts = ["curl", "-i", "-X", method.upper()]
         # Merge client headers with any call-specific overrides.
@@ -117,8 +116,10 @@ class R2rBackend(RagBackend):
         curl_parts.append(f"{self._client.base_url}{url_path}")
 
         cmd = " ".join(shlex.quote(part) for part in curl_parts)
-        logger.info("R2R request: %s", cmd)
-        print(f"R2R request: {cmd}", flush=True)
+        if action:
+            logger.info("CCBE action: %s | R2R request: %s", action, cmd)
+        else:
+            logger.info("R2R request: %s", cmd)
 
         resp = self._client.request(method, url_path, **kwargs)
         logger.debug("R2R response body: %s", resp.text)
@@ -132,7 +133,10 @@ class R2rBackend(RagBackend):
         existing: dict[str, str] = {}
         while True:
             coll = self._request(
-                "GET", "collections", params={"offset": offset, "limit": limit}
+                "GET",
+                "collections",
+                action="ensure_collections:list",
+                params={"offset": offset, "limit": limit},
             )
             results = coll.get("results", [])
             if not results:
@@ -149,6 +153,7 @@ class R2rBackend(RagBackend):
                 created = self._request(
                     "POST",
                     "collections",
+                    action=f"ensure_collections:create:{uid}",
                     json={
                         "name": uid,
                         "description": f"Auto-generated collection for user {uid}",
@@ -161,7 +166,10 @@ class R2rBackend(RagBackend):
     # Documents
     def list_documents(self, offset: int = 0, limit: int = 100) -> list[dict]:
         docs = self._request(
-            "GET", "documents", params={"offset": offset, "limit": limit}
+            "GET",
+            "documents",
+            action="list_documents",
+            params={"offset": offset, "limit": limit},
         )
         return docs.get("results", [])
 
@@ -217,10 +225,16 @@ class R2rBackend(RagBackend):
                 add = target - current
                 rem = current - target
                 for cid in add:
-                    self._request("POST", f"collections/{cid}/documents/{existing['id']}")
+                    self._request(
+                        "POST",
+                        f"collections/{cid}/documents/{existing['id']}",
+                        action=f"upsert_document:add:{existing['id']}:{cid}",
+                    )
                 for cid in rem:
                     self._request(
-                        "DELETE", f"collections/{cid}/documents/{existing['id']}"
+                        "DELETE",
+                        f"collections/{cid}/documents/{existing['id']}",
+                        action=f"upsert_document:remove:{existing['id']}:{cid}",
                     )
                 return existing["id"]
 
@@ -257,7 +271,12 @@ class R2rBackend(RagBackend):
                 ),
                 ("ingestion_mode", (None, "fast")),
             ]
-            created = self._request("POST", "documents", files=files)
+            created = self._request(
+                "POST",
+                "documents",
+                action="upsert_document:create",
+                files=files,
+            )
         return created.get("results", {}).get("document_id", "")
 
     def find_document_by_filename(self, filename: str) -> dict | None:
@@ -272,7 +291,11 @@ class R2rBackend(RagBackend):
             offset += limit
 
     def delete_document(self, document_id: str) -> None:
-        self._request("DELETE", f"documents/{document_id}")
+        self._request(
+            "DELETE",
+            f"documents/{document_id}",
+            action=f"delete_document:{document_id}",
+        )
 
     def delete_document_by_filename(self, filename: str) -> None:
         doc = self.find_document_by_filename(filename)
@@ -291,10 +314,16 @@ class R2rBackend(RagBackend):
         for cid in mapping.values():
             try:
                 if op is UpdateAccessOp.allow:
-                    self._request("POST", f"collections/{cid}/documents/{document_id}")
+                    self._request(
+                        "POST",
+                        f"collections/{cid}/documents/{document_id}",
+                        action=f"update_access:allow:{document_id}:{cid}",
+                    )
                 else:
                     self._request(
-                        "DELETE", f"collections/{cid}/documents/{document_id}"
+                        "DELETE",
+                        f"collections/{cid}/documents/{document_id}",
+                        action=f"update_access:deny:{document_id}:{cid}",
                     )
             except httpx.HTTPStatusError as exc:  # ignore idempotent errors
                 if exc.response.status_code not in {404, 409}:
@@ -305,16 +334,26 @@ class R2rBackend(RagBackend):
     ) -> None:
         mapping = self.ensure_collections(user_ids)
         existing = self._request(
-            "GET", f"documents/{document_id}/collections"
+            "GET",
+            f"documents/{document_id}/collections",
+            action=f"decl_update_access:list:{document_id}",
         ).get("results", [])
         current = {c.get("name", ""): c.get("id", "") for c in existing}
         target = set(mapping.keys())
         for name, cid in mapping.items():
             if name not in current:
-                self._request("POST", f"collections/{cid}/documents/{document_id}")
+                self._request(
+                    "POST",
+                    f"collections/{cid}/documents/{document_id}",
+                    action=f"decl_update_access:add:{document_id}:{cid}",
+                )
         for name, cid in current.items():
             if name not in target:
-                self._request("DELETE", f"collections/{cid}/documents/{document_id}")
+                self._request(
+                    "DELETE",
+                    f"collections/{cid}/documents/{document_id}",
+                    action=f"decl_update_access:remove:{document_id}:{cid}",
+                )
 
     # ------------------------------------------------------------------
     # Retrieval (minimal shape)
@@ -333,7 +372,9 @@ class R2rBackend(RagBackend):
         }
         if scope_type and scope_list:
             payload["scope"] = {"type": scope_type, "ids": list(scope_list)}
-        resp = self._request("POST", "retrieval/search", json=payload)
+        resp = self._request(
+            "POST", "retrieval/search", action="search", json=payload
+        )
         results = resp.get("results", {})
 
         # Newer R2R versions wrap chunk hits inside

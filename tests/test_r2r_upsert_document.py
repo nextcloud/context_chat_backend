@@ -13,11 +13,14 @@ def test_upsert_document_sends_metadata_and_collection_ids(tmp_path):
 
     captured = {}
 
-    def fake_request(method, path, data=None, files=None):
+    def fake_request(
+        method, path, *, action=None, data=None, files=None, **kwargs
+    ):
         captured["method"] = method
         captured["path"] = path
         captured["data"] = data
         captured["files"] = files
+        captured["action"] = action
         return {"results": {"document_id": "doc1"}}
 
     backend._request = fake_request  # type: ignore[attr-defined]
@@ -53,8 +56,11 @@ def test_upsert_document_uses_extension_from_temp_path(tmp_path):
 
     captured: dict[str, Any] = {}
 
-    def fake_request(method, path, data=None, files=None):
+    def fake_request(
+        method, path, *, action=None, data=None, files=None, **kwargs
+    ):
         captured["files"] = files
+        captured["action"] = action
         return {"results": {"document_id": "doc1"}}
 
     backend._request = fake_request  # type: ignore[attr-defined]
@@ -96,10 +102,12 @@ def test_upsert_document_reuses_existing_by_hash(tmp_path):
     backend.find_document_by_title = lambda title: None
     backend.delete_document = lambda document_id: None
 
-    calls: list[tuple[str, str, Any]] = []
+    calls: list[tuple[str, str, Any, Any]] = []
 
-    def fake_request(method, path, data=None, files=None):
-        calls.append((method, path, files))
+    def fake_request(
+        method, path, *, action=None, data=None, files=None, **kwargs
+    ):
+        calls.append((method, path, files, action))
         return {}
 
     backend._request = fake_request  # type: ignore[attr-defined]
@@ -114,5 +122,5 @@ def test_upsert_document_reuses_existing_by_hash(tmp_path):
     doc_id = backend.upsert_document(str(file), metadata, ["cid1", "cid2"])
 
     assert doc_id == "doc1"
-    assert any(path == "collections/cid2/documents/doc1" for _, path, _ in calls)
-    assert not any(path == "documents" and files is not None for _, path, files in calls)
+    assert any(path == "collections/cid2/documents/doc1" for _, path, _, _ in calls)
+    assert not any(path == "documents" and files is not None for _, path, files, _ in calls)
