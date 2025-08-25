@@ -21,6 +21,7 @@ import os
 import shlex
 from collections.abc import Mapping, Sequence
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
@@ -113,7 +114,9 @@ class R2rBackend(RagBackend):
                     part = f"{key}={value}"
                 curl_parts.extend(["-F", part])
 
-        curl_parts.append(f"{self._client.base_url}{url_path}")
+        params = kwargs.get("params")
+        query = f"?{urlencode(params, doseq=True)}" if params else ""
+        curl_parts.append(f"{self._client.base_url}{url_path}{query}")
 
         cmd = " ".join(shlex.quote(part) for part in curl_parts)
         if action:

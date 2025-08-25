@@ -37,7 +37,7 @@ handlers:
     class: logging.handlers.RotatingFileHandler
     level: DEBUG
     formatter: json
-    filename: logs/ccb.log
+    filename: /app/logs/ccb.log
     maxBytes: 20971520
     backupCount: 10
 
