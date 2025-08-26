@@ -34,5 +34,6 @@ graph TD
 - **`POST /query`** and **`POST /docSearch`** forward search requests to R2R. Both endpoints call `search` on the backend【F:context_chat_backend/controller.py†L727-L743】【F:context_chat_backend/controller.py†L768-L778】 which translates into `POST /v3/retrieval/search`【F:context_chat_backend/backends/r2r.py†L372-L390】.
 
 ## References
+
  - R2R document upsert performs server-side hash comparisons, updates metadata in place when hashes match, and skips re-uploading documents that are still ingesting【F:context_chat_backend/backends/r2r.py†L228-L300】.
 - Access control modifications operate through collection-document membership changes【F:context_chat_backend/backends/r2r.py†L320-L369】.

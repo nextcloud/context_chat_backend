@@ -223,6 +223,7 @@ def test_upsert_document_skips_pending_ingestion(tmp_path):
         "collection_ids": ["cid1"],
         "ingestion_status": "pending",
     }
+
     backend.find_document_by_title = lambda title: existing_stub
     backend.get_document = lambda document_id: existing_full
 
