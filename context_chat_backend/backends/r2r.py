@@ -204,11 +204,14 @@ class R2rBackend(RagBackend):
             action="find_document_by_title",
             params={
                 "metadata_filter": json.dumps({"title": title}),
-                "limit": 1,
+                "limit": 10,
             },
         )
-        results = resp.get("results", [])
-        return results[0] if results else None
+        for doc in resp.get("results", []) or []:
+            meta_title = doc.get("metadata", {}).get("title") or doc.get("title")
+            if meta_title == title:
+                return doc
+        return None
 
     def get_document(self, document_id: str) -> dict:
         """Return detailed information for a document.
@@ -245,57 +248,44 @@ class R2rBackend(RagBackend):
         meta.setdefault("sha256", digest)
 
         doc_by_hash = self.find_document_by_hash(digest)
-        existing_stub = (
-            doc_by_hash
-            if doc_by_hash and doc_by_hash.get("metadata", {}).get("sha256") == digest
-            else None
-        )
-        if existing_stub is None:
-            existing_stub = self.find_document_by_title(meta.get("title", ""))
+        if doc_by_hash and doc_by_hash.get("metadata", {}).get("sha256") == digest:
+            existing = self.get_document(doc_by_hash["id"])
+            em = existing.get("metadata", {})
+            if em != meta:
+                meta_list = [
+                    {"key": key, "value": value} for key, value in meta.items()
+                ]
+                self._request(
+                    "PUT",
+                    f"documents/{existing['id']}/metadata",
+                    action=f"upsert_document:update_metadata:{existing['id']}",
+                    json=meta_list,
+                )
+            current = set(existing.get("collection_ids", []))
+            target = set(collection_ids)
+            add = target - current
+            rem = current - target
+            for cid in add:
+                self._request(
+                    "POST",
+                    f"collections/{cid}/documents/{existing['id']}",
+                    action=f"upsert_document:add:{existing['id']}:{cid}",
+                )
+            for cid in rem:
+                self._request(
+                    "DELETE",
+                    f"collections/{cid}/documents/{existing['id']}",
+                    action=f"upsert_document:remove:{existing['id']}:{cid}",
+                )
+            return existing["id"]
 
+        existing_stub = self.find_document_by_title(meta.get("title", ""))
         if existing_stub:
             existing = self.get_document(existing_stub["id"])
-            em = existing.get("metadata", {})
-            same_hash = em.get("sha256") == meta.get("sha256")
-            same_meta = (
-                str(em.get("modified")) == str(meta.get("modified"))
-                and str(em.get("content-length"))
-                == str(meta.get("content-length"))
-            )
-            if same_hash or same_meta:
-                if em != meta:
-                    meta_list = [
-                        {"key": key, "value": value} for key, value in meta.items()
-                    ]
-                    self._request(
-                        "PUT",
-                        f"documents/{existing['id']}/metadata",
-                        action=f"upsert_document:update_metadata:{existing['id']}",
-                        json=meta_list,
-                    )
-                current = set(existing.get("collection_ids", []))
-                target = set(collection_ids)
-                add = target - current
-                rem = current - target
-                for cid in add:
-                    self._request(
-                        "POST",
-                        f"collections/{cid}/documents/{existing['id']}",
-                        action=f"upsert_document:add:{existing['id']}:{cid}",
-                    )
-                for cid in rem:
-                    self._request(
-                        "DELETE",
-                        f"collections/{cid}/documents/{existing['id']}",
-                        action=f"upsert_document:remove:{existing['id']}:{cid}",
-                    )
-                return existing["id"]
-
             ingestion_status = existing.get("ingestion_status") or existing.get("status")
             if ingestion_status and ingestion_status != "success":
                 return existing["id"]
-
-            # If the title matches but the hash differs, replace the existing document.
+            # Title matches but hash differs, so replace the existing document.
             self.delete_document(existing["id"])
 
         with open(file_path, "rb") as fh:
@@ -347,11 +337,18 @@ class R2rBackend(RagBackend):
             action="find_document_by_filename",
             params={
                 "metadata_filter": json.dumps({"filename": filename}),
-                "limit": 1,
+                "limit": 10,
             },
         )
-        results = resp.get("results", [])
-        return results[0] if results else None
+        for doc in resp.get("results", []) or []:
+            meta_filename = (
+                doc.get("metadata", {}).get("filename")
+                or doc.get("metadata", {}).get("title")
+                or doc.get("title")
+            )
+            if meta_filename == filename:
+                return doc
+        return None
 
     def delete_document(self, document_id: str) -> None:
         self._request(
