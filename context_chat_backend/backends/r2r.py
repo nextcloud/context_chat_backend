@@ -210,6 +210,21 @@ class R2rBackend(RagBackend):
         results = resp.get("results", [])
         return results[0] if results else None
 
+    def get_document(self, document_id: str) -> dict:
+        """Return detailed information for a document.
+
+        Some list queries omit fields such as ``ingestion_status``.  When we
+        need authoritative metadata (e.g. to detect pending ingestions), fetch
+        the document directly.
+        """
+
+        resp = self._request(
+            "GET",
+            f"documents/{document_id}",
+            action=f"get_document:{document_id}",
+        )
+        return resp.get("results", {})
+
     def upsert_document(
         self,
         file_path: str,
@@ -230,18 +245,22 @@ class R2rBackend(RagBackend):
         meta.setdefault("sha256", digest)
 
         doc_by_hash = self.find_document_by_hash(digest)
-        existing = (
-            doc_by_hash if doc_by_hash and doc_by_hash.get("metadata", {}).get("sha256") == digest else None
+        existing_stub = (
+            doc_by_hash
+            if doc_by_hash and doc_by_hash.get("metadata", {}).get("sha256") == digest
+            else None
         )
-        if existing is None:
-            existing = self.find_document_by_title(meta.get("title", ""))
+        if existing_stub is None:
+            existing_stub = self.find_document_by_title(meta.get("title", ""))
 
-        if existing:
+        if existing_stub:
+            existing = self.get_document(existing_stub["id"])
             em = existing.get("metadata", {})
             same_hash = em.get("sha256") == meta.get("sha256")
             same_meta = (
-                em.get("modified") == meta.get("modified")
-                and em.get("content-length") == meta.get("content-length")
+                str(em.get("modified")) == str(meta.get("modified"))
+                and str(em.get("content-length"))
+                == str(meta.get("content-length"))
             )
             if same_hash or same_meta:
                 if em != meta:
@@ -270,6 +289,10 @@ class R2rBackend(RagBackend):
                         f"collections/{cid}/documents/{existing['id']}",
                         action=f"upsert_document:remove:{existing['id']}:{cid}",
                     )
+                return existing["id"]
+
+            ingestion_status = existing.get("ingestion_status") or existing.get("status")
+            if ingestion_status and ingestion_status != "success":
                 return existing["id"]
 
             # If the title matches but the hash differs, replace the existing document.
