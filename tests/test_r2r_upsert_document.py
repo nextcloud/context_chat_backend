@@ -100,6 +100,11 @@ def test_upsert_document_reuses_existing_by_hash(tmp_path):
 
     backend.find_document_by_hash = find_by_hash
     backend.find_document_by_title = lambda title: None
+    backend.get_document = lambda document_id: {
+        "id": "doc1",
+        "metadata": {"sha256": digest},
+        "collection_ids": ["cid1"],
+    }
     deleted: list[str] = []
 
     def delete_document(document_id: str):
@@ -211,13 +216,16 @@ def test_upsert_document_skips_pending_ingestion(tmp_path):
 
     backend.find_document_by_hash = lambda sha256: None
 
-    existing = {
+    existing_stub = {"id": "doc1"}
+    existing_full = {
         "id": "doc1",
         "metadata": {"modified": "1", "content-length": "5"},
         "collection_ids": ["cid1"],
         "ingestion_status": "pending",
     }
-    backend.find_document_by_title = lambda title: existing
+
+    backend.find_document_by_title = lambda title: existing_stub
+    backend.get_document = lambda document_id: existing_full
 
     deleted: list[str] = []
     backend.delete_document = lambda document_id: deleted.append(document_id)
