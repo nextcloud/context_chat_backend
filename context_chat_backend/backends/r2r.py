@@ -203,8 +203,8 @@ class R2rBackend(RagBackend):
             "documents",
             action="find_document_by_title",
             params={
-                "metadata_filter": json.dumps({"title": title}),
-                "limit": 10,
+                "metadata_filter": json.dumps({"title": {"eq": title}}),
+                "limit": 1,
             },
         )
         for doc in resp.get("results", []) or []:
@@ -336,8 +336,8 @@ class R2rBackend(RagBackend):
             "documents",
             action="find_document_by_filename",
             params={
-                "metadata_filter": json.dumps({"filename": filename}),
-                "limit": 10,
+                "metadata_filter": json.dumps({"filename": {"eq": filename}}),
+                "limit": 1,
             },
         )
         for doc in resp.get("results", []) or []:

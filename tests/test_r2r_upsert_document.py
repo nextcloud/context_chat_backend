@@ -179,8 +179,8 @@ def test_find_document_by_title_exact_and_mismatch():
     doc = backend.find_document_by_title("doc.txt")
     assert doc and doc["id"] == "doc1"
     assert calls[0]["params"] == {
-        "metadata_filter": json.dumps({"title": "doc.txt"}),
-        "limit": 10,
+        "metadata_filter": json.dumps({"title": {"eq": "doc.txt"}}),
+        "limit": 1,
     }
 
     def fake_request_mismatch(method, path, *, params=None, **kwargs):
