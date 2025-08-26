@@ -195,15 +195,20 @@ class R2rBackend(RagBackend):
         return results[0] if results else None
 
     def find_document_by_title(self, title: str) -> dict | None:
-        offset, limit = 0, 100
-        while True:
-            results = self.list_documents(offset=offset, limit=limit)
-            if not results:
-                return None
-            for d in results:
-                if d.get("metadata", {}).get("title") == title:
-                    return d
-            offset += limit
+        if not title:
+            return None
+
+        resp = self._request(
+            "GET",
+            "documents",
+            action="find_document_by_title",
+            params={
+                "metadata_filter": json.dumps({"title": title}),
+                "limit": 1,
+            },
+        )
+        results = resp.get("results", [])
+        return results[0] if results else None
 
     def upsert_document(
         self,
@@ -310,15 +315,20 @@ class R2rBackend(RagBackend):
         return created.get("results", {}).get("document_id", "")
 
     def find_document_by_filename(self, filename: str) -> dict | None:
-        offset, limit = 0, 100
-        while True:
-            results = self.list_documents(offset=offset, limit=limit)
-            if not results:
-                return None
-            for d in results:
-                if d.get("metadata", {}).get("filename") == filename:
-                    return d
-            offset += limit
+        if not filename:
+            return None
+
+        resp = self._request(
+            "GET",
+            "documents",
+            action="find_document_by_filename",
+            params={
+                "metadata_filter": json.dumps({"filename": filename}),
+                "limit": 1,
+            },
+        )
+        results = resp.get("results", [])
+        return results[0] if results else None
 
     def delete_document(self, document_id: str) -> None:
         self._request(
