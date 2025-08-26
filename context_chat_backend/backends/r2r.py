@@ -240,8 +240,9 @@ class R2rBackend(RagBackend):
             em = existing.get("metadata", {})
             same_hash = em.get("sha256") == meta.get("sha256")
             same_meta = (
-                em.get("modified") == meta.get("modified")
-                and em.get("content-length") == meta.get("content-length")
+                str(em.get("modified")) == str(meta.get("modified"))
+                and str(em.get("content-length"))
+                == str(meta.get("content-length"))
             )
             if same_hash or same_meta:
                 if em != meta:
@@ -270,6 +271,10 @@ class R2rBackend(RagBackend):
                         f"collections/{cid}/documents/{existing['id']}",
                         action=f"upsert_document:remove:{existing['id']}:{cid}",
                     )
+                return existing["id"]
+
+            ingestion_status = existing.get("ingestion_status") or existing.get("status")
+            if ingestion_status and ingestion_status != "success":
                 return existing["id"]
 
             # If the title matches but the hash differs, replace the existing document.
