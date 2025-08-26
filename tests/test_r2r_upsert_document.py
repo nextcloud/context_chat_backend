@@ -161,6 +161,39 @@ def test_find_document_by_hash_returns_none():
     }
 
 
+def test_find_document_by_title_exact_and_mismatch():
+    backend = R2rBackend.__new__(R2rBackend)
+
+    calls: list[dict[str, Any]] = []
+
+    def fake_request(method, path, *, params=None, **kwargs):
+        calls.append({"params": params})
+        return {
+            "results": [
+                {"id": "doc1", "title": "doc.txt", "metadata": {"title": "doc.txt"}}
+            ]
+        }
+
+    backend._request = fake_request  # type: ignore[attr-defined]
+
+    doc = backend.find_document_by_title("doc.txt")
+    assert doc and doc["id"] == "doc1"
+    assert calls[0]["params"] == {
+        "metadata_filter": json.dumps({"title": "doc.txt"}),
+        "limit": 10,
+    }
+
+    def fake_request_mismatch(method, path, *, params=None, **kwargs):
+        return {
+            "results": [
+                {"id": "doc2", "title": "other.txt", "metadata": {"title": "other.txt"}}
+            ]
+        }
+
+    backend._request = fake_request_mismatch  # type: ignore[attr-defined]
+    assert backend.find_document_by_title("doc.txt") is None
+
+
 def test_upsert_document_ignores_unrelated_document(tmp_path):
     backend = R2rBackend.__new__(R2rBackend)
 
@@ -205,6 +238,52 @@ def test_upsert_document_ignores_unrelated_document(tmp_path):
     assert doc_id == "new"
     assert deleted == []
     assert any(path == "documents" for _, path, _, _ in calls)
+
+
+def test_upsert_document_replaces_when_title_matches_hash_diff(tmp_path):
+    backend = R2rBackend.__new__(R2rBackend)
+
+    file = tmp_path / "doc.txt"
+    content = "new"
+    file.write_text(content)
+
+    backend.find_document_by_hash = lambda sha256: None
+
+    existing_stub = {"id": "doc1"}
+    existing_full = {
+        "id": "doc1",
+        "metadata": {"sha256": "old"},
+        "collection_ids": ["cid1"],
+        "ingestion_status": "success",
+    }
+    backend.find_document_by_title = lambda title: existing_stub
+    backend.get_document = lambda document_id: existing_full
+
+    deleted: list[str] = []
+    backend.delete_document = lambda document_id: deleted.append(document_id)
+
+    calls: list[tuple[str, str, Any, Any, Any]] = []
+
+    def fake_request(method, path, *, files=None, json=None, action=None, **kwargs):
+        calls.append((method, path, files, json, action))
+        if method == "POST" and path == "documents":
+            return {"results": {"document_id": "doc2"}}
+        return {}
+
+    backend._request = fake_request  # type: ignore[attr-defined]
+
+    metadata = {
+        "title": "doc.txt",
+        "filename": "doc.txt",
+        "modified": "1",
+        "content-length": len(content),
+    }
+
+    doc_id = backend.upsert_document(str(file), metadata, ["cid1"])
+
+    assert doc_id == "doc2"
+    assert deleted == ["doc1"]
+    assert any(path == "documents" for _, path, _, _, _ in calls)
 
 
 def test_upsert_document_skips_pending_ingestion(tmp_path):
