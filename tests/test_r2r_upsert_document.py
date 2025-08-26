@@ -200,3 +200,45 @@ def test_upsert_document_ignores_unrelated_document(tmp_path):
     assert doc_id == "new"
     assert deleted == []
     assert any(path == "documents" for _, path, _, _ in calls)
+
+
+def test_upsert_document_skips_pending_ingestion(tmp_path):
+    backend = R2rBackend.__new__(R2rBackend)
+
+    file = tmp_path / "doc.txt"
+    content = "hello"
+    file.write_text(content)
+
+    backend.find_document_by_hash = lambda sha256: None
+
+    existing = {
+        "id": "doc1",
+        "metadata": {"modified": "1", "content-length": "5"},
+        "collection_ids": ["cid1"],
+        "ingestion_status": "pending",
+    }
+    backend.find_document_by_title = lambda title: existing
+
+    deleted: list[str] = []
+    backend.delete_document = lambda document_id: deleted.append(document_id)
+
+    calls: list[tuple[str, str, Any, Any]] = []
+
+    def fake_request(method, path, *, files=None, json=None, action=None, **kwargs):
+        calls.append((method, path, files, json))
+        return {}
+
+    backend._request = fake_request  # type: ignore[attr-defined]
+
+    metadata = {
+        "title": "doc.txt",
+        "filename": "doc.txt",
+        "modified": "1",
+        "content-length": len(content),
+    }
+
+    doc_id = backend.upsert_document(str(file), metadata, ["cid1"])
+
+    assert doc_id == "doc1"
+    assert deleted == []
+    assert not any(method == "POST" and path == "documents" for method, path, _, _ in calls)
