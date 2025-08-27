@@ -11,7 +11,8 @@ langchain-postgres
 langchain-unstructured
 llama_cpp_python
 msg-parser
-nc_py_api
+# fix it to the version before niquests
+nc_py_api==0.20.2
 odfdo
 odfpy
 openpyxl
