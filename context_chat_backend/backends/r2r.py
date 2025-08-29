@@ -197,7 +197,10 @@ class R2rBackend(RagBackend):
             "GET",
             "documents",
             action="find_document_by_hash",
-            params={"metadata_filter": json.dumps({"sha256": sha256}), "limit": 1},
+            params={
+                "filters": json.dumps({"metadata.sha256": {"$eq": sha256}}),
+                "limit": 1,
+            },
         )
         results = resp.get("results", [])
         return results[0] if results else None
@@ -211,7 +214,7 @@ class R2rBackend(RagBackend):
             "documents",
             action="find_document_by_title",
             params={
-                "metadata_filter": json.dumps({"title": {"eq": title}}),
+                "filters": json.dumps({"metadata.title": {"$eq": title}}),
                 "limit": 1,
             },
         )
@@ -380,7 +383,7 @@ class R2rBackend(RagBackend):
             "documents",
             action="find_document_by_filename",
             params={
-                "metadata_filter": json.dumps({"filename": {"eq": filename}}),
+                "filters": json.dumps({"metadata.filename": {"$eq": filename}}),
                 "limit": 1,
             },
         )
