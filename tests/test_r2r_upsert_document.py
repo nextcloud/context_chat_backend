@@ -107,7 +107,7 @@ def test_upsert_document_reuses_existing_by_hash(tmp_path):
     }
     deleted: list[str] = []
 
-    def delete_document(document_id: str):
+    def delete_document(document_id: str, *, title: str | None = None):
         deleted.append(document_id)
 
     backend.delete_document = delete_document
@@ -211,7 +211,7 @@ def test_upsert_document_ignores_unrelated_document(tmp_path):
     backend.find_document_by_title = lambda title: None
     deleted: list[str] = []
 
-    def delete_document(document_id: str) -> None:
+    def delete_document(document_id: str, *, title: str | None = None) -> None:
         deleted.append(document_id)
 
     backend.delete_document = delete_document
@@ -260,7 +260,7 @@ def test_upsert_document_replaces_when_title_matches_hash_diff(tmp_path):
     backend.get_document = lambda document_id: existing_full
 
     deleted: list[str] = []
-    backend.delete_document = lambda document_id: deleted.append(document_id)
+    backend.delete_document = lambda document_id, *, title=None: deleted.append(document_id)
 
     calls: list[tuple[str, str, Any, Any, Any]] = []
 
@@ -307,7 +307,7 @@ def test_upsert_document_skips_pending_ingestion(tmp_path):
     backend.get_document = lambda document_id: existing_full
 
     deleted: list[str] = []
-    backend.delete_document = lambda document_id: deleted.append(document_id)
+    backend.delete_document = lambda document_id, *, title=None: deleted.append(document_id)
 
     calls: list[tuple[str, str, Any, Any]] = []
 

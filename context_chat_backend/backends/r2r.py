@@ -66,7 +66,13 @@ class R2rBackend(RagBackend):
     # ------------------------------------------------------------------
     # Utility helpers
     def _request(
-        self, method: str, path: str, *, action: str | None = None, **kwargs
+        self,
+        method: str,
+        path: str,
+        *,
+        action: str | None = None,
+        desc: str | None = None,
+        **kwargs,
     ) -> dict[str, Any]:
         url_path = f"/v3/{path.lstrip('/')}"
         curl_parts = ["curl", "-i", "-X", method.upper()]
@@ -119,10 +125,12 @@ class R2rBackend(RagBackend):
         curl_parts.append(f"{self._client.base_url}{url_path}{query}")
 
         cmd = " ".join(shlex.quote(part) for part in curl_parts)
+        if desc:
+            logger.info(desc)
         if action:
-            logger.info("CCBE action: %s | R2R request: %s", action, cmd)
+            logger.debug("R2R request [%s]: %s", action, cmd)
         else:
-            logger.info("R2R request: %s", cmd)
+            logger.debug("R2R request: %s", cmd)
 
         resp = self._client.request(method, url_path, **kwargs)
         logger.debug("R2R response body: %s", resp.text)
@@ -246,9 +254,22 @@ class R2rBackend(RagBackend):
 
         meta = dict(metadata)
         meta.setdefault("sha256", digest)
+        title = meta.get("title", "")
+        logger.info(
+            "Checking if document '%s' exists with hash %s", title or "<no title>", digest
+        )
 
         doc_by_hash = self.find_document_by_hash(digest)
         if doc_by_hash and doc_by_hash.get("metadata", {}).get("sha256") == digest:
+            logger.info(
+                "Document '%s' exists with same hash; verifying metadata and collections",
+                title or "<no title>",
+            )
+            logger.info(
+                "Retrieving document '%s' details for comparison (id %s)",
+                title or "<no title>",
+                doc_by_hash["id"],
+            )
             existing = self.get_document(doc_by_hash["id"])
             em = existing.get("metadata", {})
             if em != meta:
@@ -259,6 +280,7 @@ class R2rBackend(RagBackend):
                     "PUT",
                     f"documents/{existing['id']}/metadata",
                     action=f"upsert_document:update_metadata:{existing['id']}",
+                    desc=f"Updating metadata for document '{title}' ({existing['id']})",
                     json=meta_list,
                 )
             current = set(existing.get("collection_ids", []))
@@ -270,23 +292,44 @@ class R2rBackend(RagBackend):
                     "POST",
                     f"collections/{cid}/documents/{existing['id']}",
                     action=f"upsert_document:add:{existing['id']}:{cid}",
+                    desc=(
+                        f"Adding document '{title}' ({existing['id']}) to collection {cid}"
+                    ),
                 )
             for cid in rem:
                 self._request(
                     "DELETE",
                     f"collections/{cid}/documents/{existing['id']}",
                     action=f"upsert_document:remove:{existing['id']}:{cid}",
+                    desc=(
+                        f"Removing document '{title}' ({existing['id']}) from collection {cid}"
+                    ),
                 )
             return existing["id"]
 
-        existing_stub = self.find_document_by_title(meta.get("title", ""))
+        logger.info(
+            "Document '%s' not found by hash; checking by title", title or "<no title>"
+        )
+        existing_stub = self.find_document_by_title(title)
         if existing_stub:
+            logger.info(
+                "Retrieving document '%s' details for hash comparison (id %s)",
+                title or "<no title>",
+                existing_stub["id"],
+            )
             existing = self.get_document(existing_stub["id"])
             ingestion_status = existing.get("ingestion_status") or existing.get("status")
             if ingestion_status and ingestion_status != "success":
+                logger.info(
+                    "Document '%s' (id %s) ingestion pending; reusing", title, existing["id"]
+                )
                 return existing["id"]
+            logger.info(
+                "Document '%s' exists but hash value has changed; deleting old version to upsert new version",
+                title or "<no title>",
+            )
             # Title matches but hash differs, so replace the existing document.
-            self.delete_document(existing["id"])
+            self.delete_document(existing["id"], title=title)
 
         with open(file_path, "rb") as fh:
             # ``mimetypes.guess_type`` relies on file extensions.  The sanitized
@@ -323,6 +366,7 @@ class R2rBackend(RagBackend):
                 "POST",
                 "documents",
                 action="upsert_document:create",
+                desc=f"Creating new document '{title}'",
                 files=files,
             )
         return created.get("results", {}).get("document_id", "")
@@ -350,17 +394,21 @@ class R2rBackend(RagBackend):
                 return doc
         return None
 
-    def delete_document(self, document_id: str) -> None:
+    def delete_document(self, document_id: str, *, title: str | None = None) -> None:
+        desc = f"Deleting document {document_id}"
+        if title:
+            desc += f" ('{title}')"
         self._request(
             "DELETE",
             f"documents/{document_id}",
             action=f"delete_document:{document_id}",
+            desc=desc,
         )
 
     def delete_document_by_filename(self, filename: str) -> None:
         doc = self.find_document_by_filename(filename)
         if doc:
-            self.delete_document(doc["id"])
+            self.delete_document(doc["id"], title=filename)
 
     # ------------------------------------------------------------------
     # Access control helpers
