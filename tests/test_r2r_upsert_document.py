@@ -160,7 +160,14 @@ def test_find_document_by_hash_returns_none():
     assert calls and calls[0] == (
         "POST",
         "documents/search",
-        {"query": "", "filters": {"metadata.sha256": {"$eq": "abc"}}, "limit": 1},
+        {
+            "query": "",
+            "search_mode": "advanced",
+            "search_settings": {
+                "filters": {"metadata.sha256": {"$eq": "abc"}},
+                "limit": 1,
+            },
+        },
     )
 
 

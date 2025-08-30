@@ -199,8 +199,11 @@ class R2rBackend(RagBackend):
                 action="find_document_by_hash",
                 json={
                     "query": "",
-                    "filters": {"metadata.sha256": {"$eq": sha256}},
-                    "limit": 1,
+                    "search_mode": "advanced",
+                    "search_settings": {
+                        "filters": {"metadata.sha256": {"$eq": sha256}},
+                        "limit": 1,
+                    },
                 },
             )
         except httpx.TimeoutException:
