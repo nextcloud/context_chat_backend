@@ -192,17 +192,23 @@ class R2rBackend(RagBackend):
         single result is requested which makes the check effectively
         constant-time even for large collections.
         """
-
-        resp = self._request(
-            "POST",
-            "documents/search",
-            action="find_document_by_hash",
-            json={
-                "query": "",
-                "filters": {"metadata.sha256": {"$eq": sha256}},
-                "limit": 1,
-            },
-        )
+        try:
+            resp = self._request(
+                "POST",
+                "documents/search",
+                action="find_document_by_hash",
+                json={
+                    "query": "",
+                    "filters": {"metadata.sha256": {"$eq": sha256}},
+                    "limit": 1,
+                },
+            )
+        except httpx.TimeoutException:
+            logger.warning(
+                "R2R find_document_by_hash timed out for %s; skipping duplicate check",
+                sha256,
+            )
+            return None
 
         for doc in resp.get("results", []):
             if doc.get("metadata", {}).get("sha256") == sha256:

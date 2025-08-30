@@ -3,6 +3,8 @@ import hashlib
 import json
 from typing import Any
 
+import httpx
+
 from context_chat_backend.backends.r2r import R2rBackend
 
 
@@ -158,7 +160,7 @@ def test_find_document_by_hash_returns_none():
     assert calls and calls[0] == (
         "POST",
         "documents/search",
-        {"filters": {"metadata.sha256": {"$eq": "abc"}}, "limit": 1},
+        {"query": "", "filters": {"metadata.sha256": {"$eq": "abc"}}, "limit": 1},
     )
 
 
@@ -176,6 +178,17 @@ def test_find_document_by_hash_returns_match():
 
     doc = backend.find_document_by_hash("abc")
     assert doc and doc["id"] == "doc1"
+
+
+def test_find_document_by_hash_handles_timeout():
+    backend = R2rBackend.__new__(R2rBackend)
+
+    def fake_request(method, path, *, json=None, **kwargs):
+        raise httpx.TimeoutException("boom")
+
+    backend._request = fake_request  # type: ignore[attr-defined]
+
+    assert backend.find_document_by_hash("abc") is None
 
 
 def test_find_document_by_title_exact_and_mismatch():
