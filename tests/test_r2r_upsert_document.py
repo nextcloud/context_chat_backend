@@ -146,19 +146,36 @@ def test_upsert_document_reuses_existing_by_hash(tmp_path):
 def test_find_document_by_hash_returns_none():
     backend = R2rBackend.__new__(R2rBackend)
 
-    captured: dict[str, Any] = {}
+    calls: list[tuple[str, str, dict | None]] = []
 
-    def fake_request(method, path, *, params=None, **kwargs):
-        captured["params"] = params
+    def fake_request(method, path, *, json=None, **kwargs):
+        calls.append((method, path, json))
         return {"results": []}
 
     backend._request = fake_request  # type: ignore[attr-defined]
 
     assert backend.find_document_by_hash("abc") is None
-    assert captured["params"] == {
-        "filters": json.dumps({"metadata.sha256": {"$eq": "abc"}}),
-        "limit": 1,
-    }
+    assert calls and calls[0] == (
+        "POST",
+        "documents/search",
+        {"filters": {"metadata.sha256": {"$eq": "abc"}}, "limit": 1},
+    )
+
+
+def test_find_document_by_hash_returns_match():
+    backend = R2rBackend.__new__(R2rBackend)
+
+    def fake_request(method, path, *, json=None, **kwargs):
+        return {
+            "results": [
+                {"id": "doc1", "metadata": {"sha256": "abc"}},
+            ]
+        }
+
+    backend._request = fake_request  # type: ignore[attr-defined]
+
+    doc = backend.find_document_by_hash("abc")
+    assert doc and doc["id"] == "doc1"
 
 
 def test_find_document_by_title_exact_and_mismatch():
