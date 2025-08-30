@@ -26,7 +26,7 @@ graph TD
 
 ## Endpoint narratives
 
-- **`PUT /loadSources`** first ensures per-user collections then uploads each document. The controller resolves user IDs and metadata before calling `ensure_collections` and `upsert_document`【F:context_chat_backend/controller.py†L523-L590】. These backend calls translate to listing or creating collections【F:context_chat_backend/backends/r2r.py†L142-L174】 and posting or updating documents with server-side hash checks and metadata updates while using a custom ingestion mode【F:context_chat_backend/backends/r2r.py†L245-L378】.
+- **`PUT /loadSources`** first ensures per-user collections then uploads each document. The controller resolves user IDs and metadata before calling `ensure_collections` and `upsert_document`【F:context_chat_backend/controller.py†L523-L590】. These backend calls translate to listing or creating collections【F:context_chat_backend/backends/r2r.py†L142-L174】 and posting or updating documents with server-side hash checks and metadata updates while using a custom ingestion mode【F:context_chat_backend/backends/r2r.py†L264-L379】.
 - **`POST /updateAccessDeclarative`** synchronizes document membership for a set of users. CCBE invokes `decl_update_access`【F:context_chat_backend/controller.py†L334-L356】 which lists existing document collections and issues POST/DELETE requests to adjust membership【F:context_chat_backend/backends/r2r.py†L446-L469】.
 - **`POST /updateAccess`** grants or revokes access for users. The controller delegates to `update_access`【F:context_chat_backend/controller.py†L369-L399】 which maps to R2R collection membership operations【F:context_chat_backend/backends/r2r.py†L421-L441】.
 - **`POST /deleteSources`** removes documents by ID. CCBE calls `delete_document` for each identifier【F:context_chat_backend/controller.py†L443-L467】 which issues `DELETE /v3/documents/{id}` in R2R【F:context_chat_backend/backends/r2r.py†L403-L412】.
@@ -35,5 +35,5 @@ graph TD
 
 ## References
 
-- R2R document upsert performs a server-side hash comparison by issuing `POST /v3/documents/search` with an empty query, `search_mode` set to `advanced`, and `search_settings` containing a metadata hash filter and limit to avoid re-uploading unchanged files, updating metadata in place when hashes match and skipping documents that are still ingesting【F:context_chat_backend/backends/r2r.py†L246-L336】【F:context_chat_backend/backends/r2r.py†L187-L205】.
+- R2R document upsert performs a server-side hash comparison by issuing `POST /v3/retrieval/search` with a wildcard query (`*`), `search_mode` set to `basic`, and `search_settings` containing a metadata hash filter and limit to avoid re-uploading unchanged files, updating metadata in place when hashes match and skipping documents that are still ingesting【F:context_chat_backend/backends/r2r.py†L264-L334】【F:context_chat_backend/backends/r2r.py†L187-L228】.
 - Access control modifications operate through collection-document membership changes【F:context_chat_backend/backends/r2r.py†L421-L469】.
