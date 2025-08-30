@@ -198,6 +198,7 @@ class R2rBackend(RagBackend):
             "documents/search",
             action="find_document_by_hash",
             json={
+                "query": "",
                 "filters": {"metadata.sha256": {"$eq": sha256}},
                 "limit": 1,
             },
