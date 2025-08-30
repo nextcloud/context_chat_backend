@@ -35,5 +35,5 @@ graph TD
 
 ## References
 
-- R2R document upsert performs a server-side hash comparison to avoid re-uploading unchanged files, updating metadata in place when hashes match and skipping documents that are still ingesting【F:context_chat_backend/backends/r2r.py†L245-L334】【F:context_chat_backend/backends/r2r.py†L187-L209】.
+- R2R document upsert performs a server-side hash comparison by issuing `POST /v3/documents/search` with an empty query and metadata filter to avoid re-uploading unchanged files, updating metadata in place when hashes match and skipping documents that are still ingesting【F:context_chat_backend/backends/r2r.py†L246-L336】【F:context_chat_backend/backends/r2r.py†L187-L205】.
 - Access control modifications operate through collection-document membership changes【F:context_chat_backend/backends/r2r.py†L421-L469】.
