@@ -45,7 +45,7 @@ def test_upsert_document_sends_metadata_and_collection_ids(tmp_path):
         assert uploaded[key] == value
     assert "sha256" in uploaded
     assert json.loads(files["collection_ids"][1]) == collection_ids
-    assert files["ingestion_mode"][1] == "fast"
+    assert files["ingestion_mode"][1] == "custom"
     assert "file" in files
 
 

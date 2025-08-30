@@ -100,7 +100,12 @@ def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daem
 
 
 def is_valid_source_id(source_id: str) -> bool:
-        return re.match(r'^[a-zA-Z0-9_-]+__[a-zA-Z0-9_-]+:\s*\d+$', source_id) is not None
+        pattern = (
+                r"(?:[a-zA-Z0-9_-]+__[a-zA-Z0-9_-]+:\s*\d+|"
+                r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
+        )
+        return re.fullmatch(pattern, source_id) is not None
 
 
 def is_valid_provider_id(provider_id: str) -> bool:
