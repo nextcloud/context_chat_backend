@@ -363,7 +363,7 @@ class R2rBackend(RagBackend):
                     "collection_ids",
                     (None, json.dumps(list(collection_ids)), "application/json"),
                 ),
-                ("ingestion_mode", (None, "fast")),
+                ("ingestion_mode", (None, "custom")),
             ]
             created = self._request(
                 "POST",
@@ -483,9 +483,13 @@ class R2rBackend(RagBackend):
         }
         if scope_type and scope_list:
             payload["scope"] = {"type": scope_type, "ids": list(scope_list)}
-        resp = self._request(
-            "POST", "retrieval/search", action="search", json=payload
-        )
+        try:
+            resp = self._request(
+                "POST", "retrieval/search", action="search", json=payload
+            )
+        except httpx.HTTPError as exc:
+            logger.warning("search request failed", extra={"error": str(exc)})
+            return []
         results = resp.get("results", {})
 
         # Newer R2R versions wrap chunk hits inside
