@@ -45,7 +45,9 @@ class R2rBackend(RagBackend):
             headers["X-API-Key"] = api_key
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        self._client = httpx.Client(base_url=base, timeout=30.0, headers=headers)
+        # Increase timeout to accommodate slow retrieval searches and other
+        # potentially long-running operations.
+        self._client = httpx.Client(base_url=base, timeout=60.0, headers=headers)
 
         # Echo the curl command for lifecycle checks and easier debugging.
         curl_parts = ["curl", "-i"]
@@ -76,9 +78,20 @@ class R2rBackend(RagBackend):
     ) -> dict[str, Any]:
         url_path = f"/v3/{path.lstrip('/')}"
         curl_parts = ["curl", "-i", "-X", method.upper()]
-        # Merge client headers with any call-specific overrides.
+        # Merge client headers with any call-specific overrides.  Explicitly add
+        # ``Content-Type: application/json`` for JSON or dict payloads so that
+        # the generated curl command mirrors the actual request.
         headers = dict(self._client.headers)
         headers.update(kwargs.get("headers") or {})
+        if (
+            ("json" in kwargs and kwargs["json"] is not None)
+            or (
+                "data" in kwargs
+                and isinstance(kwargs["data"], dict | list)
+            )
+        ):
+            headers.setdefault("Content-Type", "application/json")
+        kwargs["headers"] = headers
         for key, value in headers.items():
             lower = key.lower()
             masked = value
