@@ -187,19 +187,19 @@ class R2rBackend(RagBackend):
     def find_document_by_hash(self, sha256: str) -> dict | None:
         """Return document whose ``metadata.sha256`` matches ``sha256``.
 
-        Instead of iterating through every document, leverage R2R's metadata
-        filtering so that the hash comparison happens server-side.  Only a
-        single result is requested which makes the check effectively
-        constant-time even for large collections.
+        Use R2R's retrieval search with a wildcard query so that hash
+        filtering happens server-side. Only a single result is requested,
+        keeping the duplicate check effectively constant-time even for large
+        collections.
         """
         try:
             resp = self._request(
                 "POST",
-                "documents/search",
+                "retrieval/search",
                 action="find_document_by_hash",
                 json={
-                    "query": "",
-                    "search_mode": "advanced",
+                    "query": "*",
+                    "search_mode": "basic",
                     "search_settings": {
                         "filters": {"metadata.sha256": {"$eq": sha256}},
                         "limit": 1,
@@ -213,9 +213,18 @@ class R2rBackend(RagBackend):
             )
             return None
 
-        for doc in resp.get("results", []):
-            if doc.get("metadata", {}).get("sha256") == sha256:
-                return doc
+        results = resp.get("results", {})
+        if isinstance(results, list):
+            hits: Sequence[Any] = results
+        elif isinstance(results, dict):
+            hits = results.get("chunk_search_results") or []
+        else:
+            hits = []
+
+        for hit in hits:
+            meta = hit.get("metadata", {}) if isinstance(hit, dict) else {}
+            if meta.get("sha256") == sha256:
+                return {"id": hit.get("document_id"), "metadata": meta}
         return None
 
     def find_document_by_title(self, title: str) -> dict | None:

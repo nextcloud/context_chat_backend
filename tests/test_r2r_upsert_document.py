@@ -152,17 +152,17 @@ def test_find_document_by_hash_returns_none():
 
     def fake_request(method, path, *, json=None, **kwargs):
         calls.append((method, path, json))
-        return {"results": []}
+        return {"results": {"chunk_search_results": []}}
 
     backend._request = fake_request  # type: ignore[attr-defined]
 
     assert backend.find_document_by_hash("abc") is None
     assert calls and calls[0] == (
         "POST",
-        "documents/search",
+        "retrieval/search",
         {
-            "query": "",
-            "search_mode": "advanced",
+            "query": "*",
+            "search_mode": "basic",
             "search_settings": {
                 "filters": {"metadata.sha256": {"$eq": "abc"}},
                 "limit": 1,
@@ -176,9 +176,14 @@ def test_find_document_by_hash_returns_match():
 
     def fake_request(method, path, *, json=None, **kwargs):
         return {
-            "results": [
-                {"id": "doc1", "metadata": {"sha256": "abc"}},
-            ]
+            "results": {
+                "chunk_search_results": [
+                    {
+                        "document_id": "doc1",
+                        "metadata": {"sha256": "abc"},
+                    }
+                ]
+            }
         }
 
     backend._request = fake_request  # type: ignore[attr-defined]
