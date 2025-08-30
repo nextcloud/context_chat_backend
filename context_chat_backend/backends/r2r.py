@@ -194,16 +194,19 @@ class R2rBackend(RagBackend):
         """
 
         resp = self._request(
-            "GET",
-            "documents",
+            "POST",
+            "documents/search",
             action="find_document_by_hash",
-            params={
-                "filters": json.dumps({"metadata.sha256": {"$eq": sha256}}),
+            json={
+                "filters": {"metadata.sha256": {"$eq": sha256}},
                 "limit": 1,
             },
         )
-        results = resp.get("results", [])
-        return results[0] if results else None
+
+        for doc in resp.get("results", []):
+            if doc.get("metadata", {}).get("sha256") == sha256:
+                return doc
+        return None
 
     def find_document_by_title(self, title: str) -> dict | None:
         if not title:
