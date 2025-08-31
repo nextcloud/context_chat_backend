@@ -741,6 +741,7 @@ def _(query: Query, request: Request) -> LLMOutput:
             scope_type=query.scopeType,
             scope_list=query.scopeList,
         )
+        logger.debug("backend search hits", extra={"hits": hits})
         docs = [Document(page_content=h.get("page_content", ""), metadata=h.get("metadata", {})) for h in hits]
         if len(docs) == 0:
             raise ContextException("No documents retrieved, please index a few documents first")
@@ -777,13 +778,16 @@ def _(query: Query, request: Request) -> list[SearchResult]:
             scope_type=query.scopeType,
             scope_list=query.scopeList,
         )
-        return [
+        logger.debug("docSearch hits", extra={"hits": hits})
+        results: list[SearchResult] = [
             {
                 "source_id": h.get("metadata", {}).get("source", ""),
                 "title": h.get("metadata", {}).get("title", ""),
             }
             for h in hits
         ]
+        logger.debug("docSearch results", extra={"results": results})
+        return results
 
     # useContext from Query is not used here
     return exec_in_proc(
