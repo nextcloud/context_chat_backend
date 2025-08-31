@@ -40,5 +40,5 @@ class LLMOutput(TypedDict):
 
 
 class SearchResult(TypedDict):
-	source_id: str
-	title: str
+        sourceId: str
+        title: str

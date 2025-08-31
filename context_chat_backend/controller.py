@@ -782,7 +782,7 @@ def _(query: Query, request: Request) -> list[SearchResult]:
         logger.debug("docSearch hits", extra={"hits": hits})
         results: list[SearchResult] = [
             {
-                "source_id": h.get("metadata", {}).get("source", ""),
+                "sourceId": h.get("metadata", {}).get("source", ""),
                 "title": h.get("metadata", {}).get("title", ""),
             }
             for h in hits

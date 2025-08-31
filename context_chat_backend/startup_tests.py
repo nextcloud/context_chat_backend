@@ -99,7 +99,7 @@ async def _verify_deletion_with_retry(
                 return True
             missing = True
             for r in results:
-                sid = r.get("source_id")
+                sid = r.get("sourceId")
                 title = r.get("title")
                 if deleted_source_id and sid == deleted_source_id:
                     missing = False

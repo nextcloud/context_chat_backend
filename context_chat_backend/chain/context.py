@@ -79,7 +79,7 @@ def do_doc_search(
 
 		sources_cache[source_id] = None
 		results.append(SearchResult(
-			source_id=source_id,
+			sourceId=source_id,
 			title=doc.metadata.get('title', ''),
 		))
 
