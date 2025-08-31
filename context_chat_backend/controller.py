@@ -769,6 +769,7 @@ def _(query: Query, request: Request) -> LLMOutput:
 @app.post("/docSearch")
 @enabled_guard(app)
 def _(query: Query, request: Request) -> list[SearchResult]:
+    logger.debug("received docSearch request", extra={"query": query.dict()})
     backend = getattr(request.app.state, "rag_backend", None)
     if backend:
         hits = backend.search(
@@ -786,21 +787,21 @@ def _(query: Query, request: Request) -> list[SearchResult]:
             }
             for h in hits
         ]
-        logger.debug("docSearch results", extra={"results": results})
-        return results
-
-    # useContext from Query is not used here
-    return exec_in_proc(
-        target=do_doc_search,
-        args=(
-            query.userId,
-            query.query,
-            vectordb_loader,
-            query.ctxLimit,
-            query.scopeType,
-            query.scopeList,
-        ),
-    )
+    else:
+        # useContext from Query is not used here
+        results = exec_in_proc(
+            target=do_doc_search,
+            args=(
+                query.userId,
+                query.query,
+                vectordb_loader,
+                query.ctxLimit,
+                query.scopeType,
+                query.scopeList,
+            ),
+        )
+    logger.debug("docSearch results", extra={"results": results})
+    return results
 
 
 @app.get("/downloadLogs")
