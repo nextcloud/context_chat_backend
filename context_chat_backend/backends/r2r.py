@@ -19,6 +19,7 @@ import logging
 import mimetypes
 import os
 import shlex
+import time
 from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import urlencode
@@ -26,6 +27,7 @@ from urllib.parse import urlencode
 import httpx
 
 from ..vectordb.types import UpdateAccessOp
+from ..log_context import request_id_var
 from .base import RagBackend
 
 logger = logging.getLogger("ccb.r2r")
@@ -89,6 +91,13 @@ class R2rBackend(RagBackend):
         # the generated curl command mirrors the actual request.
         headers = dict(self._client.headers)
         headers.update(kwargs.get("headers") or {})
+        # Propagate request correlation id if present
+        try:
+            rid = request_id_var.get()
+        except Exception:
+            rid = None
+        if rid:
+            headers.setdefault("X-Request-ID", rid)
         if (
             ("json" in kwargs and kwargs["json"] is not None)
             or (
@@ -150,8 +159,19 @@ class R2rBackend(RagBackend):
             logger.debug("R2R request [%s]: %s", action, cmd)
         else:
             logger.debug("R2R request: %s", cmd)
-
+        start = time.perf_counter()
         resp = self._client.request(method, url_path, **kwargs)
+        duration_ms = (time.perf_counter() - start) * 1000.0
+        logger.info(
+            "R2R request completed",
+            extra={
+                "method": method.upper(),
+                "path": url_path,
+                "status": resp.status_code,
+                "duration_ms": round(duration_ms, 2),
+                "action": action or "",
+            },
+        )
         logger.debug("R2R response body: %s", resp.text)
         resp.raise_for_status()
         return resp.json() if resp.content else {}

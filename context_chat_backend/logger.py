@@ -11,6 +11,7 @@ import logging.config
 import logging.handlers
 import os
 from time import gmtime
+from .log_context import request_id_var
 
 from ruamel.yaml import YAML
 
@@ -76,6 +77,14 @@ class JSONFormatter(logging.Formatter):
 			for key, val in self.fmt_keys.items()
 		}
 		message.update(always_fields)
+
+		# Attach request correlation id when available
+		try:
+			rid = request_id_var.get()
+		except Exception:
+			rid = None
+		if rid:
+			message["request_id"] = rid
 
 		for key, val in record.__dict__.items():
 			if key not in LOG_RECORD_BUILTIN_ATTRS:
