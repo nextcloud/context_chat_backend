@@ -14,5 +14,5 @@ POST /deleteUser -> DELETE /users/{id}
 POST /countIndexedDocuments -> GET /documents
 PUT /loadSources -> POST /documents
 POST /query -> POST /retrieval/rag
-POST /docSearch -> POST /retrieval/search
+POST /docSearch -> POST /retrieval/rag
 GET /downloadLogs -> GET /logs/viewer
