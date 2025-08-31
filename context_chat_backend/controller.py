@@ -810,13 +810,14 @@ def _(query: Query, request: Request) -> list[SearchResult]:
             scope_list=query.scopeList,
         )
         logger.debug("docSearch hits", extra={"hits": hits})
-        results: list[SearchResult] = [
-            {
-                "sourceId": h.get("metadata", {}).get("title", ""),
-                "title": h.get("metadata", {}).get("title", ""),
-            }
-            for h in hits
-        ]
+        results: list[SearchResult] = []
+        for h in hits:
+            meta = h.get("metadata", {}) if isinstance(h, dict) else {}
+            title = meta.get("title", "")
+            # R2R documents expose source identifier as either 'source' or 'filename'
+            source_id = meta.get("source") or meta.get("filename") or ""
+            # Ensure we return simple strings; frontend may validate sourceId format
+            results.append({"sourceId": str(source_id), "title": str(title)})
     else:
         # useContext from Query is not used here
         results = exec_in_proc(
