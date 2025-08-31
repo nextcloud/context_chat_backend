@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from .types import EmbeddingException, RetryableEmbeddingException, TConfig
 
-logger = logging.getLogger('ccb.nextwork_em')
+logger = logging.getLogger('ccb.network_em')
 
 # Copied from llama_cpp/llama_types.py
 

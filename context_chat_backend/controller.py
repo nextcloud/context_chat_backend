@@ -25,6 +25,7 @@ from functools import wraps
 from pathlib import Path
 from threading import Event, Thread
 from time import sleep
+from uuid import uuid4
 from typing import Annotated, Any, cast
 
 import requests
@@ -43,6 +44,7 @@ from .chain.one_shot import _LLM_TEMPLATE, process_context_query, process_query
 from .chain.query_proc import get_pruned_query
 from .config_parser import get_config
 from .dyn_loader import LLMModelLoader, VectorDBLoader
+from .log_context import request_id_var
 from .models.types import LlmException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
@@ -199,6 +201,34 @@ app_config = get_config(os.environ["CC_CONFIG_PATH"])
 app = FastAPI(debug=app_config.debug, lifespan=lifespan)  # pyright: ignore[reportArgumentType]
 
 app.extra["CONFIG"] = app_config
+
+
+# request logging middleware with correlation id
+@app.middleware("http")
+async def _request_logging_middleware(request: Request, call_next):
+    rid = request.headers.get("X-Request-ID") or uuid4().hex
+    token = request_id_var.set(rid)
+    start = time.perf_counter()
+    try:
+        logger.info(
+            "http request",
+            extra={
+                "method": request.method,
+                "path": request.url.path,
+                "query": str(request.url.query),
+                "client": request.client.host if request.client else None,
+            },
+        )
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - start) * 1000.0
+        logger.info(
+            "http response",
+            extra={"status": response.status_code, "duration_ms": round(duration_ms, 2)},
+        )
+        response.headers["X-Request-ID"] = rid
+        return response
+    finally:
+        request_id_var.reset(token)
 
 
 # loaders
