@@ -45,9 +45,15 @@ class R2rBackend(RagBackend):
             headers["X-API-Key"] = api_key
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        # Increase timeout to accommodate slow retrieval searches and other
-        # potentially long-running operations.
-        self._client = httpx.Client(base_url=base, timeout=60.0, headers=headers)
+
+        # Allow slow retrieval searches by using a generous default timeout.
+        # ``R2R_HTTP_TIMEOUT`` (seconds) can override the default of 300.
+        timeout_str = os.getenv("R2R_HTTP_TIMEOUT", "300")
+        try:
+            timeout = float(timeout_str)
+        except ValueError:
+            timeout = 300.0
+        self._client = httpx.Client(base_url=base, timeout=timeout, headers=headers)
 
         # Echo the curl command for lifecycle checks and easier debugging.
         curl_parts = ["curl", "-i"]

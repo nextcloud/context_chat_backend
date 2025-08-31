@@ -135,6 +135,7 @@ class RagBackend:
 ```
 RAG_BACKEND=r2r
 R2R_BASE_URL=http://127.0.0.1:7272
+R2R_HTTP_TIMEOUT=300
 ```
 
 **Lessons baked in**
