@@ -802,10 +802,12 @@ def _(query: Query, request: Request) -> list[SearchResult]:
     logger.debug("received docSearch request", extra={"query": query.dict()})
     backend = getattr(request.app.state, "rag_backend", None)
     if backend:
+        # Mirror builtin behavior: over-fetch to account for duplicates
+        over_limit = max(1, query.ctxLimit * 2)
         hits = backend.search(
             user_id=query.userId,
             query=query.query,
-            ctx_limit=query.ctxLimit,
+            ctx_limit=over_limit,
             scope_type=query.scopeType,
             scope_list=query.scopeList,
         )
@@ -823,6 +825,8 @@ def _(query: Query, request: Request) -> list[SearchResult]:
                 continue
             seen.add(key)
             results.append({"sourceId": source_id, "title": title})
+            if len(results) >= query.ctxLimit:
+                break
     else:
         # useContext from Query is not used here
         results = exec_in_proc(
