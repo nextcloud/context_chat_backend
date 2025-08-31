@@ -20,7 +20,7 @@ graph TD
 
     CID[POST /countIndexedDocuments] --> LD[list_documents] -->|GET /v3/documents| RD[(list documents)]
 
-    Q[POST /query] --> SR[search] -->|POST /v3/retrieval/search| RS[(search)]
+    Q[POST /query] --> SR[search] -->|POST /v3/retrieval/rag| RS[(rag)]
     DOCS[POST /docSearch] --> SR
 ```
 
@@ -31,7 +31,7 @@ graph TD
 - **`POST /updateAccess`** grants or revokes access for users. The controller delegates to `update_access`【F:context_chat_backend/controller.py†L369-L399】 which maps to R2R collection membership operations【F:context_chat_backend/backends/r2r.py†L421-L441】.
 - **`POST /deleteSources`** removes documents by ID. CCBE calls `delete_document` for each identifier【F:context_chat_backend/controller.py†L443-L467】 which issues `DELETE /v3/documents/{id}` in R2R【F:context_chat_backend/backends/r2r.py†L403-L412】.
 - **`POST /countIndexedDocuments`** reports document counts. When using R2R, it simply lists documents and returns the length【F:context_chat_backend/controller.py†L511-L517】【F:context_chat_backend/backends/r2r.py†L178-L185】.
-- **`POST /query`** and **`POST /docSearch`** forward search requests to R2R. Both endpoints call `search` on the backend【F:context_chat_backend/controller.py†L727-L743】【F:context_chat_backend/controller.py†L769-L782】 which translates into `POST /v3/retrieval/search` filtered by the user's collection ID【F:context_chat_backend/backends/r2r.py†L506-L540】.
+- **`POST /query`** and **`POST /docSearch`** forward search requests to R2R. Both endpoints call `search` on the backend【F:context_chat_backend/controller.py†L737-L743】【F:context_chat_backend/controller.py†L775-L781】 which translates into `POST /v3/retrieval/rag` filtered by the user's collection ID【F:context_chat_backend/backends/r2r.py†L506-L552】.
 
 ## References
 

@@ -518,18 +518,18 @@ class R2rBackend(RagBackend):
         logger.debug("R2R search payload: %s", json.dumps(payload, sort_keys=True))
         try:
             resp = self._request(
-                "POST", "retrieval/search", action="/v3/retrieval/search", json=payload
+                "POST", "retrieval/rag", action="/v3/retrieval/rag", json=payload
             )
         except httpx.HTTPError as exc:
             logger.warning("search request failed", extra={"error": str(exc)})
             return []
-        results = resp.get("results", {})
+        rag_results = resp.get("results", {})
+        results = rag_results.get("search_results") if isinstance(rag_results, dict) else {}
 
-        # Newer R2R versions wrap chunk hits inside
-        # ``results.chunk_search_results`` while older builds
-        # returned a bare list.  Support both shapes and ignore
-        # any unexpected primitives to keep the startup check
-        # resilient across versions.
+        # R2R may return chunk hits either directly in ``results``
+        # or nested under ``results.search_results``. Support both
+        # shapes and ignore unexpected primitives to keep the startup
+        # check resilient across versions.
         if isinstance(results, list):
             hits: Sequence[Any] = results
         elif isinstance(results, dict):

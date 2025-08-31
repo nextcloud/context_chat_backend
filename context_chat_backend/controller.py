@@ -755,7 +755,7 @@ def _(query: Query, request: Request) -> LLMOutput:
         ).strip()
 
         unique_sources: list[str] = list(
-            {cast(str, d.metadata["source"]) for d in docs if d.metadata.get("source")}
+            {cast(str, d.metadata["title"]) for d in docs if d.metadata.get("title")}
         )
         return LLMOutput(output=output, sources=unique_sources)
 
@@ -782,7 +782,7 @@ def _(query: Query, request: Request) -> list[SearchResult]:
         logger.debug("docSearch hits", extra={"hits": hits})
         results: list[SearchResult] = [
             {
-                "sourceId": h.get("metadata", {}).get("source", ""),
+                "sourceId": h.get("metadata", {}).get("title", ""),
                 "title": h.get("metadata", {}).get("title", ""),
             }
             for h in hits
