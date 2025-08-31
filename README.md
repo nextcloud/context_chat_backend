@@ -32,6 +32,7 @@ RAG_BACKEND=builtin
 # Optional: R2R Graph RAG
 # RAG_BACKEND=r2r
 # R2R_BASE_URL=http://127.0.0.1:7272
+# R2R_HTTP_TIMEOUT=300           # optional, in seconds
 # R2R_API_KEY=your_api_key_here  # sent as X-API-Key
 # R2R_API_TOKEN=your_token_here  # optional bearer token
 
@@ -65,6 +66,7 @@ RAG_BACKEND=builtin
    ```bash
    RAG_BACKEND=r2r
    R2R_BASE_URL=http://127.0.0.1:7272
+   # R2R_HTTP_TIMEOUT=300
    # R2R_API_KEY=your_api_key_here  # sent as X-API-Key
    # R2R_API_TOKEN=your_token_here
    ```
