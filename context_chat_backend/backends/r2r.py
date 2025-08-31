@@ -511,16 +511,14 @@ class R2rBackend(RagBackend):
         scope_type: str | None = None,
         scope_list: Sequence[str] | None = None,
     ) -> list[dict]:
-        payload = {
-            "query": query,
-            "user_id": user_id,
-            "top_k": ctx_limit,
-        }
+        payload: dict[str, Any] = {"query": query, "top_k": ctx_limit}
+        payload["filters"] = {"collection_ids": {"$overlap": [user_id]}}
         if scope_type and scope_list:
             payload["scope"] = {"type": scope_type, "ids": list(scope_list)}
+        logger.debug("R2R search payload: %s", json.dumps(payload, sort_keys=True))
         try:
             resp = self._request(
-                "POST", "retrieval/search", action="search", json=payload
+                "POST", "retrieval/search", action="/v3/retrieval/search", json=payload
             )
         except httpx.HTTPError as exc:
             logger.warning("search request failed", extra={"error": str(exc)})
@@ -550,6 +548,7 @@ class R2rBackend(RagBackend):
                         "metadata": hit.get("metadata", {}),
                     }
                 )
+        logger.debug("R2R search results: %s", json.dumps(out, ensure_ascii=False))
         return out
 
     def config(self) -> dict[str, Any]:
