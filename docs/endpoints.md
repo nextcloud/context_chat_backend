@@ -15,5 +15,5 @@
 | POST | `/countIndexedDocuments` | Count indexed documents across providers or via backend【F:context_chat_backend/controller.py†L511-L519】 |
 | PUT | `/loadSources` | Ingest documents for users, ensuring collection mapping and deduplication【F:context_chat_backend/controller.py†L523-L590】 |
 | POST | `/query` | Perform question answering, optionally retrieving context from backend【F:context_chat_backend/controller.py†L727-L765】 |
-| POST | `/docSearch` | Search for documents matching a query without invoking the LLM【F:context_chat_backend/controller.py†L769-L804】 |
+| POST | `/docSearch` | Search for documents matching a query without invoking the LLM; returns `[{"sourceId", "title"}]`【F:context_chat_backend/controller.py†L769-L804】 |
 | GET | `/downloadLogs` | Download zipped server logs for debugging【F:context_chat_backend/controller.py†L802-L811】 |
