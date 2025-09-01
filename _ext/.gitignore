@@ -1,0 +1,4 @@
+# Ignore all runtime artifacts in this folder
+*
+!.gitignore
+

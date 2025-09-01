@@ -25,6 +25,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 import httpx
+import uuid
 
 from ..vectordb.types import UpdateAccessOp
 from ..log_context import request_id_var
@@ -459,13 +460,27 @@ class R2rBackend(RagBackend):
         return None
 
     def delete_document(self, document_id: str, *, title: str | None = None) -> None:
-        desc = f"Deleting document {document_id}"
+        """
+        Delete a document by its R2R UUID. If a non-UUID value is provided
+        (e.g. a Context Chat "source id" like ``files__default:123``), resolve
+        it by filename first and then delete by the resolved UUID.
+        """
+        # Accept CCBE-style source ids by resolving to the actual R2R document id
+        try:
+            uuid.UUID(str(document_id))
+            resolved_id = document_id
+        except ValueError:
+            # Fall back to deletion by filename/source identifier
+            self.delete_document_by_filename(document_id)
+            return
+
+        desc = f"Deleting document {resolved_id}"
         if title:
             desc += f" ('{title}')"
         self._request(
             "DELETE",
-            f"documents/{document_id}",
-            action=f"delete_document:{document_id}",
+            f"documents/{resolved_id}",
+            action=f"delete_document:{resolved_id}",
             desc=desc,
         )
 
@@ -529,6 +544,69 @@ class R2rBackend(RagBackend):
 
     # ------------------------------------------------------------------
     # Retrieval (minimal shape)
+    def rag(
+        self,
+        *,
+        user_id: str,
+        query: str,
+        ctx_limit: int,
+        scope_type: str | None = None,
+        scope_list: Sequence[str] | None = None,
+    ) -> dict[str, Any]:
+        """Call R2R RAG endpoint and return answer + hits.
+
+        Returns a dict with keys:
+        - answer: str | None
+        - hits: list[dict] (chunk hits with page_content + metadata)
+        """
+        payload: dict[str, Any] = {"query": query, "top_k": ctx_limit}
+        payload["filters"] = {"collection_ids": {"$overlap": [user_id]}}
+        if scope_type and scope_list:
+            payload["scope"] = {"type": scope_type, "ids": list(scope_list)}
+        logger.debug("R2R search payload: %s", json.dumps(payload, sort_keys=True))
+        try:
+            resp = self._request(
+                "POST", "retrieval/rag", action="/v3/retrieval/rag", json=payload
+            )
+        except httpx.HTTPError as exc:
+            logger.warning("rag request failed", extra={"error": str(exc)})
+            return {"answer": None, "hits": []}
+
+        rag_results = resp.get("results", {})
+        answer = None
+        if isinstance(rag_results, dict):
+            answer = rag_results.get("generated_answer") or rag_results.get("answer")
+
+        # Normalize hits similar to search()
+        results = rag_results.get("search_results") if isinstance(rag_results, dict) else {}
+        if isinstance(results, list):
+            hits_src: Sequence[Any] = results
+        elif isinstance(results, dict):
+            hits_src = results.get("chunk_search_results") or []
+        else:
+            hits_src = []
+
+        hits: list[dict[str, Any]] = []
+        for hit in hits_src:
+            if isinstance(hit, str):
+                hits.append({"page_content": hit, "metadata": {}})
+            else:
+                hits.append(
+                    {
+                        "page_content": hit.get("text") or hit.get("content", ""),
+                        "metadata": hit.get("metadata", {}),
+                    }
+                )
+
+        logger.debug(
+            "R2R rag results",
+            extra={
+                "has_answer": bool(answer),
+                "hits": hits,
+            },
+        )
+        return {"answer": answer, "hits": hits}
+
     def search(
         self,
         user_id: str,
@@ -542,38 +620,14 @@ class R2rBackend(RagBackend):
         if scope_type and scope_list:
             payload["scope"] = {"type": scope_type, "ids": list(scope_list)}
         logger.debug("R2R search payload: %s", json.dumps(payload, sort_keys=True))
-        try:
-            resp = self._request(
-                "POST", "retrieval/rag", action="/v3/retrieval/rag", json=payload
-            )
-        except httpx.HTTPError as exc:
-            logger.warning("search request failed", extra={"error": str(exc)})
-            return []
-        rag_results = resp.get("results", {})
-        results = rag_results.get("search_results") if isinstance(rag_results, dict) else {}
-
-        # R2R may return chunk hits either directly in ``results``
-        # or nested under ``results.search_results``. Support both
-        # shapes and ignore unexpected primitives to keep the startup
-        # check resilient across versions.
-        if isinstance(results, list):
-            hits: Sequence[Any] = results
-        elif isinstance(results, dict):
-            hits = results.get("chunk_search_results") or []
-        else:
-            hits = []
-
-        out = []
-        for hit in hits:
-            if isinstance(hit, str):
-                out.append({"page_content": hit, "metadata": {}})
-            else:
-                out.append(
-                    {
-                        "page_content": hit.get("text") or hit.get("content", ""),
-                        "metadata": hit.get("metadata", {}),
-                    }
-                )
+        rag = self.rag(
+            user_id=user_id,
+            query=query,
+            ctx_limit=ctx_limit,
+            scope_type=scope_type,
+            scope_list=scope_list,
+        )
+        out = rag.get("hits", [])
         logger.debug("R2R search results: %s", json.dumps(out, ensure_ascii=False))
         return out
 

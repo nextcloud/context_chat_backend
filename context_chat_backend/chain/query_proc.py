@@ -10,6 +10,7 @@ from ..types import TConfig
 
 logger = logging.getLogger('ccb.chain')
 
+
 def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, text_chunks: list[str]) -> str:
 	'''
 	Truncates the input to fit the model's maximum context length
@@ -36,8 +37,22 @@ def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, text_
 		) \
 		or 4096
 
-	query_tokens = llm.get_num_tokens(query)
-	template_tokens = llm.get_num_tokens(template.format(context='', question=''))
+	def _safe_num_tokens(text: str) -> int:
+		"""Best-effort token estimator.
+
+		Tries the model's ``get_num_tokens`` and falls back to a simple
+		character-length heuristic (~4 chars per token) if unavailable.
+		"""
+		try:
+			return llm.get_num_tokens(text)  # type: ignore[attr-defined]
+		except Exception:
+			# Fallback heuristic to avoid hard dependency on tokenizer support
+			approx = max(1, len(text) // 4)
+			logger.debug('fallback token estimator used', extra={'approx': approx})
+			return approx
+
+	query_tokens = _safe_num_tokens(query)
+	template_tokens = _safe_num_tokens(template.format(context='', question=''))
 
 	# remaining tokens after the template, query and 'to be' generated tokens
 	remaining_tokens = n_ctx - template_tokens - query_tokens - n_gen
@@ -57,7 +72,7 @@ def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, text_
 
 	while text_chunks and remaining_tokens > 0:
 		context = text_chunks.pop(0)
-		context_tokens = llm.get_num_tokens(context)
+		context_tokens = _safe_num_tokens(context)
 
 		if context_tokens <= remaining_tokens:
 			accepted_chunks.append(context)

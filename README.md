@@ -336,3 +336,34 @@ All CCBE endpoints keep their **paths, methods, parameters, and payloads unchang
 This repo generates an exhaustive router map in CI to ensure parity. See **`docs/endpoints.md`** for the full, up-to-date list and examples.
 
 ---
+
+## R2R Integration Details
+
+When `RAG_BACKEND=r2r` is set, CCBE integrates with an external R2R instance using `/v3/retrieval/rag`.
+
+- `/query` prefers the R2R-generated answer (`results.generated_answer`) and falls back to the local LLM only if no answer is provided.
+- `/docSearch` returns normalized references for the Nextcloud UI based on R2R chunk hits.
+
+Configuration:
+
+```bash
+RAG_BACKEND=r2r
+R2R_BASE_URL=http://127.0.0.1:7272
+R2R_HTTP_TIMEOUT=300           # optional
+R2R_API_KEY=your_api_key_here  # optional (sent as X-API-Key)
+R2R_API_TOKEN=your_token_here  # optional (Authorization: Bearer …)
+```
+
+Normalization of `sourceId` for Nextcloud:
+
+- Prefer `metadata.source`, else `metadata.filename`, else `source_id|sourceId`.
+- Normalize to `"<provider>: <id>"` (space after the colon), e.g., `files__default: 8059480`.
+- If provider resembles `files_default`, convert to `files__default` (double underscore) for compatibility.
+
+Notes and fixes captured during integration:
+
+- Token counting: some LLMs don’t implement `get_num_tokens`. CCBE now uses a safe fallback heuristic to avoid crashes in prompt pruning.
+- FastAPI startup: avoid registering exception handlers for `BaseExceptionGroup` in Python 3.11 (not a subclass of `Exception`) to prevent `AssertionError` during middleware setup.
+- Logging: R2R requests are logged with masked credentials and a runnable `curl` for debugging.
+
+For a deeper walkthrough and troubleshooting tips, see `R2R-Integration.md`.
