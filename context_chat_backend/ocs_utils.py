@@ -70,10 +70,6 @@ class AppAPIAuthMiddleware:
                         return
 
                 url = URL(scope=scope)
-                if (url.path == '/heartbeat'):
-                        # no auth of /heartbeat
-                        await self.app(scope, receive, send)
-                        return
 
                 headers = Headers(scope=scope)
                 username, err = _verify_signature(headers)

@@ -19,6 +19,7 @@ import threading
 import time
 import zipfile
 import hashlib
+import re
 from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from functools import wraps
@@ -37,6 +38,11 @@ from nc_py_api.ex_app import persistent_storage, set_handlers
 from pydantic import BaseModel, ValidationInfo, field_validator
 from starlette.responses import FileResponse
 from httpx import HTTPStatusError
+try:  # Python 3.11+
+    BaseExceptionGroupType = BaseExceptionGroup  # type: ignore[name-defined]
+except NameError:  # pragma: no cover - older Pythons
+    class BaseExceptionGroupType(Exception):  # type: ignore
+        pass
 
 from .chain.context import do_doc_search, get_context_chunks
 from .chain.ingest.injest import embed_sources
@@ -310,6 +316,37 @@ async def _(request: Request, exc: EmbeddingException):
     logger.exception(f"Error occurred in an embedding request: {request.url.path}:", exc_info=exc)
     return JSONResponse(f"Embedding Request Error: {exc}", 500)
 
+# Python 3.11 ExceptionGroup handler
+# Note: Starlette's ExceptionMiddleware only accepts subclasses of Exception
+# (not BaseException). In Python 3.11, BaseExceptionGroup derives from
+# BaseException, so registering it would crash startup. Only register the
+# handler when Starlette can accept the key.
+if isinstance(BaseExceptionGroupType, type) and issubclass(
+    BaseExceptionGroupType, Exception
+):
+    @app.exception_handler(BaseExceptionGroupType)
+    async def _(request: Request, exc: BaseExceptionGroupType):  # type: ignore[valid-type]
+        logger.exception("Unhandled exception group", exc_info=exc)
+        # Summarize the first few nested exceptions for readability
+        msgs: list[str] = []
+        try:
+            for i, sub in enumerate(getattr(exc, 'exceptions', [])[:3]):
+                msgs.append(f"[{i}] {type(sub).__name__}: {sub}")
+        except Exception:
+            pass
+        summary = "; ".join(msgs) if msgs else str(exc)
+        return JSONResponse(f"Unhandled error group: {summary}", 500)
+else:
+    logger.debug(
+        "Skipping BaseExceptionGroup handler registration: not a subclass of Exception"
+    )
+
+
+# Catch-all to surface unexpected errors as structured JSON instead of raw 500
+@app.exception_handler(Exception)
+async def _(request: Request, exc: Exception):
+    logger.exception("Unhandled server error", exc_info=exc)
+    return JSONResponse(f"Unhandled error: {type(exc).__name__}: {exc}", 500)
 
 # guards
 
@@ -342,6 +379,8 @@ def _(request: Request):
     Server check
     """
     return f"Hello, {request.scope.get('username', 'anon')}!"
+
+
 
 
 @app.put("/enabled")
@@ -761,6 +800,68 @@ def _(query: Query, request: Request) -> LLMOutput:
 
     backend = getattr(request.app.state, "rag_backend", None)
     if backend and query.useContext:
+        # Prefer R2R-generated answer when available, fall back to local LLM otherwise.
+        r2r_rag = getattr(backend, "rag", None)
+        if callable(r2r_rag):
+            rag_res = backend.rag(
+                user_id=query.userId,
+                query=query.query,
+                ctx_limit=query.ctxLimit,
+                scope_type=query.scopeType,
+                scope_list=query.scopeList,
+            )
+            hits = rag_res.get("hits") or []
+            logger.debug(
+                "backend search hits",
+                extra={"count": len(hits) if isinstance(hits, list) else None},
+            )
+            # Build sources from hits regardless of whether we use local LLM or R2R answer
+            docs = [
+                Document(page_content=h.get("page_content", ""), metadata=h.get("metadata", {}))
+                for h in hits
+            ]
+            # Extract provider identifiers
+            def _fmt_sid(s: str) -> str:
+                raw = s.replace(" ", "")
+                m = re.match(r"^([^:]+):(\d+)$", raw)
+                if not m:
+                    return raw
+                provider, doc_id = m.group(1), m.group(2)
+                if "__" not in provider and "_" in provider:
+                    provider = provider.replace("_", "__", 1)
+                return f"{provider}: {doc_id}"
+
+            uniq: list[str] = []
+            seen_ids: set[str] = set()
+            for d in docs:
+                src = cast(
+                    str,
+                    d.metadata.get("source")
+                    or d.metadata.get("filename")
+                    or d.metadata.get("source_id")
+                    or d.metadata.get("sourceId")
+                    or "",
+                )
+                if src:
+                    src = _fmt_sid(src)
+                else:
+                    continue
+                if not src or src in seen_ids:
+                    continue
+                seen_ids.add(src)
+                uniq.append(src)
+            r2r_answer = rag_res.get("answer")
+            if isinstance(r2r_answer, str) and r2r_answer.strip():
+                logger.debug(
+                    "query response",
+                    extra={"response": {"sources": uniq, "output": r2r_answer[:120] + ('…' if len(r2r_answer) > 120 else '')}},
+                )
+                return LLMOutput(output=r2r_answer.strip(), sources=uniq)
+
+            # Fall back to local LLM if R2R didn't generate an answer
+            logger.debug("R2R answer missing; falling back to local LLM")
+
+        # Local LLM path (unchanged)
         llm: LLM = llm_loader.load()
         template = app.extra.get("LLM_TEMPLATE")
         end_separator = app.extra.get("LLM_END_SEPARATOR", "")
@@ -771,21 +872,80 @@ def _(query: Query, request: Request) -> LLMOutput:
             scope_type=query.scopeType,
             scope_list=query.scopeList,
         )
-        logger.debug("backend search hits", extra={"hits": hits})
-        docs = [Document(page_content=h.get("page_content", ""), metadata=h.get("metadata", {})) for h in hits]
+        logger.debug(
+            "backend search hits", extra={"count": len(hits) if isinstance(hits, list) else None}
+        )
+        docs = [
+            Document(page_content=h.get("page_content", ""), metadata=h.get("metadata", {}))
+            for h in hits
+        ]
         if len(docs) == 0:
-            raise ContextException("No documents retrieved, please index a few documents first")
+            raise ContextException(
+                "No documents retrieved, please index a few documents first"
+            )
         context_chunks = get_context_chunks(docs)
         logger.debug("context retrieved", extra={"len(context_chunks)": len(context_chunks)})
         stop = [end_separator] if end_separator else None
-        output = llm.invoke(
-            get_pruned_query(llm, app_config, query.query, template or _LLM_TEMPLATE, context_chunks),
-            stop=stop,
-            userid=query.userId,
-        ).strip()
+        prompt = get_pruned_query(
+            llm, app_config, query.query, template or _LLM_TEMPLATE, context_chunks
+        )
+        logger.debug(
+            "invoking llm",
+            extra={
+                "llm_type": type(llm).__name__,
+                "stop": stop,
+                "prompt_len": len(prompt),
+                "user_id": query.userId,
+            },
+        )
+        try:
+            output = llm.invoke(prompt, stop=stop, userid=query.userId).strip()
+            logger.debug("llm output", extra={"len": len(output)})
+        except TypeError as e:
+            logger.debug(
+                "llm.invoke TypeError; retrying without userid", extra={"error": str(e)}
+            )
+            try:
+                output = llm.invoke(prompt, stop=stop).strip()
+                logger.debug("llm output (no-userid)", extra={"len": len(output)})
+            except Exception as inner:
+                logger.exception("LLM invoke failed", exc_info=inner)
+                raise LlmException(f"LLM invoke failed: {inner}") from inner
+        except Exception as e:
+            logger.exception("LLM invoke failed", exc_info=e)
+            raise LlmException(f"LLM invoke failed: {e}") from e
 
-        unique_sources: list[str] = list(
-            {cast(str, d.metadata["title"]) for d in docs if d.metadata.get("title")}
+        def _fmt_sid(s: str) -> str:
+            raw = s.replace(" ", "")
+            m = re.match(r"^([^:]+):(\d+)$", raw)
+            if not m:
+                return raw
+            provider, doc_id = m.group(1), m.group(2)
+            if "__" not in provider and "_" in provider:
+                provider = provider.replace("_", "__", 1)
+            return f"{provider}: {doc_id}"
+        uniq: list[str] = []
+        seen_ids: set[str] = set()
+        for d in docs:
+            src = cast(
+                str,
+                d.metadata.get("source")
+                or d.metadata.get("filename")
+                or d.metadata.get("source_id")
+                or d.metadata.get("sourceId")
+                or "",
+            )
+            if src:
+                src = _fmt_sid(src)
+            else:
+                continue
+            if not src or src in seen_ids:
+                continue
+            seen_ids.add(src)
+            uniq.append(src)
+        unique_sources = uniq
+        logger.debug(
+            "query response", extra={"response": {"sources": unique_sources, "output": output}}
         )
         return LLMOutput(output=output, sources=unique_sources)
 
@@ -812,24 +972,70 @@ def _(query: Query, request: Request) -> list[SearchResult]:
             scope_list=query.scopeList,
         )
         logger.debug("docSearch hits", extra={"hits": hits})
-        # Build unique results by (sourceId, title) preserving order
+        # Build unique results by (source_id, title) preserving order
+        def _fmt_sid(s: str) -> str:
+            raw = s.replace(" ", "")
+            m = re.match(r"^([^:]+):(\d+)$", raw)
+            if not m:
+                return raw
+            provider, doc_id = m.group(1), m.group(2)
+            if "__" not in provider and "_" in provider:
+                provider = provider.replace("_", "__", 1)
+            # Nextcloud expects a space after ':' (see ContextChatSearchProvider::getIdFromSource)
+            return f"{provider}: {doc_id}"
+
         seen: set[tuple[str, str]] = set()
         results: list[SearchResult] = []
+        debug_map: list[dict[str, Any]] = []
         for h in hits:
             meta = h.get("metadata", {}) if isinstance(h, dict) else {}
             title = str(meta.get("title", ""))
             # R2R documents expose source identifier as either 'source' or 'filename'
-            source_id = str(meta.get("source") or meta.get("filename") or "")
+            source_id = str(
+                meta.get("source")
+                or meta.get("filename")
+                or meta.get("source_id")
+                or meta.get("sourceId")
+                or ""
+            )
+            if source_id:
+                normalized = _fmt_sid(source_id)
+            else:
+                normalized = ""
+            debug_map.append(
+                {
+                    "raw_source": meta.get("source"),
+                    "raw_filename": meta.get("filename"),
+                    "raw_source_id": source_id,
+                    "normalized": normalized,
+                    "title": title,
+                }
+            )
+            if normalized:
+                source_id = normalized
+            # Split provider and numeric id for compatibility fields
+            prov, fid = None, None
+            m2 = re.match(r"^([^:]+):(\d+)$", source_id)
+            if m2:
+                prov, fid = m2.group(1), m2.group(2)
             key = (source_id, title)
             if not source_id or key in seen:
                 continue
             seen.add(key)
-            results.append({"sourceId": source_id, "title": title})
+            # Strictly match client expectation: only 'sourceId' and 'title'
+            item: dict[str, Any] = {"sourceId": source_id, "source_id": source_id, "title": title}
+            if prov and fid:
+                # Extra compatibility fields some client versions look for
+                item["provider"] = prov
+                item["fileId"] = fid
+                item["fileid"] = fid
+            results.append(item)  # type: ignore[arg-type]
             if len(results) >= query.ctxLimit:
                 break
+        logger.debug("docSearch map", extra={"map": debug_map})
     else:
         # useContext from Query is not used here
-        results = exec_in_proc(
+        builtin_results = exec_in_proc(
             target=do_doc_search,
             args=(
                 query.userId,
@@ -840,6 +1046,21 @@ def _(query: Query, request: Request) -> list[SearchResult]:
                 query.scopeList,
             ),
         )
+        # Normalize to include 'source_id' as expected by the client
+        def _fmt_sid(s: str) -> str:
+            m = re.match(r"^([^: ]+__[^: ]+):(\d+)$", s)
+            return f"{m.group(1)}: {m.group(2)}" if m else s
+        results: list[SearchResult] = []
+        for item in builtin_results or []:
+            try:
+                src = str(item.get("source_id") or item.get("sourceId") or "")
+                title = str(item.get("title", ""))
+            except AttributeError:
+                continue
+            if not src:
+                continue
+            src = _fmt_sid(src)
+            results.append({"sourceId": src, "source_id": src, "title": title})
     logger.debug("docSearch results", extra={"results": results})
     return results
 
