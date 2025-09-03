@@ -9,7 +9,11 @@ services:
         - type=local,src=.docker-cache
       cache_to:
         - type=local,dest=.docker-cache,mode=max
-    env_file: .env
+    env_file: /opt/ccbe-r2r.env
+    environment:
+      # Mirror R2R excluded extensions to proactively skip uploads
+      # Keep this aligned with ga_r2r.toml [app.max_upload_size_by_type] zeros
+      R2R_EXCLUDE_EXTS: ".tsv,.csv,.xls,.xlsx,.bmp,.heic,.jpeg,.jpg,.png,.tiff"
     ports:
       - "10034:10034"
     volumes:
