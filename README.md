@@ -171,3 +171,42 @@ occ app_api:app:unregister context_chat_backend --force
 
 ---
 
+## Credits & Upstream Acknowledgements
+
+This work builds on the excellent engineering by the **Nextcloud Assistant** teams, in particular:
+- **Context Chat** (PHP app) – AGPL-3.0. https://github.com/nextcloud/context_chat
+- **Context Chat Backend** (External App, Python) – AGPL-3.0+. https://github.com/nextcloud/context_chat_backend
+
+We maintain API compatibility and default behaviour to remain a good citizen in the Nextcloud ecosystem.
+
+## Special thanks
+
+**SciPhi R2R** (https://github.com/SciPhi-AI/R2R) inspired this pluggable backend approach.
+R2R demonstrates how a modern retrieval stack—multimodal ingestion, hybrid search,
+Graph-RAG, and robust collections/permissions—can be exposed cleanly via a REST API.
+Their implementation showed us the value of **decoupling** retrieval from application release cycles
+and letting sites select best-fit stores and models operationally.
+
+R2R is MIT-licensed and independently maintained by the SciPhi team; this repository is not
+affiliated with or endorsed by SciPhi. We simply thank them for the ideas and excellent engineering.
+
+### Third-Party Notices
+
+This project may interoperate with third-party software and services. Notably:
+
+- **SciPhi R2R** — MIT License. See upstream repository for license terms:
+  https://github.com/SciPhi-AI/R2R
+
+All trademarks are the property of their respective owners.
+
+## What would be nice (aspiration)
+
+Adopt a **minimal abstract RAG driver** in Context Chat Backend:
+
+- Keep the **built-in backend as the default** (no changes for existing users).
+- Provide a **tiny, stable driver interface** (methods, status, and a small set of request/response shapes).
+- Pass **user/group context** (e.g., `userIds`) from CCBE; drivers enforce collection-level filtering.
+- Allow **out-of-tree providers** (e.g., R2R, Pinecone, Supabase, Neo4j) to plug in via configuration only.
+- Preserve **API compatibility and operational neutrality**—admins can scale/upgrade retrieval independently of CCBE releases.
+
+This keeps Nextcloud vendor-neutral and stable, while enabling teams to use best-fit retrieval stacks. R2R’s clean API surface is a working proof that this pattern is practical today.
