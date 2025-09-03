@@ -58,6 +58,16 @@ class R2rBackend(RagBackend):
             timeout = 300.0
         self._client = httpx.Client(base_url=base, timeout=timeout, headers=headers)
 
+        # Optional: proactively skip uploads for certain extensions before
+        # contacting R2R. Keep this in sync with R2R's ga_r2r.toml when set.
+        # Example: ".xls,.xlsx,.exe" (case-insensitive)
+        exts_env = os.getenv("R2R_EXCLUDE_EXTS", "")
+        self._excluded_exts: set[str] = {
+            e if e.startswith(".") else f".{e}"
+            for e in (s.strip().lower() for s in exts_env.split(","))
+            if e
+        }
+
         # Echo the curl command for lifecycle checks and easier debugging.
         curl_parts = ["curl", "-i"]
         for key, value in headers.items():
@@ -324,6 +334,24 @@ class R2rBackend(RagBackend):
             "Checking if document '%s' exists with hash %s", title or "<no title>", digest
         )
 
+        # Skip early if extension is configured to be excluded locally
+        try:
+            filename_for_ext = metadata.get("filename") or os.path.basename(file_path)
+        except Exception:
+            filename_for_ext = os.path.basename(file_path)
+        _, ext = os.path.splitext(str(filename_for_ext))
+        if ext:
+            ext = ext.lower()
+        if ext and ext in self._excluded_exts:
+            logger.info(
+                "Skipping upload for '%s' due to excluded extension '%s'",
+                title or "<no title>",
+                ext,
+            )
+            # Return a benign identifier so the client proceeds. Prefer the
+            # source/filename identifier used by Nextcloud where available.
+            return str(metadata.get("filename") or metadata.get("source") or title or filename_for_ext)
+
         doc_by_hash = self.find_document_by_hash(digest)
         if doc_by_hash and doc_by_hash.get("metadata", {}).get("sha256") == digest:
             logger.info(
@@ -335,42 +363,57 @@ class R2rBackend(RagBackend):
                 title or "<no title>",
                 doc_by_hash["id"],
             )
-            existing = self.get_document(doc_by_hash["id"])
-            em = existing.get("metadata", {})
-            if em != meta:
-                meta_list = [
-                    {"key": key, "value": value} for key, value in meta.items()
-                ]
-                self._request(
-                    "PUT",
-                    f"documents/{existing['id']}/metadata",
-                    action=f"upsert_document:update_metadata:{existing['id']}",
-                    desc=f"Updating metadata for document '{title}' ({existing['id']})",
-                    json=meta_list,
-                )
-            current = set(existing.get("collection_ids", []))
-            target = set(collection_ids)
-            add = target - current
-            rem = current - target
-            for cid in add:
-                self._request(
-                    "POST",
-                    f"collections/{cid}/documents/{existing['id']}",
-                    action=f"upsert_document:add:{existing['id']}:{cid}",
-                    desc=(
-                        f"Adding document '{title}' ({existing['id']}) to collection {cid}"
-                    ),
-                )
-            for cid in rem:
-                self._request(
-                    "DELETE",
-                    f"collections/{cid}/documents/{existing['id']}",
-                    action=f"upsert_document:remove:{existing['id']}:{cid}",
-                    desc=(
-                        f"Removing document '{title}' ({existing['id']}) from collection {cid}"
-                    ),
-                )
-            return existing["id"]
+            existing = None
+            try:
+                existing = self.get_document(doc_by_hash["id"])
+            except httpx.HTTPStatusError as exc:  # type: ignore[name-defined]
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                if status == 404:
+                    # Retrieval search returned a stale id; treat as not found and fall through
+                    logger.info(
+                        "Document id %s not found by GET; treating as not found-by-hash",
+                        doc_by_hash["id"],
+                    )
+                    existing = None
+                else:
+                    raise
+
+            if existing is not None:
+                em = existing.get("metadata", {})
+                if em != meta:
+                    meta_list = [
+                        {"key": key, "value": value} for key, value in meta.items()
+                    ]
+                    self._request(
+                        "PUT",
+                        f"documents/{existing['id']}/metadata",
+                        action=f"upsert_document:update_metadata:{existing['id']}",
+                        desc=f"Updating metadata for document '{title}' ({existing['id']})",
+                        json=meta_list,
+                    )
+                current = set(existing.get("collection_ids", []))
+                target = set(collection_ids)
+                add = target - current
+                rem = current - target
+                for cid in add:
+                    self._request(
+                        "POST",
+                        f"collections/{cid}/documents/{existing['id']}",
+                        action=f"upsert_document:add:{existing['id']}:{cid}",
+                        desc=(
+                            f"Adding document '{title}' ({existing['id']}) to collection {cid}"
+                        ),
+                    )
+                for cid in rem:
+                    self._request(
+                        "DELETE",
+                        f"collections/{cid}/documents/{existing['id']}",
+                        action=f"upsert_document:remove:{existing['id']}:{cid}",
+                        desc=(
+                            f"Removing document '{title}' ({existing['id']}) from collection {cid}"
+                        ),
+                    )
+                return existing["id"]
 
         logger.info(
             "Document '%s' not found by hash; checking by title", title or "<no title>"
@@ -382,19 +425,33 @@ class R2rBackend(RagBackend):
                 title or "<no title>",
                 existing_stub["id"],
             )
-            existing = self.get_document(existing_stub["id"])
-            ingestion_status = existing.get("ingestion_status") or existing.get("status")
-            if ingestion_status and ingestion_status != "success":
+            existing = None
+            try:
+                existing = self.get_document(existing_stub["id"])
+            except httpx.HTTPStatusError as exc:  # type: ignore[name-defined]
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                if status == 404:
+                    logger.info(
+                        "Title match id %s not found; proceeding to create new document",
+                        existing_stub["id"],
+                    )
+                    existing = None
+                else:
+                    raise
+
+            if existing is not None:
+                ingestion_status = existing.get("ingestion_status") or existing.get("status")
+                if ingestion_status and ingestion_status != "success":
+                    logger.info(
+                        "Document '%s' (id %s) ingestion pending; reusing", title, existing["id"]
+                    )
+                    return existing["id"]
                 logger.info(
-                    "Document '%s' (id %s) ingestion pending; reusing", title, existing["id"]
+                    "Document '%s' exists but hash value has changed; deleting old version to upsert new version",
+                    title or "<no title>",
                 )
-                return existing["id"]
-            logger.info(
-                "Document '%s' exists but hash value has changed; deleting old version to upsert new version",
-                title or "<no title>",
-            )
-            # Title matches but hash differs, so replace the existing document.
-            self.delete_document(existing["id"], title=title)
+                # Title matches but hash differs, so replace the existing document.
+                self.delete_document(existing["id"], title=title)
 
         with open(file_path, "rb") as fh:
             # ``mimetypes.guess_type`` relies on file extensions.  The sanitized
@@ -426,14 +483,48 @@ class R2rBackend(RagBackend):
                     (None, json.dumps(list(collection_ids)), "application/json"),
                 ),
                 ("ingestion_mode", (None, "custom")),
+                ("run_with_orchestration", (None, "true")),
             ]
-            created = self._request(
-                "POST",
-                "documents",
-                action="upsert_document:create",
-                desc=f"Creating new document '{title}'",
-                files=files,
-            )
+            try:
+                created = self._request(
+                    "POST",
+                    "documents",
+                    action="upsert_document:create",
+                    desc=f"Creating new document '{title}'",
+                    files=files,
+                )
+            except httpx.HTTPStatusError as exc:
+                # Gracefully handle R2R-side exclusions (e.g., blocked by
+                # ga_r2r.toml rules). Common signals observed:
+                # - 413 with message like "File size exceeds maximum of 0 bytes for extension 'xlsx'."
+                # - 400/415 style validation errors for disallowed types
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                body = ""
+                try:
+                    body = exc.response.text  # type: ignore[assignment]
+                except Exception:
+                    body = str(exc)
+
+                lower = (body or "").lower()
+                signals = (
+                    "0 bytes for extension" in lower
+                    or "exceeds maximum" in lower
+                    or "not a valid documenttype" in lower
+                    or "disallowed extension" in lower
+                )
+                if status in {400, 413, 415, 422} and signals:
+                    logger.info(
+                        "R2R rejected '%s' (ext '%s') by config; skipping",
+                        title or filename_for_ext,
+                        ext or "",
+                    )
+                    return str(
+                        metadata.get("filename")
+                        or metadata.get("source")
+                        or title
+                        or filename_for_ext
+                    )
+                raise
         return created.get("results", {}).get("document_id", "")
 
     def find_document_by_filename(self, filename: str) -> dict | None:
@@ -576,6 +667,13 @@ class R2rBackend(RagBackend):
         answer = None
         if isinstance(rag_results, dict):
             answer = rag_results.get("generated_answer") or rag_results.get("answer")
+        # Pluggable control: if disabled via env, force fallback to local LLM
+        try:
+            prefer = os.getenv("R2R_USE_GENERATED_ANSWER", "true").lower() in {"1", "true", "yes"}
+        except Exception:
+            prefer = True
+        if not prefer:
+            answer = None
 
         # Normalize hits similar to search()
         results = rag_results.get("search_results") if isinstance(rag_results, dict) else {}

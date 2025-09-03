@@ -118,6 +118,12 @@ Environment variables for R2R:
 - `R2R_API_TOKEN=<token>` (sends `Authorization: Bearer …`)
 - `R2R_HTTP_TIMEOUT=<seconds>` (default `300`)
 
+Excluded extensions (graceful skip):
+
+- R2R may be configured to reject certain file types via its user config (for example, `ga_r2r.toml`, typically mounted at `/data/r2r/docker/user_configs/ga/ga_r2r.toml` inside the R2R container).
+- When R2R rejects a file due to such rules (e.g., returning an error like "File size exceeds maximum of 0 bytes for extension 'xlsx'."), CCBE now treats this as a benign "scan ok" and skips the file without failing the batch. The response still includes a loaded source identifier so the client advances to the next file.
+- Optional: you can proactively mirror these exclusions in CCBE via `R2R_EXCLUDE_EXTS` (comma-separated extensions like `.xls,.xlsx`), which avoids uploading excluded files in the first place.
+
 Other environment variables commonly used by CCBE:
 
 - `CC_CONFIG_PATH` — path to CCBE config file
@@ -158,6 +164,10 @@ Tip: If the log shows `context retrieved` but not `invoking llm`, the issue is l
   - Ensure documents are indexed and in collections mapped to the querying `userId`.
   - Filters: `filters.collection_ids.$overlap` must include the user’s collection name/ID.
 
+- R2R rejects a file due to excluded type/size:
+  - CCBE logs an info message and returns a benign identifier, effectively treating the file as "skipped" so the client proceeds.
+  - To keep behavior aligned with R2R, set `R2R_EXCLUDE_EXTS` in CCBE to match the extensions excluded in `ga_r2r.toml`.
+
 - `context retrieved` but 500 before LLM:
   - Previously due to missing `get_num_tokens`; now handled via heuristic fallback.
 
@@ -175,4 +185,3 @@ Tip: If the log shows `context retrieved` but not `invoking llm`, the issue is l
 - We preserve R2R’s flexibility by tolerating different `results` shapes.
 - We avoid leaking secrets in logs by masking `Authorization` and `X-API-Key` in the emitted curl.
 - Source normalization specifically targets Context Chat expectations (provider name normalization and a space after `:`).
-
