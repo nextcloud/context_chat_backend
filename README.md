@@ -1,182 +1,136 @@
 
-# Nextcloud Assistant Context Chat Backend
+# Nextcloud Assistant – Context Chat Backend (CCBE)
+**Pluggable retrieval backends with upstream-compatible defaults.**
 
-[![REUSE status](https://api.reuse.software/badge/github.com/nextcloud/context_chat_backend)](https://api.reuse.software/info/github.com/nextcloud/context_chat_backend)
+This fork introduces a thin **adapter layer** that lets administrators choose the retrieval store and RAG/Graph-RAG implementation **without changing** Context Chat’s public API or user experience.
 
-This fork introduces a **pluggable Retrieval-Augmented Generation (RAG) backend** architecture with **zero-change upstream behavior by default**.
-
-* **Default (no config needed):** the **current built-in backend** used by upstream CCBE.
-* **Opt-in:** swap to an external backend—e.g., **R2R Graph RAG**, Pinecone, Supabase—via `.env` only. The RAG store can live in its own container or a managed service.
-
-The diff to upstream is intentionally small (adapter layer + light wiring). See **[PRD.md](PRD.md)** for the full spec, including endpoint guarantees and the plugin interface.
-
-> \[!NOTE]
-> Install the backend **before** the Context Chat PHP app. Context Chat will background-index user-accessible files; failed attempts to an uninitialized backend are retried on the next job run.
->
-> The HTTP request timeout is 50 minutes by default and can be changed with `occ config:app:set context_chat request_timeout --value=3000` (seconds). If you use Docker socket proxy, align that too. See: [Slow responding ExApps](https://github.com/cloud-py-api/docker-socket-proxy?tab=readme-ov-file#slow-responding-exapps)
->
-> An end-to-end CUDA example is at the end of this README.
->
-> Admin docs: [https://docs.nextcloud.com/server/latest/admin\_manual/ai/app\_context\_chat.html](https://docs.nextcloud.com/server/latest/admin_manual/ai/app_context_chat.html)
+- **Default (no config):** behaves exactly like upstream CCBE (builtin store).
+- **Opt-in:** select an external backend (e.g., **R2R Graph RAG**, Pinecone, Supabase) via environment variables only.
+- **Same endpoints, same shapes:** request/response contracts and status codes are identical across backends.
 
 ---
 
-## Choose your RAG backend (via `.env`)
+## Why this exists
 
-By default, this fork behaves exactly like upstream (built-in backend). To opt-in to another backend, set:
+RAG and Graph-RAG are evolving quickly. Bundling a single implementation inside CCBE creates operational and strategic constraints for large Nextcloud estates:
 
-```bash
-# Default: upstream behavior (no changes to your setup)
+- **Operations & risk:** Nextcloud admins can’t independently scale, patch, or migrate very large embedding/graph stores when these are tightly coupled to CCBE.
+- **Technology choice:** Sites differ—GPU availability, model policy, preferred vector DB, and graph engines. A fixed in-tree RAG stack can be sub-optimal.
+- **Ecosystem reuse:** A decoupled store can serve multiple apps (e.g., OpenWebUI or internal agents) instead of being hardwired to Context Chat.
+
+A **pluggable backend** restores admin control and vendor neutrality while keeping CCBE stable for end-users.
+
+---
+
+## What changes (and what does **not**)
+
+- ✅ **No change for default users**: leave `RAG_BACKEND=builtin` (or unset) and CCBE behaves like upstream.
+- ✅ **Backends are swapped by config**: set a single env var and point to your retrieval service.
+- ✅ **API compatibility**: endpoint paths, payloads, and status codes are preserved.
+- ✅ **Small surface**: the adapter is thin; CCBE remains the “contract owner”.
+
+---
+
+## Architecture at a glance
+
+```
+
+Nextcloud (Context Chat app)  
+│ HTTP/OCS (unchanged)  
+▼  
+Context Chat Backend (CCBE)  
+│ Adapter boundary (env-selected)  
+▼  
+┌──────────────────────────────┬──────────────────────────────┬──────────────────────────────┐  
+│ builtin (upstream default) │ R2R Graph RAG (external) │ other providers (scaffold) │  
+│ • local vector store │ • collections & graphs │ • pinecone / supabase / ... │  
+│ • embeddings in-process │ • dedup (doc→chunk→graph) │ • implement same contract │  
+└──────────────────────────────┴──────────────────────────────┴──────────────────────────────┘
+
+````
+
+**Permissions model (R2R example).** CCBE sends a `userIds` header → adapter maps user/group to **collection filters**; queries only traverse collections the caller is allowed to see.
+
+---
+
+## Key benefits (R2R adapter)
+
+- **Aggressive deduplication** from document hash down to chunk/graph nodes → less storage, faster queries.
+- **Scale knobs everywhere**: choose embedding models, batch/queue sizes, index sharding, and the **query LLM** independently of CCBE’s release cadence.
+- **Graph-RAG** when you need it: relations/entity graphs augment vanilla semantic search for complex corpora.
+- **Separation of duties**: CCBE remains a stable Nextcloud component; R2R (or any backend) can scale independently, be upgraded, or be hosted on dedicated hardware.
+- **Ecosystem reuse**: the same store can serve OpenWebUI, agents, or offline analytics.
+
+---
+
+## Quick start (default = upstream behavior)
+
+No changes required—install as you do today. CCBE will use the builtin backend.
+
+---
+
+## Opt-in to an external backend (example: R2R)
+
+Set these in your `.env` (or the AppAPI daemon’s env):
+
+```env
+# default behavior (no change)
 RAG_BACKEND=builtin
 
-# Optional: R2R Graph RAG
+# opt-in: R2R Graph RAG
 # RAG_BACKEND=r2r
 # R2R_BASE_URL=http://127.0.0.1:7272
-# R2R_HTTP_TIMEOUT=300           # optional, in seconds
-# R2R_API_KEY=your_api_key_here  # sent as X-API-Key
-# R2R_API_TOKEN=your_token_here  # optional bearer token
+# R2R_HTTP_TIMEOUT=300           # seconds (optional)
+# R2R_API_KEY=...                # sent as X-API-Key (optional)
+# R2R_API_TOKEN=...              # Bearer token (optional)
+````
 
-# Optional: Pinecone (scaffold)
-# RAG_BACKEND=pinecone
-# PINECONE_API_KEY=
-# PINECONE_INDEX=
-# PINECONE_ENV=
+**Notes**
 
-# Optional: Supabase (scaffold)
-# RAG_BACKEND=supabase
-# SUPABASE_URL=
-# SUPABASE_ANON_KEY=
-# SUPABASE_TABLE=
-```
-
-* **`builtin` (default):** exact upstream behavior; no code path changes.
-* **`r2r`:** uses an external **R2R** server. Make sure `R2R_BASE_URL` is reachable from CCBE. If authentication is required,
-  set `R2R_API_KEY` (sent as `X-API-Key`) and/or `R2R_API_TOKEN` (bearer token).
-* **`pinecone` / `supabase`:** scaffolds included; selecting them returns HTTP `501` until implemented.
-
-> Endpoint paths, request/response shapes, and status codes remain identical for all backends.
+- Endpoint contracts are identical across backends.
+    
+- If using R2R, ensure the backend is reachable from CCBE and collections exist/are auto-provisioned during ingestion.
+    
 
 ---
 
-## R2R quick start (optional)
+## Install
 
-1. Run or reach an R2R server (e.g., `http://127.0.0.1:7272`).
-2. Set:
+### Simple (typical Nextcloud setup)
 
-   ```bash
-   RAG_BACKEND=r2r
-   R2R_BASE_URL=http://127.0.0.1:7272
-   # R2R_HTTP_TIMEOUT=300
-   # R2R_API_KEY=your_api_key_here  # sent as X-API-Key
-   # R2R_API_TOKEN=your_token_here
-   ```
-3. Start CCBE. On `/init`, the backend verifies connectivity.
-4. Upload sources (Nextcloud will do this automatically via the Context Chat app).
+1. Install **AppAPI**, **Context Chat Backend (CCBE)**, **Context Chat**, and (optionally) **Assistant** from the Apps pages.
+    
+2. If you want GPUs, enable GPU support in the AppAPI Deploy Daemon.
+    
+3. For high throughput, configure multiple background workers on the main server.
+    
 
-   * The `loadSources` endpoint expects a `userIds` header as a **comma-separated list**.
-   * Collections are created per user and linked automatically.
-5. Query as usual. CCBE’s query endpoint and answer shape are unchanged.
+> CCBE’s adapter is selected purely by env—no code changes to the Nextcloud apps.
 
-**Integration lessons baked in**
+### Manual / Docker
 
-* `/init` returns `{}` immediately and reports progress (1–100) asynchronously via OCS.
-* The `PUT /enabled?enabled=0|1` param is parsed with `fastapi.Query` (no Pydantic name clash).
-* For ingestion, **`collection_ids` must be a list of UUID strings** (not a comma-joined string).
-* The `userIds` header is parsed as comma-separated → list → mapped to per-user collections.
+- **Manual (venv)**  
+    Create a venv, install `requirements.txt`, copy `example.env` → `.env`, set `RAG_BACKEND`, run `./main.py`.
+    
+- **Docker**  
+    Build the image and run with `--env-file` pointing to your `.env`. Mount `persistent_storage` if you want to keep local config/logs across restarts.
+    
 
 ---
 
-## Simple Install
-
-Install these **in order**:
-
-* [AppAPI (Apps page)](https://apps.nextcloud.com/apps/app_api)
-* [Context Chat Backend (External Apps page)](https://apps.nextcloud.com/apps/context_chat_backend) — **use the same major/minor version as the Context Chat app**
-* [Context Chat (Apps page)](https://apps.nextcloud.com/apps/context_chat) — **same major/minor as the backend**
-* [Assistant (Apps page)](https://apps.nextcloud.com/apps/assistant) — recommended universal UI / OCP Task Processing consumer
-* A Text2Text provider like [llm2 (External Apps)](https://apps.nextcloud.com/apps/llm2) or [integration\_openai (Apps)](https://apps.nextcloud.com/apps/integration_openai)
-
-> \[!NOTE]
-> See [AppAPI’s deploy daemon config](#configure-the-appapis-deploy-daemon).
->
-> For GPU: enable GPU in AppAPI’s Deploy Daemon (Admin settings → AppAPI).
-
-> \[!IMPORTANT]
-> To avoid task execution delay, configure **4 background job workers** on the main server:
-> [https://docs.nextcloud.com/server/latest/admin\_manual/ai/overview.html#improve-ai-task-pickup-speed](https://docs.nextcloud.com/server/latest/admin_manual/ai/overview.html#improve-ai-task-pickup-speed)
-
----
-
-## Complex Install (without docker)
-
-0. Install everything from [Simple Install](#simple-install) **except** Context Chat Backend; set up background workers.
-1. `python -m venv .venv`
-2. `. .venv/bin/activate`
-3. `pip install --upgrade pip setuptools wheel`
-4. `pip install -r requirements.txt`
-5. Copy `example.env` → `.env` and set variables (see **Choose your RAG backend** above).
-6. Ensure `persistent_storage/config.yaml` points to the right config (cpu vs gpu). If unsure, delete it—on launch, it’s recreated (defaults to GPU).
-7. Edit `persistent_storage/config.yaml` for model/config needs.
-8. Set up PostgreSQL externally or use `dockerfile_scripts/pgsql/install.sh` (Debian-family).
-9. Set `EXTERNAL_DB` or the `pgvector.connection` in config to your Postgres connection string if using external DB.
-10. Start the DB (see `dockerfile_scripts/pgsql/setup.sh`).
-11. `./main.py`
-12. [Register as an Ex-App](#register-as-an-ex-app)
-
-> Using `RAG_BACKEND=r2r`? Your external R2R handles retrieval/storage; some local `vectordb`/embedding config entries may not apply.
-
----
-
-## Complex Install (with docker)
-
-0. Install from [Simple Install](#simple-install) **except** Context Chat Backend; set up background workers.
-1. Build the image
-
-   ```bash
-   # Good moment to edit example.env (add RAG_BACKEND and provider vars)
-   docker build -t context_chat_backend . -f Dockerfile
-   ```
-2. Run
-
-   ```bash
-   docker run -p 10034:10034 \
-     --env-file example.env \
-     context_chat_backend
-   ```
-
-   * If Nextcloud runs locally: add `--add-host=host.docker.internal:host-gateway` and align `NEXTCLOUD_URL`.
-3. (Optional) Mount persistence
-
-   ```bash
-   -v $(pwd)/persistent_storage:/app/persistent_storage
-   ```
-
-   Ensure `persistent_storage/config.yaml` points to the correct config (or delete it to autogenerate).
-4. [Configure AppAPI’s deploy daemon](#configure-the-appapis-deploy-daemon)
-5. [Register as an Ex-App](#register-as-an-ex-app)
-
----
-
-## Register as an Ex-App
-
-**1) Create a manual deploy daemon**
+## Register as an Ex-App (manual daemon example)
 
 ```bash
+# 1) register a manual daemon
 occ app_api:daemon:register --net host manual_install "Manual Install" manual-install http <host> <nextcloud_url>
-```
 
-* `host` is `localhost` if Nextcloud can reach it directly; or `host.docker.internal` if Nextcloud runs in Docker and the backend is on the host.
-* If Nextcloud is containerized, add `--add-host` to the Nextcloud container (see docker example above).
-
-**2) Register the app (adapt version/port)**
-
-```bash
+# 2) register CCBE (adapt version/port)
 occ app_api:app:register context_chat_backend manual_install --json-info \
-"{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"4.4.1\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system_app\":0}" \
+'{"appid":"context_chat_backend","name":"Context Chat Backend","daemon_config_name":"manual_install","version":"<x.y.z>","secret":"<secret>","port":10034,"scopes":[],"system_app":0}' \
 --force-scopes --wait-finish
 ```
 
-Unregister:
+Unregister with:
 
 ```bash
 occ app_api:app:unregister context_chat_backend --force
@@ -184,186 +138,36 @@ occ app_api:app:unregister context_chat_backend --force
 
 ---
 
-## Configure the AppAPI’s deploy daemon
+## Operations
 
-Ensure Docker is installed and the default deploy daemon works (Admin settings → AppAPI).
-
-**Recommended:** Docker socket proxy
-[https://github.com/cloud-py-api/docker-socket-proxy](https://github.com/cloud-py-api/docker-socket-proxy)
-
-Alternative: grant the web server user access to `/var/run/docker.sock`.
-
-* Compose:
-
-  ```yaml
-  volumes:
-    - /var/run/docker.sock:/var/run/docker.sock:ro
-  ```
-* Docker:
-
-  ```bash
-  -v /var/run/docker.sock:/var/run/docker.sock:ro
-  ```
+- **Logs** live under `logs/` inside the persistent directory (or the container’s data dir).
+    
+- **Configuration**: the effective config is `${APP_PERSISTENT_STORAGE}/config.yaml`. Adapter selection happens via env; other sections (e.g., local vectordb/embedding) are ignored when an external backend fully handles retrieval.
+    
 
 ---
 
-## Logs
+## Security & governance
 
-Logs live under `logs/` inside the persistent directory. In Docker: `/nc_app_context_chat_backend/logs/`.
-
-* Main log: `ccb.log`, JSONL, rotates at **20 MB** with **10 backups**.
-* Console prints warnings and above; set `debug: true` in config to get verbose logs in the file.
-* Embedding server logs: `logs/embedding_server_[date].log` (raw stdout/stderr, rotates daily).
-
----
-
-## Configuration
-
-The effective config is `$APP_PERSISTENT_STORAGE/config.yaml`
-(default: `/nc_app_context_chat_backend_data/config.yaml` in the container).
-
-* Top-level options are editable. In sections `vectordb`, `embedding`, and `llm`, only the **first** listed key is used.
-* See the example configs for common loader/adapter options; check LangChain docs for others (e.g., LlamaCpp options: [https://api.python.langchain.com/en/latest/llms/langchain\_community.llms.llamacpp.LlamaCpp.html](https://api.python.langchain.com/en/latest/llms/langchain_community.llms.llamacpp.LlamaCpp.html)).
-
-Restart the app after changes (e.g., `docker restart nc_app_context_chat_backend`).
-
-> If `RAG_BACKEND=r2r`, the external R2R server owns the vector store; local `vectordb` settings may be ignored.
+- **Data plane isolation:** retrieval stores (and GPUs) can be isolated from the web front-end.
+    
+- **Least privilege:** CCBE holds only the secrets it needs to call the backend; the backend enforces collection scoping.
+    
+- **Compliance:** independent backup, retention, rotation, and auditing on the backend—without touching CCBE.
+    
 
 ---
 
-## Repair
+## Roadmap
 
-v2.1.0 adds repair steps (run at startup).
-
-`repair2001_date20240412153300.py` removes the existing `config.yaml` so hardware detection can choose an appropriate default (CPU/GPU).
-To skip a repair step, add its filename to `repair.info`:
-
-```bash
-echo repair2001_date20240412153300.py > "$APP_PERSISTENT_STORAGE/repair.info"
-```
-
-Generate a repair file (bump **MINOR** at least):
-
-```bash
-APP_VERSION="2.1.0" ./genrepair.sh
-```
+- **Finalize the “RAG driver” contract** as a short spec (methods, status, `userIds` header, collection semantics).
+    
+- **Keep builtin as default** for frictionless upgrades; maintainers can merge the adapter hook now without forcing any site to change.
+    
+- **Out-of-tree providers** (R2R today; Pinecone/Supabase scaffolds provided).
+    
+- **Contrib tests**: fixtures that hit identical endpoints through each backend and compare shapes/status codes.
+    
 
 ---
 
-## End-to-End Example: Build & Register (CUDA)
-
-**1) Build**
-
-```bash
-cd /your/path/to/the/cloned/repository
-docker build --no-cache -f Dockerfile -t context_chat_backend_dev:latest .
-```
-
-**2) Run**
-
-```text
-Hint: adjust example.env (RAG_BACKEND, etc.) to your environment.
-```
-
-```bash
-docker run \
-  -v ./config.yaml:/app/config.yaml \
-  -v ./context_chat_backend:/app/context_chat_backend \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  --env-file example.env \
-  -p 10034:10034 \
-  -e CUDA_VISIBLE_DEVICES=0 \
-  -v persistent_storage:/app/persistent_storage \
-  --gpus=all \
-  context_chat_backend_dev:latest
-```
-
-**3) Register**
-
-```text
-Hint: ensure the container from step 2 is running on the specified port.
-```
-
-```bash
-cd /var/www/<your_nextcloud_instance_webroot>
-sudo -u www-data php occ app_api:app:unregister context_chat_backend
-sudo -u www-data php occ app_api:app:register \
-  context_chat_backend \
-  manual_install \
-  --json-info "{\"appid\":\"context_chat_backend\",\
-                \"name\":\"Context Chat Backend\",\
-                \"daemon_config_name\":\"manual_install\",\
-                \"version\":\"4.4.1\",\
-                \"secret\":\"12345\",\
-                \"port\":10034,\
-                \"scopes\":[],\
-                \"system_app\":0}" \
-  --force-scopes \
-  --wait-finish
-```
-
-Successful output should include:
-
-```
-ExApp context_chat_backend successfully unregistered.
-ExApp context_chat_backend deployed successfully.
-ExApp context_chat_backend successfully registered.
-```
-
-Container logs will show enable/init:
-
-```
-App enabled
-INFO: ... "PUT /enabled?enabled=1 HTTP/1.1" 200 OK
-INFO: ... "POST /init HTTP/1.1" 200 OK
-```
-
----
-
-## Troubleshooting & integration notes
-
-* **AppAPI init:** `/init` should return `{}` immediately; progress is reported asynchronously (1–100) via OCS `PUT /ocs/v1.php/apps/app_api/ex-app/status`. Include `"error"` if initialization fails fatally.
-* **Enabled toggle:** use `PUT /enabled?enabled=0|1`. Internally we use `fastapi.Query` (aliased) to avoid Pydantic’s `Query` name collision.
-* **Source ingestion:** the `userIds` file header must be a **comma-separated list** (e.g., `abc, def`).
-  For external backends like R2R, **`collection_ids` are sent as a list of UUID strings**—never as a single comma-joined string.
-* **Logs:** set `debug: true` in config to capture detailed traces in `ccb.log`.
-
----
-
-## Endpoint compatibility
-
-All CCBE endpoints keep their **paths, methods, parameters, and payloads unchanged**, regardless of backend.
-This repo generates an exhaustive router map in CI to ensure parity. See **`docs/endpoints.md`** for the full, up-to-date list and examples.
-
----
-
-## R2R Integration Details
-
-When `RAG_BACKEND=r2r` is set, CCBE integrates with an external R2R instance using `/v3/retrieval/rag`.
-
-- `/query` prefers the R2R-generated answer (`results.generated_answer`) and falls back to the local LLM only if no answer is provided.
-- `/docSearch` returns normalized references for the Nextcloud UI based on R2R chunk hits.
-
-Configuration:
-
-```bash
-RAG_BACKEND=r2r
-R2R_BASE_URL=http://127.0.0.1:7272
-R2R_HTTP_TIMEOUT=300           # optional
-R2R_API_KEY=your_api_key_here  # optional (sent as X-API-Key)
-R2R_API_TOKEN=your_token_here  # optional (Authorization: Bearer …)
-```
-
-Normalization of `sourceId` for Nextcloud:
-
-- Prefer `metadata.source`, else `metadata.filename`, else `source_id|sourceId`.
-- Normalize to `"<provider>: <id>"` (space after the colon), e.g., `files__default: 8059480`.
-- If provider resembles `files_default`, convert to `files__default` (double underscore) for compatibility.
-
-Notes and fixes captured during integration:
-
-- Token counting: some LLMs don’t implement `get_num_tokens`. CCBE now uses a safe fallback heuristic to avoid crashes in prompt pruning.
-- FastAPI startup: avoid registering exception handlers for `BaseExceptionGroup` in Python 3.11 (not a subclass of `Exception`) to prevent `AssertionError` during middleware setup.
-- Logging: R2R requests are logged with masked credentials and a runnable `curl` for debugging.
-
-For a deeper walkthrough and troubleshooting tips, see `R2R-Integration.md`.
