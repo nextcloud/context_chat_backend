@@ -297,6 +297,38 @@ Related guardrails
 
 ---
 
+## Upsert caching (duplicate‑avoidance) — how it works and how to tune it
+
+Goal: avoid re‑sending the same content to R2R across retries and re‑runs, and minimize server‑side dedup traffic when nothing changed.
+
+Design
+- Content key: a file’s SHA‑256 hash (computed in CCBE). The adapter stores a small cache entry keyed by this digest.
+- Persisted cache: JSON at `/app/persistent_storage/r2r_upsert_cache.json` (inside the CCBE container). Make sure your deployment mounts `persistent_storage/` so this survives restarts.
+- Entry shape: `{ "ts": <unix‑seconds>, "doc_id": <uuid|string>, "filename": <source id> }`.
+- Two skip windows driven by env:
+  - `R2R_SKIP_UPSERT_ALL_WITHIN_SECS`: if we saw this hash within the window, CCBE returns immediately without any network calls (logged as “Quick‑skip all …”). This is the fastest path and prevents costly upstream work during large rescans.
+  - `R2R_SKIP_UPSERT_META_WITHIN_SECS`: if the content is unchanged within this longer window, CCBE bypasses duplicate checks/metadata PUTs (logged as “Quick‑skip meta …”), but can still adjust collection membership on other paths when needed.
+- Cache refresh: on every successful create/update (or when R2R reports an existing document with matching hash), CCBE refreshes the entry’s timestamp. This keeps hot content hot.
+
+Seeding the cache (optional, for large pre‑indexed corpora)
+- API walk: iterate `GET /v3/documents`, take `metadata.sha256`, and seed the local cache without re‑uploads: `R2rBackend().seed_upsert_cache()`.
+- Export stream: for very large sets, stream `POST /v3/documents/export` and parse a compact CSV (`id,title,metadata`) to seed quickly: `R2rBackend().seed_upsert_cache_from_export()`.
+- One‑off example (run in the CCBE container):
+  - `python - <<'PY'
+from context_chat_backend.context_chat_backend.backends.r2r import R2rBackend
+b = R2rBackend()
+print(b.seed_upsert_cache())
+PY`
+
+Admin guidance
+- Recommended windows for busy sites:
+  - `R2R_SKIP_UPSERT_ALL_WITHIN_SECS=172800` (2 days)
+  - `R2R_SKIP_UPSERT_META_WITHIN_SECS=345600` (4 days)
+- Monitor logs for: “Upsert skip windows”, “Quick‑skip all …”, “Quick‑skip meta …”. Large rescans should collapse to skips after the first pass.
+- Mirror R2R’s excluded types (`ga_r2r.toml`) in CCBE via `R2R_EXCLUDE_EXTS` so excluded files never upload.
+
+---
+
 ## Configuration quick reference (R2R)
 
 Essential
@@ -334,6 +366,31 @@ QUEUE_MAX_PER_CONSUMER=0
 ```
 
 ---
+
+## Admin settings guide (profiles)
+
+- Small (single node, modest batches)
+  - `R2R_MAX_INFLIGHT_UPSERTS=2`
+  - `R2R_MAX_WAIT_SECONDS=8`
+  - `R2R_RETRY_AFTER_SECONDS=8`
+  - `R2R_SKIP_UPSERT_ALL_WITHIN_SECS=172800`, `R2R_SKIP_UPSERT_META_WITHIN_SECS=345600`
+  - `R2R_EXCLUDE_EXTS` aligned to your `ga_r2r.toml`
+
+- Medium (several workers, embeddings healthy)
+  - `R2R_MAX_INFLIGHT_UPSERTS=3`
+  - `R2R_MAX_WAIT_SECONDS=10`
+  - `R2R_RETRY_AFTER_SECONDS=10`
+  - Same skip windows as above
+
+- High throughput (scaled embeddings/queues)
+  - `R2R_MAX_INFLIGHT_UPSERTS=4–6` (raise gradually and observe)
+  - `R2R_MAX_WAIT_SECONDS=10–15`
+  - Consider re‑enabling RTT gate (`R2R_HEALTH_MAX_RTT_MS=1500–2000`) if you want automatic slowdown on rising latency.
+
+General advice
+- Prefer small wait + fast retry; the Context Chat client handles `sources_to_retry` gracefully and progresses other files.
+- Scale in‑flight caps only after embeddings and R2R workers scale.
+- Seed the upsert cache before big rescans; most files should short‑circuit.
 
 ## Troubleshooting (field notes)
 
