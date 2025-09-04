@@ -13,6 +13,9 @@ import uvicorn
 from context_chat_backend.backends.base import RagBackend  # isort: skip
 from context_chat_backend.types import TConfig  # isort: skip
 from context_chat_backend.controller import app  # isort: skip
+from context_chat_backend.backends.errors import RetryableBackendBusy  # isort: skip
+from fastapi.responses import JSONResponse  # isort: skip
+from fastapi import Request as FastAPIRequest  # isort: skip
 from context_chat_backend.utils import to_int  # isort: skip
 from context_chat_backend.logger import get_logging_config, setup_logging  # isort: skip
 
@@ -36,6 +39,28 @@ def build_backend() -> RagBackend | None:
 
 
 app.state.rag_backend = build_backend()
+
+
+# Map retryable backend busy conditions to 503 with cc-retry header.
+@app.exception_handler(RetryableBackendBusy)
+async def _retryable_busy_handler(request: FastAPIRequest, exc: RetryableBackendBusy):
+    # For /loadSources, prefer a 200 with sources_to_retry so clients keep the scanner active
+    try:
+        if str(request.url.path).endswith("/loadSources") and exc.payload.get("sources_to_retry"):
+            body = {
+                "loaded_sources": exc.payload.get("loaded_sources", []),
+                "sources_to_retry": exc.payload.get("sources_to_retry", []),
+            }
+            return JSONResponse(content=body, status_code=200)
+    except Exception:
+        pass
+
+    # Otherwise return a standard retryable 503 with cc-retry + optional Retry-After
+    retry_after = getenv("R2R_RETRY_AFTER_SECONDS", "0") or "0"
+    headers = {"cc-retry": "true"}
+    if retry_after.isdigit() and int(retry_after) > 0:
+        headers["Retry-After"] = retry_after
+    return JSONResponse(content=str(exc) or "Backend busy, please retry", status_code=503, headers=headers)
 
 
 def _setup_log_levels(debug: bool):

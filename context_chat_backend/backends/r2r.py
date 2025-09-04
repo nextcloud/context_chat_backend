@@ -21,6 +21,7 @@ import os
 import shlex
 import time
 from collections.abc import Mapping, Sequence
+import threading
 from typing import Any
 from urllib.parse import urlencode
 
@@ -30,6 +31,7 @@ import uuid
 from ..vectordb.types import UpdateAccessOp
 from ..log_context import request_id_var
 from .base import RagBackend
+from .errors import RetryableBackendBusy
 
 logger = logging.getLogger("ccb.r2r")
 
@@ -58,6 +60,11 @@ class R2rBackend(RagBackend):
             timeout = 300.0
         self._client = httpx.Client(base_url=base, timeout=timeout, headers=headers)
 
+        # Local saturation metrics (caller-side): track in-flight upserts and EWMA RTT
+        self._metrics_lock = threading.Lock()
+        self._inflight_upserts = 0
+        self._rtt_ewma_ms: float | None = None
+
         # Optional: proactively skip uploads for certain extensions before
         # contacting R2R. Keep this in sync with R2R's ga_r2r.toml when set.
         # Example: ".xls,.xlsx,.exe" (case-insensitive)
@@ -83,6 +90,89 @@ class R2rBackend(RagBackend):
         # recommended way to verify service availability.
         resp = self._client.get("/v3/system/status")
         resp.raise_for_status()
+
+    # ------------------------------------------------------------------
+    # Optional capacity/backpressure probe
+    def can_accept_ingestion(self) -> bool:
+        """Return False when downstream queues look overloaded.
+
+        This is best-effort and only activates when ``QUEUE_HEALTH_URL`` is set.
+        It queries a RabbitMQ management API endpoint and applies simple
+        thresholds. When not configured or on probe failure, returns True.
+        """
+        # First, check local synchronous indicators
+        try:
+            max_inflight = int(os.getenv("R2R_MAX_INFLIGHT_UPSERTS", "0") or 0)
+        except Exception:
+            max_inflight = 0
+        try:
+            max_rtt_ms = float(os.getenv("R2R_HEALTH_MAX_RTT_MS", "0") or 0)
+        except Exception:
+            max_rtt_ms = 0.0
+        with self._metrics_lock:
+            inflight = int(self._inflight_upserts)
+            rtt_ewma = float(self._rtt_ewma_ms or 0.0)
+        if max_inflight and inflight >= max_inflight:
+            logger.info(
+                "Backpressure: inflight upserts over threshold",
+                extra={"inflight": inflight, "max_inflight": max_inflight},
+            )
+            return False
+        if max_rtt_ms and rtt_ewma > max_rtt_ms:
+            logger.info(
+                "Backpressure: RTT EWMA over threshold",
+                extra={"rtt_ms": round(rtt_ewma, 2), "max_rtt_ms": max_rtt_ms},
+            )
+            return False
+
+        # Optional RabbitMQ mgmt-based gating
+        base = os.getenv("QUEUE_HEALTH_URL", "").rstrip("/")
+        max_total = int(os.getenv("QUEUE_MAX_MESSAGES", "0") or 0)
+        max_per_consumer = int(os.getenv("QUEUE_MAX_PER_CONSUMER", "0") or 0)
+        if not base or (not max_total and not max_per_consumer):
+            return True
+        user = os.getenv("QUEUE_HEALTH_USER")
+        pwd = os.getenv("QUEUE_HEALTH_PASSWORD")
+        try:
+            url = f"{base}/api/queues"
+            auth = None
+            headers = {"Accept": "application/json"}
+            if user and pwd:
+                auth = (user, pwd)
+            with httpx.Client(timeout=5.0) as c:
+                resp = c.get(url, headers=headers, auth=auth)
+                resp.raise_for_status()
+                queues = resp.json() or []
+        except Exception:
+            # Do not block ingestion if probe fails
+            return True
+
+        try:
+            total_ready = 0
+            worst_ratio = 0.0
+            for q in queues:
+                ready = int(q.get("messages_ready") or 0)
+                consumers = int(q.get("consumers") or 0)
+                total_ready += ready
+                if consumers > 0:
+                    worst_ratio = max(worst_ratio, ready / max(1, consumers))
+            if max_total and total_ready > max_total:
+                logger.info(
+                    "Backpressure: total_ready exceeds max_total",
+                    extra={"total_ready": total_ready, "max_total": max_total},
+                )
+                return False
+            if max_per_consumer and worst_ratio > float(max_per_consumer):
+                logger.info(
+                    "Backpressure: messages_ready per consumer over threshold",
+                    extra={"worst_ratio": worst_ratio, "max_per_consumer": max_per_consumer},
+                )
+                return False
+        except Exception:
+            # Be permissive on any parsing errors
+            return True
+
+        return True
 
     # ------------------------------------------------------------------
     # Utility helpers
@@ -173,6 +263,16 @@ class R2rBackend(RagBackend):
         start = time.perf_counter()
         resp = self._client.request(method, url_path, **kwargs)
         duration_ms = (time.perf_counter() - start) * 1000.0
+        # Maintain a simple EWMA of request latencies as a saturation hint
+        try:
+            alpha = 0.2
+            with self._metrics_lock:
+                if self._rtt_ewma_ms is None:
+                    self._rtt_ewma_ms = duration_ms
+                else:
+                    self._rtt_ewma_ms = alpha * duration_ms + (1 - alpha) * self._rtt_ewma_ms
+        except Exception:
+            pass
         logger.info(
             "R2R request completed",
             extra={
@@ -186,6 +286,242 @@ class R2rBackend(RagBackend):
         logger.debug("R2R response body: %s", resp.text)
         resp.raise_for_status()
         return resp.json() if resp.content else {}
+
+    # ------------------------------------------------------------------
+    # Maintenance
+    def _ensure_cache_setup(self) -> None:
+        if not hasattr(self, "_cache_lock"):
+            import threading as _th
+            self._cache_lock = _th.Lock()
+        if not hasattr(self, "_cache_path"):
+            self._cache_path = os.getenv(
+                "R2R_UPSERT_CACHE_PATH", "/app/persistent_storage/r2r_upsert_cache.json"
+            )
+        if not hasattr(self, "_upsert_cache"):
+            self._upsert_cache = {}
+            try:
+                with open(self._cache_path, "r", encoding="utf-8") as fh:
+                    self._upsert_cache = json.load(fh) or {}
+            except FileNotFoundError:
+                self._upsert_cache = {}
+            except Exception:
+                self._upsert_cache = {}
+        # Skip windows (read lazily to support older images)
+        if not hasattr(self, "_skip_all_within_secs"):
+            try:
+                self._skip_all_within_secs = int(os.getenv("R2R_SKIP_UPSERT_ALL_WITHIN_SECS", "0") or 0)
+            except Exception:
+                self._skip_all_within_secs = 0
+        if not hasattr(self, "_skip_meta_within_secs"):
+            try:
+                self._skip_meta_within_secs = int(os.getenv("R2R_SKIP_UPSERT_META_WITHIN_SECS", "0") or 0)
+            except Exception:
+                self._skip_meta_within_secs = 0
+    def seed_upsert_cache(
+        self,
+        *,
+        per_page: int = 200,
+        fetch_missing_details: bool = True,
+        now_ts: float | None = None,
+    ) -> dict[str, int]:
+        """Seed the on-disk upsert cache from existing R2R documents.
+
+        Iterates all documents available to the API, reads their
+        ``metadata.sha256`` (optionally fetching details when the list lacks
+        it), and stores entries keyed by sha256 with the current timestamp and
+        doc_id. Existing entries are preserved and refreshed.
+
+        Returns a stats dict with counts of processed/seeded/skipped.
+        """
+        self._ensure_cache_setup()
+        stats = {"processed": 0, "seeded": 0, "refreshed": 0, "skipped_no_hash": 0}
+        ts = now_ts or time.time()
+
+        offset = 0
+        while True:
+            docs = self._request(
+                "GET",
+                "documents",
+                action="seed_upsert_cache:list",
+                params={"offset": offset, "limit": per_page},
+            ).get("results", [])
+            if not docs:
+                break
+            for d in docs:
+                stats["processed"] += 1
+                doc_id = d.get("id")
+                meta = d.get("metadata") or {}
+                sha = meta.get("sha256")
+                if not sha and fetch_missing_details and doc_id:
+                    try:
+                        detail = self.get_document(str(doc_id))
+                        meta = detail.get("metadata") or meta
+                        sha = meta.get("sha256")
+                    except Exception:
+                        sha = None
+                if not sha:
+                    stats["skipped_no_hash"] += 1
+                    continue
+
+                entry = {
+                    "ts": ts,
+                    "doc_id": str(doc_id) if doc_id else "",
+                    "filename": meta.get("filename", ""),
+                }
+                try:
+                    with self._cache_lock:
+                        existed = sha in self._upsert_cache
+                        self._upsert_cache[sha] = entry
+                        os.makedirs(os.path.dirname(self._cache_path), exist_ok=True)
+                        with open(self._cache_path, "w", encoding="utf-8") as fh:
+                            json.dump(self._upsert_cache, fh)
+                        stats["refreshed" if existed else "seeded"] += 1
+                except Exception:
+                    # Best-effort; continue
+                    pass
+            offset += per_page
+
+        logger.info(
+            "Seeded upsert cache",
+            extra={
+                "processed": stats["processed"],
+                "seeded": stats["seeded"],
+                "refreshed": stats["refreshed"],
+                "skipped_no_hash": stats["skipped_no_hash"],
+                "cache_path": self._cache_path,
+            },
+        )
+        return stats
+
+    def seed_upsert_cache_from_export(
+        self,
+        *,
+        export_path: str | None = None,
+        now_ts: float | None = None,
+        columns: list[str] | None = None,
+        include_header: bool = True,
+        max_rows: int | None = None,
+        flush_every: int = 10000,
+    ) -> dict[str, int]:
+        """Seed the upsert cache using R2R CSV export for documents via POST.
+
+        Default payload mirrors the docs example and requests specific columns
+        so parsing is fast and reliable. If your deployment needs different
+        columns, pass them via ``columns``.
+
+        Args:
+          export_path: Optional relative path under /v3 (default "documents/export").
+          now_ts: Optional timestamp to stamp cache entries.
+          columns: Optional column list (default: ["id","metadata.sha256","metadata.filename","metadata.source","title"]).
+          include_header: Whether the CSV should include a header row.
+        """
+        import csv
+        self._ensure_cache_setup()
+        ts = now_ts or time.time()
+        stats = {"processed": 0, "seeded": 0, "refreshed": 0, "skipped_no_hash": 0}
+
+        rel = (export_path or "documents/export").lstrip("/")
+        api_path = f"/v3/{rel}"
+        # Many deployments do not allow dot-access columns. Default to
+        # requesting the raw 'metadata' JSON and parse fields locally.
+        cols = columns or ["id", "title", "metadata"]
+
+        headers = {"Accept": "text/csv", "Content-Type": "application/json"}
+        payload = {"columns": cols, "include_header": bool(include_header)}
+
+        # Helper to perform one export
+        def _stream_export(col_list: list[str]):
+            body = {"columns": col_list, "include_header": bool(include_header)}
+            return self._client.stream("POST", api_path, headers=headers, json=body)
+
+        # First attempt with requested/default columns; on column errors, retry with safe fallback
+        try:
+            stream = _stream_export(cols)
+        except httpx.HTTPStatusError:
+            # Will be handled below by open+raise
+            stream = _stream_export(["id", "title", "metadata"])
+
+        with stream as resp:
+            try:
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                # Retry once with safe fallback when API rejects column names
+                if exc.response is not None and exc.response.status_code in {400, 422, 500}:
+                    try:
+                        with _stream_export(["id", "title", "metadata"]) as resp2:
+                            resp2.raise_for_status()
+                            resp = resp2  # type: ignore[assignment]
+                    except Exception:
+                        raise
+                else:
+                    raise
+
+            def line_iter():
+                buf = ""
+                for chunk in resp.iter_text():
+                    if not chunk:
+                        continue
+                    buf += chunk
+                    while True:
+                        pos = buf.find("\n")
+                        if pos == -1:
+                            break
+                        line = buf[: pos + 1]
+                        buf = buf[pos + 1 :]
+                        yield line
+                if buf:
+                    yield buf
+
+            reader = csv.DictReader(line_iter())
+            for row in reader:
+                stats["processed"] += 1
+                if flush_every > 0 and (stats["processed"] % flush_every) == 0:
+                    logger.info(
+                        "Seeding export progress",
+                        extra={"processed": stats["processed"], "seeded": stats["seeded"], "refreshed": stats["refreshed"]},
+                    )
+                doc_id = row.get("id") or row.get("document_id") or ""
+                sha = row.get("metadata.sha256") or row.get("sha256")
+                filename = row.get("metadata.filename") or row.get("filename") or row.get("metadata.source")
+                if (not sha) or (not filename):
+                    meta_json = row.get("metadata")
+                    if meta_json:
+                        try:
+                            meta_obj = json.loads(meta_json)
+                            sha = sha or meta_obj.get("sha256")
+                            filename = filename or meta_obj.get("filename") or meta_obj.get("source") or meta_obj.get("title")
+                        except Exception:
+                            pass
+                if not sha:
+                    stats["skipped_no_hash"] += 1
+                    continue
+                filename = filename or row.get("title") or ""
+                entry = {"ts": ts, "doc_id": str(doc_id), "filename": filename}
+                try:
+                    with self._cache_lock:
+                        existed = sha in self._upsert_cache
+                        self._upsert_cache[sha] = entry
+                        os.makedirs(os.path.dirname(self._cache_path), exist_ok=True)
+                        with open(self._cache_path, "w", encoding="utf-8") as fh:
+                            json.dump(self._upsert_cache, fh)
+                        stats["refreshed" if existed else "seeded"] += 1
+                except Exception:
+                    pass
+                if max_rows is not None and stats["processed"] >= max_rows:
+                    break
+
+        logger.info(
+            "Seeded upsert cache from export",
+            extra={
+                "processed": stats["processed"],
+                "seeded": stats["seeded"],
+                "refreshed": stats["refreshed"],
+                "skipped_no_hash": stats["skipped_no_hash"],
+                "cache_path": self._cache_path,
+                "export_path": api_path,
+            },
+        )
+        return stats
 
     # ------------------------------------------------------------------
     # Collections
@@ -319,6 +655,11 @@ class R2rBackend(RagBackend):
         *,
         precomputed_sha256: str | None = None,
     ) -> str:
+        # Ensure cache structures are initialized (older builds may lack them in __init__)
+        try:
+            self._ensure_cache_setup()
+        except Exception:
+            pass
         if isinstance(collection_ids, str):
             raise ValueError("collection_ids must be a list of UUID strings")
 
@@ -333,6 +674,70 @@ class R2rBackend(RagBackend):
         logger.info(
             "Checking if document '%s' exists with hash %s", title or "<no title>", digest
         )
+        logger.debug(
+            "Upsert skip windows",
+            extra={
+                "skip_all_secs": getattr(self, "_skip_all_within_secs", 0),
+                "skip_meta_secs": getattr(self, "_skip_meta_within_secs", 0),
+            },
+        )
+
+        # Fast-path 1: total skip within recent window since last upsert
+        if getattr(self, "_skip_all_within_secs", 0) > 0:
+            with self._cache_lock:
+                entry = self._upsert_cache.get(str(digest), {}) if hasattr(self, "_upsert_cache") else None
+            if entry and (time.time() - float(entry.get("ts", 0))) <= self._skip_all_within_secs:
+                logger.info(
+                    "Quick-skip all for '%s' (within %ss)",
+                    title or "<no title>",
+                    self._skip_all_within_secs,
+                )
+                # refresh timestamp to extend window
+                try:
+                    with self._cache_lock:
+                        entry["ts"] = time.time()
+                        self._upsert_cache[str(digest)] = entry
+                        os.makedirs(os.path.dirname(self._cache_path), exist_ok=True)
+                        with open(self._cache_path, "w", encoding="utf-8") as fh:
+                            json.dump(self._upsert_cache, fh)
+                except Exception:
+                    pass
+                cached_id = entry.get("doc_id") if isinstance(entry, dict) else None
+                return str(
+                    cached_id
+                    or meta.get("filename")
+                    or meta.get("source")
+                    or title
+                    or os.path.basename(file_path)
+                )
+
+        # Fast-path 2: skip metadata checks within meta window if hash unchanged
+        if getattr(self, "_skip_meta_within_secs", 0) > 0:
+            with self._cache_lock:
+                entry2 = self._upsert_cache.get(str(digest), {}) if hasattr(self, "_upsert_cache") else None
+            if entry2 and (time.time() - float(entry2.get("ts", 0))) <= self._skip_meta_within_secs:
+                logger.info(
+                    "Quick-skip meta for '%s' (within %ss; hash unchanged)",
+                    title or "<no title>",
+                    self._skip_meta_within_secs,
+                )
+                try:
+                    with self._cache_lock:
+                        entry2["ts"] = time.time()
+                        self._upsert_cache[str(digest)] = entry2
+                        os.makedirs(os.path.dirname(self._cache_path), exist_ok=True)
+                        with open(self._cache_path, "w", encoding="utf-8") as fh:
+                            json.dump(self._upsert_cache, fh)
+                except Exception:
+                    pass
+                cached_id2 = entry2.get("doc_id") if isinstance(entry2, dict) else None
+                return str(
+                    cached_id2
+                    or meta.get("filename")
+                    or meta.get("source")
+                    or title
+                    or os.path.basename(file_path)
+                )
 
         # Skip early if extension is configured to be excluded locally
         try:
@@ -351,6 +756,42 @@ class R2rBackend(RagBackend):
             # Return a benign identifier so the client proceeds. Prefer the
             # source/filename identifier used by Nextcloud where available.
             return str(metadata.get("filename") or metadata.get("source") or title or filename_for_ext)
+
+        # Best-effort backpressure gate: if downstream queues appear overloaded,
+        # signal a retry to the caller rather than proceeding with ingestion.
+        # Backpressure gate with optional wait window
+        try:
+            max_wait = 0.0
+            try:
+                max_wait = float(os.getenv("R2R_MAX_WAIT_SECONDS", os.getenv("QUEUE_MAX_WAIT_SECONDS", "0") or 0))
+            except Exception:
+                max_wait = 0.0
+            start_wait = time.time()
+            while True:
+                ok = True
+                try:
+                    ok = self.can_accept_ingestion()
+                except Exception:
+                    ok = True
+                if ok:
+                    break
+                if max_wait <= 0 or (time.time() - start_wait) >= max_wait:
+                    retry_id = str(
+                        metadata.get("filename")
+                        or metadata.get("source")
+                        or title
+                        or os.path.basename(file_path)
+                    )
+                    raise RetryableBackendBusy(
+                        "R2R busy; please retry shortly",
+                        payload={"sources_to_retry": [retry_id]},
+                    )
+                time.sleep(0.5)
+        except RetryableBackendBusy:
+            raise
+        except Exception:
+            # Do not block on probe errors
+            pass
 
         doc_by_hash = self.find_document_by_hash(digest)
         if doc_by_hash and doc_by_hash.get("metadata", {}).get("sha256") == digest:
@@ -413,6 +854,19 @@ class R2rBackend(RagBackend):
                             f"Removing document '{title}' ({existing['id']}) from collection {cid}"
                         ),
                     )
+                # Update cache timestamp and id for future skip windows
+                try:
+                    with self._cache_lock:
+                        self._upsert_cache[str(digest)] = {
+                            "ts": time.time(),
+                            "doc_id": existing["id"],
+                            "filename": meta.get("filename", ""),
+                        }
+                        os.makedirs(os.path.dirname(self._cache_path), exist_ok=True)
+                        with open(self._cache_path, "w", encoding="utf-8") as fh:
+                            json.dump(self._upsert_cache, fh)
+                except Exception:
+                    pass
                 return existing["id"]
 
         logger.info(
@@ -445,6 +899,19 @@ class R2rBackend(RagBackend):
                     logger.info(
                         "Document '%s' (id %s) ingestion pending; reusing", title, existing["id"]
                     )
+                    # Update cache timestamp and id for future skip windows
+                    try:
+                        with self._cache_lock:
+                            self._upsert_cache[str(digest)] = {
+                                "ts": time.time(),
+                                "doc_id": existing["id"],
+                                "filename": meta.get("filename", ""),
+                            }
+                            os.makedirs(os.path.dirname(self._cache_path), exist_ok=True)
+                            with open(self._cache_path, "w", encoding="utf-8") as fh:
+                                json.dump(self._upsert_cache, fh)
+                    except Exception:
+                        pass
                     return existing["id"]
                 logger.info(
                     "Document '%s' exists but hash value has changed; deleting old version to upsert new version",
@@ -485,6 +952,9 @@ class R2rBackend(RagBackend):
                 ("ingestion_mode", (None, "custom")),
                 ("run_with_orchestration", (None, "true")),
             ]
+            # Increase in-flight upserts while performing the create call
+            with self._metrics_lock:
+                self._inflight_upserts += 1
             try:
                 created = self._request(
                     "POST",
@@ -492,6 +962,18 @@ class R2rBackend(RagBackend):
                     action="upsert_document:create",
                     desc=f"Creating new document '{title}'",
                     files=files,
+                )
+            except (httpx.TimeoutException, httpx.ConnectError, httpx.ReadTimeout):
+                # Upstream overloaded or network hiccup — instruct caller to retry
+                retry_id = str(
+                    metadata.get("filename")
+                    or metadata.get("source")
+                    or title
+                    or filename
+                )
+                raise RetryableBackendBusy(
+                    "R2R timed out during ingestion; please retry",
+                    payload={"sources_to_retry": [retry_id]},
                 )
             except httpx.HTTPStatusError as exc:
                 # Gracefully handle R2R-side exclusions (e.g., blocked by
@@ -524,8 +1006,40 @@ class R2rBackend(RagBackend):
                         or title
                         or filename_for_ext
                     )
+                # If R2R reports upstream busy/gateway issues, make it retryable
+                if status in {502, 503, 504}:
+                    retry_id2 = str(
+                        metadata.get("filename")
+                        or metadata.get("source")
+                        or title
+                        or filename
+                    )
+                    raise RetryableBackendBusy(
+                        "Upstream R2R busy; please retry",
+                        payload={"sources_to_retry": [retry_id2]},
+                    )
                 raise
-        return created.get("results", {}).get("document_id", "")
+            finally:
+                try:
+                    with self._metrics_lock:
+                        self._inflight_upserts = max(0, self._inflight_upserts - 1)
+                except Exception:
+                    pass
+        doc_id = created.get("results", {}).get("document_id", "")
+        # Update cache on successful create so reruns can skip quickly
+        try:
+            with self._cache_lock:
+                self._upsert_cache[str(digest)] = {
+                    "ts": time.time(),
+                    "doc_id": doc_id,
+                    "filename": meta.get("filename", ""),
+                }
+                os.makedirs(os.path.dirname(self._cache_path), exist_ok=True)
+                with open(self._cache_path, "w", encoding="utf-8") as fh:
+                    json.dump(self._upsert_cache, fh)
+        except Exception:
+            pass
+        return doc_id
 
     def find_document_by_filename(self, filename: str) -> dict | None:
         if not filename:

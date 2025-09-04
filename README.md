@@ -210,3 +210,153 @@ Adopt a **minimal abstract RAG driver** in Context Chat Backend:
 - Preserve **API compatibility and operational neutrality**—admins can scale/upgrade retrieval independently of CCBE releases.
 
 This keeps Nextcloud vendor-neutral and stable, while enabling teams to use best-fit retrieval stacks. R2R’s clean API surface is a working proof that this pattern is practical today.
+
+---
+
+## Why R2R specifically (rationale and fit)
+
+R2R (SciPhi) exposes a clean, capability‑rich HTTP API for document ingestion, hybrid/semantic search, and optional graph construction. It is a good match for CCBE because:
+
+- Collections as tenancy: R2R models access as per‑tenant/per‑user collections. CCBE can pass `userIds` and the adapter can scope every query to only those collections.
+- Document‑centric API: Create/update/delete documents with server‑side hash filtering and metadata updates; avoid client‑side scan/joins.
+- Graph‑RAG optionality: Enable entity/relationship graphs where useful, without forcing it for simple deployments.
+- Independent scaling: R2R workers, queues, and model endpoints scale outside of CCBE’s lifecycle.
+
+See also: `R2R-Integration.md` for more background and deployment notes.
+
+---
+
+## Collections‑based access model (user → collection) 
+
+CCBE never sends raw user ACLs to the backend at query time. Instead the adapter translates user context to R2R collections and uses these as filters:
+
+- Ensure collections: On every ingestion call, CCBE resolves the `userIds` header and calls `GET /v3/collections`; missing entries are created with `POST /v3/collections { name: <userId> }`.
+- Ingest scope: New or existing documents are associated with the set of collection IDs for all `userIds` in the request.
+- Query scope: Search/RAG requests include a filter: `filters: { collection_ids: { $overlap: [ userId ] } }` (or the resolved collection IDs), ensuring hits only from the caller’s collections.
+- Access updates: Grant/revoke operations add/remove the document from the corresponding user collections.
+
+This keeps the user access layer simple, auditable, and entirely enforced on the retrieval side.
+
+---
+
+## Endpoint mapping (CCBE ⇄ R2R)
+
+High‑level map of how CCBE endpoints translate into R2R calls when `RAG_BACKEND=r2r`:
+
+- `PUT /loadSources` →
+  - `GET /v3/collections` (list) → `POST /v3/collections` (create missing)
+  - For each source: dedup by hash via `POST /v3/retrieval/search` (query "*" with metadata filter)
+  - `GET /v3/documents/{id}` to read authoritative fields when needed
+  - Create or update document via `POST /v3/documents` (multipart) and `PUT /v3/documents/{id}/metadata`
+  - Add/remove collection membership: `POST/DELETE /v3/collections/{cid}/documents/{id}`
+
+- `POST /updateAccessDeclarative` →
+  - `GET /v3/documents/{id}/collections` then reconcile with `POST/DELETE /v3/collections/{cid}/documents/{id}`
+
+- `POST /updateAccess` (allow/deny) →
+  - `POST/DELETE /v3/collections/{cid}/documents/{id}`
+
+- `POST /deleteSources` → `DELETE /v3/documents/{id}` (by identifier)
+
+- `POST /countIndexedDocuments` → `GET /v3/documents` (count client‑side)
+
+- `POST /query` and `POST /docSearch` → `POST /v3/retrieval/rag` with collection filter and optional scope
+
+For a detailed walkthrough with file/line references, see `docs/ccbe_r2r_mapping.md` and `R2R-Integration.md`.
+
+---
+
+## Backpressure and timeouts: how we keep scans alive
+
+Large batches and upstream spikes used to surface as 500s/timeouts for the Nextcloud client. We implemented a minimal, upstream‑compatible strategy focused on two goals: avoid timeouts and make every busy condition retryable.
+
+What we do now
+- Caller‑side gate in the R2R adapter:
+  - Cap concurrent upserts from CCBE (`R2R_MAX_INFLIGHT_UPSERTS`).
+  - Optional quick wait (`R2R_MAX_WAIT_SECONDS`) to see if capacity returns.
+  - If still busy/timeout/502–504, raise a small `RetryableBackendBusy` with the specific `source_id`.
+- Central response shaping in `main.py`:
+  - For `/loadSources`, map `RetryableBackendBusy` to HTTP 200 with body:
+    `{ "loaded_sources": [], "sources_to_retry": ["<source_id>"] }`
+  - For other routes, return HTTP 503 with header `cc-retry: true` and optional `Retry-After`.
+
+Why this works
+- The Context Chat client expects either success with `sources_to_retry` or a retryable signal. Returning 200 for `/loadSources` keeps the scanner’s queue alive and moves on to other files; that single source is re‑queued automatically.
+- We removed complex queue probing by default; local, caller‑side signals are enough and reduce false positives.
+
+Tuning knobs (env)
+- `R2R_MAX_INFLIGHT_UPSERTS` (default 3): cap concurrent creates from CCBE to R2R.
+- `R2R_MAX_WAIT_SECONDS` (default 10): small grace period before responding.
+- `R2R_RETRY_AFTER_SECONDS` (default 10): included on 503 responses for non‑/loadSources.
+- `R2R_HEALTH_MAX_RTT_MS` (default 0 = disabled): EWMA latency‑based gating; can be re‑enabled if desired.
+- RabbitMQ mgmt probe is disabled by default; re‑enable via `QUEUE_HEALTH_URL` et al. if your ops need it.
+
+Related guardrails
+- Upsert skip windows cache: `R2R_SKIP_UPSERT_ALL_WITHIN_SECS` and `R2R_SKIP_UPSERT_META_WITHIN_SECS` avoid re‑ingesting recently seen content.
+- Local exclude list: `R2R_EXCLUDE_EXTS` lets CCBE skip uploads the R2R policy would reject (e.g., `.xls,.xlsx`).
+
+---
+
+## Configuration quick reference (R2R)
+
+Essential
+```env
+RAG_BACKEND=r2r
+R2R_BASE_URL=http://<host>:7272
+R2R_API_KEY=...            # optional
+R2R_API_TOKEN=...          # optional
+R2R_HTTP_TIMEOUT=300       # optional
+```
+
+Performance and stability
+```env
+# Caller-side backpressure (recommended)
+R2R_MAX_INFLIGHT_UPSERTS=3
+R2R_MAX_WAIT_SECONDS=10
+R2R_RETRY_AFTER_SECONDS=10
+# Latency gate (off by default)
+R2R_HEALTH_MAX_RTT_MS=0
+# Skip windows to avoid needless re‑ingest
+R2R_SKIP_UPSERT_ALL_WITHIN_SECS=172800
+R2R_SKIP_UPSERT_META_WITHIN_SECS=345600
+# Optional local file excludes
+R2R_EXCLUDE_EXTS=.tsv,.csv,.xls,.xlsx,.bmp,.heic,.jpeg,.jpg,.png,.tiff
+```
+
+Optional (ops)
+```env
+# RabbitMQ mgmt probe (disabled by default)
+QUEUE_HEALTH_URL=http://<r2r-host>:15673
+QUEUE_HEALTH_USER=user
+QUEUE_HEALTH_PASSWORD=password
+QUEUE_MAX_MESSAGES=0
+QUEUE_MAX_PER_CONSUMER=0
+```
+
+---
+
+## Troubleshooting (field notes)
+
+- “At least one source is already being processed…”
+  - Early behavior on 503/timeout. Now mitigated: `/loadSources` responds 200 with `sources_to_retry`, so the scanner continues.
+
+- R2R shows “main thread may be blocked” yet RabbitMQ looks idle
+  - The backlog was inside the HTTP request path (synchronous work, upstream latency). Caller‑side caps and quick retries are designed to prevent this manifesting as a client timeout.
+
+- After restart, “old” items complete
+  - Hatchet stores runs/steps in Postgres and rehydrates queues on restart; documents created at 03:00 can finish at 07:30 and retain their original `created_at`.
+
+- Embeddings timeouts / litellm 500s
+  - Expand capacity or route embeddings to a healthy provider. CCBE will mark the file for retry and proceed with the rest of the batch.
+
+---
+
+## Data flow (ingest → search)
+
+1) Client calls `PUT /loadSources` with files + `userIds` headers.
+2) Adapter ensures per‑user collections; dedups by document hash; creates/updates documents; associates them with user collections.
+3) Optional extraction/graph steps run asynchronously (Hatchet) in R2R.
+4) Queries (`/query`, `/docSearch`) call `POST /v3/retrieval/rag` with collection filters and optional scope.
+5) Answers are returned with normalized hits; access is enforced by collection membership.
+
+This pattern keeps CCBE’s contract stable and lets R2R evolve independently (models, queues, and graph features) without affecting the Nextcloud integration.

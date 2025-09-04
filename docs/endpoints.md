@@ -13,7 +13,7 @@
 | POST | `/deleteProvider` | Delete documents belonging to a provider for all users【F:context_chat_backend/controller.py†L479-L492】 |
 | POST | `/deleteUser` | Remove all documents and access entries for a user【F:context_chat_backend/controller.py†L495-L508】 |
 | POST | `/countIndexedDocuments` | Count indexed documents across providers or via backend【F:context_chat_backend/controller.py†L511-L519】 |
-| PUT | `/loadSources` | Ingest documents for users, ensuring collection mapping and deduplication【F:context_chat_backend/controller.py†L523-L590】 |
+| PUT | `/loadSources` | Ingest documents for users, ensuring collection mapping and deduplication【F:context_chat_backend/controller.py†L523-L590】. When `RAG_BACKEND=r2r` and the upstream is overloaded, responds `503` with header `cc-retry: true` (retryable). |
 | POST | `/query` | Perform question answering, optionally retrieving context from backend【F:context_chat_backend/controller.py†L727-L765】 |
 | POST | `/docSearch` | Search for documents matching a query without invoking the LLM; returns `[{"sourceId", "title"}]`【F:context_chat_backend/controller.py†L769-L804】 |
 | GET | `/downloadLogs` | Download zipped server logs for debugging【F:context_chat_backend/controller.py†L802-L811】 |

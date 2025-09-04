@@ -118,6 +118,27 @@ Environment variables for R2R:
 - `R2R_API_TOKEN=<token>` (sends `Authorization: Bearer …`)
 - `R2R_HTTP_TIMEOUT=<seconds>` (default `300`)
 
+### Backpressure and Timeouts
+
+- CCBE performs a light queue health pre-check before heavy R2R operations when `RAG_BACKEND=r2r`. If the backlog is high (messages_ready per consumer above threshold) or an absolute cap is exceeded, CCBE returns `503` with header `cc-retry: true` instead of timing out.
+- Configure via environment variables in the CCBE container:
+  - `QUEUE_HEALTH_URL` (e.g., `http://<r2r-host>:15673`) plus optional `QUEUE_HEALTH_USER`, `QUEUE_HEALTH_PASSWORD` (RabbitMQ mgmt API)
+  - `QUEUE_BACKLOG_PER_CONSUMER_OK` (default `20`) and `QUEUE_BACKLOG_ABSOLUTE_OK` (default `0` disables)
+  - `QUEUE_MAX_WAIT_SECONDS` (default `0`): how long to wait for the queue to drain before returning 503
+  - `QUEUE_HEALTH_POLL_INTERVAL` (default `2.0`), `QUEUE_HEALTH_HTTP_TIMEOUT` (default `3.0`)
+  - Optional: `QUEUE_HEALTH_FAIL_CLOSED=true` to treat health endpoint errors as busy (force `503`)
+
+When backpressure triggers, CCBE’s controller translates this into a retryable `503` for `/loadSources` so the Nextcloud scanner automatically retries later.
+
+Caller-side saturation (no upstream diffs):
+
+- In addition to RabbitMQ/engine health, CCBE now uses lightweight, caller-side signals to avoid overloading R2R’s synchronous request path:
+  - `R2R_MAX_INFLIGHT_UPSERTS`: maximum concurrent R2R document creates from CCBE before returning a retryable `503`.
+  - `R2R_HEALTH_MAX_RTT_MS`: if the EWMA of recent R2R request latencies exceeds this value, CCBE returns a retryable `503` for new ingestions.
+  - `R2R_MAX_WAIT_SECONDS` (or `QUEUE_MAX_WAIT_SECONDS`): optional grace period to wait for conditions to improve before responding.
+  
+These signals live entirely in the R2R backend adapter (`backends/r2r.py`) and are exposed to the app via a generic `RetryableBackendBusy` exception that is mapped to `503 cc-retry` centrally in `main.py`.
+
 Excluded extensions (graceful skip):
 
 - R2R may be configured to reject certain file types via its user config (for example, `ga_r2r.toml`, typically mounted at `/data/r2r/docker/user_configs/ga/ga_r2r.toml` inside the R2R container).
@@ -150,6 +171,12 @@ CCBE logs notable milestones with a request correlation id (`X-Request-ID`):
 
 Tip: If the log shows `context retrieved` but not `invoking llm`, the issue is likely in prompt pruning/token counting (now mitigated with the fallback).
 
+For R2R load management and caching, look for:
+- `Seeding export progress` and `Seeded upsert cache from export` during cache seeding
+- `Upsert skip windows` on each upsert attempt (shows configured windows)
+- `Quick-skip all ...` when a file is skipped entirely within the “skip-all” window
+- `Quick-skip meta ...` when only metadata/dedup checks are skipped for unchanged content
+
 ## Troubleshooting
 
 - Startup AssertionError in `ExceptionMiddleware`:
@@ -170,6 +197,70 @@ Tip: If the log shows `context retrieved` but not `invoking llm`, the issue is l
 
 - `context retrieved` but 500 before LLM:
   - Previously due to missing `get_num_tokens`; now handled via heuristic fallback.
+
+- Frequent 503 with `cc-retry: true` on `/loadSources`:
+  - Indicates backpressure gating is active. Check RabbitMQ backlog and R2R worker health.
+  - Tune `QUEUE_BACKLOG_PER_CONSUMER_OK` and `QUEUE_MAX_WAIT_SECONDS`.
+
+- Cache not being used (no `Quick-skip` logs):
+  - Ensure `R2R_SKIP_UPSERT_ALL_WITHIN_SECS` and/or `R2R_SKIP_UPSERT_META_WITHIN_SECS` are set in the CCBE container env.
+  - Verify `/app/persistent_storage/r2r_upsert_cache.json` exists and contains entries keyed by sha256.
+  - Confirm the computed sha256 in CCBE matches the one in the cache (file content changed → no skip).
+
+## Upsert Caching & Skip Windows
+
+Rationale: Re-running large or interrupted scans can waste time and compute if unchanged files are re-checked or re-ingested. CCBE adds a lightweight cache and two time-based skip windows to short‑circuit work when safe.
+
+- Cache location: `/app/persistent_storage/r2r_upsert_cache.json` (bind‑mounted to your data dir). Keys are document `sha256` with values `{ ts, doc_id, filename }`.
+- Skip windows (set one or both):
+  - `R2R_SKIP_UPSERT_ALL_WITHIN_SECS`: if the same sha (and thus same content) was seen within this window, CCBE skips all R2R calls for that file and returns success. Logged as `Quick-skip all ...`.
+  - `R2R_SKIP_UPSERT_META_WITHIN_SECS`: beyond the above but within this window, CCBE bypasses metadata/dedup checks for unchanged content. Logged as `Quick-skip meta ...`.
+
+Behavior:
+- The cache is updated on successful creates and when existing documents are reused. On skip, CCBE refreshes the timestamp to extend the window.
+- Skips apply per file content (sha256); if content changes, CCBE resumes normal checks.
+
+Seeding the cache (fast path):
+- Use the R2R CSV export to seed entries rapidly:
+  - Inside the CCBE container:
+    - `python3 -c "import json; from context_chat_backend.backends.r2r import R2rBackend; b=R2rBackend(); print(json.dumps(b.seed_upsert_cache_from_export(), indent=2))"`
+  - The export posts to `/v3/documents/export` with `Accept: text/csv`, requests `id,title,metadata`, and parses `metadata` JSON to read `sha256` and `filename/source/title`.
+  - For huge datasets, you can add `max_rows=100000` and `flush_every=10000` to see progress and persist incrementally.
+
+Verification:
+- Enable DEBUG logs (default for `ccb.r2r`), tail the CCBE log, and look for `Quick-skip ...` lines while scanning.
+- Confirm the cache file exists and grows after seeding and during scans.
+
+## Operations
+
+- Seed cache (full export, streamed):
+  - `docker exec -it ccbe-r2r python3 -c "import json; from context_chat_backend.backends.r2r import R2rBackend; b=R2rBackend(); print(json.dumps(b.seed_upsert_cache_from_export(flush_every=10000), indent=2))"`
+
+- Seed cache in chunks (progress + limit runtime):
+  - `docker exec -it ccbe-r2r python3 -c "import json; from context_chat_backend.backends.r2r import R2rBackend; b=R2rBackend(); print(json.dumps(b.seed_upsert_cache_from_export(max_rows=100000, flush_every=10000), indent=2))"`
+
+- Watch progress and quick-skip activity:
+  - `tail -f /data/context_chat_backend/logs/ccb.log | egrep 'Seeding export progress|Quick-skip|Upsert skip windows'`
+
+- Verify cache file on disk:
+  - `docker exec -it ccbe-r2r sh -lc 'ls -lh /app/persistent_storage/r2r_upsert_cache.json; wc -c /app/persistent_storage/r2r_upsert_cache.json'`
+
+- Enable or tune skip windows (edit `/opt/ccbe-r2r.env` and restart CCBE):
+  - `R2R_SKIP_UPSERT_ALL_WITHIN_SECS=172800`
+  - `R2R_SKIP_UPSERT_META_WITHIN_SECS=345600`
+  - Restart: `docker compose -f /opt/ccbe-r2r-docker-compose.yml up -d --build context_chat_backend`
+
+- Backpressure configuration (RabbitMQ mgmt):
+  - `QUEUE_HEALTH_URL=http://<r2r-host>:15673`
+  - `QUEUE_HEALTH_USER=user`
+  - `QUEUE_HEALTH_PASSWORD=password`
+  - Optional: `QUEUE_BACKLOG_PER_CONSUMER_OK=20`, `QUEUE_MAX_WAIT_SECONDS=120`, `QUEUE_HEALTH_FAIL_CLOSED=true`
+  - Verify from CCBE: `docker exec -it ccbe-r2r curl -u user:password http://<r2r-host>:15673/api/overview`
+
+- Verify CCBE health (signed request):
+  - `export APP_ID=context_chat_backend APP_VERSION=4.4.1 APP_SECRET=12345`
+  - `AUTH=$(printf 'ncadmin:%s' "$APP_SECRET" | base64 -w0)`
+  - `curl -v --http1.1 http://127.0.0.1:10034/enabled -H "EX-APP-ID: $APP_ID" -H "EX-APP-VERSION: $APP_VERSION" -H "OCS-APIRequest: true" -H "AUTHORIZATION-APP-API: $AUTH"`
 
 ## Validation Steps
 
