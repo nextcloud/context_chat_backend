@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 
+## 4.5.0-beta.1 - 2025-09-09
+
+### Fixed
+- better parsing of version string for repairs (#209) @kyteinsky
+
+
 ## 4.5.0-beta.0 - 2025-08-29
 
 ### Fixed
