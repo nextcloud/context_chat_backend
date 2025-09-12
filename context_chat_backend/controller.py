@@ -354,7 +354,7 @@ def _(sources: list[UploadFile]):
 
 		if not (
 			value_of(source.headers.get('userIds'))
-			and value_of(source.headers.get('title'))
+			and source.headers.get('title', None) is not None
 			and value_of(source.headers.get('type'))
 			and value_of(source.headers.get('modified'))
 			and source.headers['modified'].isdigit()
