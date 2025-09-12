@@ -72,7 +72,7 @@ If nextcloud is inside a container, `--add-host` option would be required by you
 **2. Register the app using the deploy daemon (be mindful of the port number and the app's version):**
 ```
 occ app_api:app:register context_chat_backend manual_install --json-info \
-"{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"4.5.0-beta.1\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system_app\":0}" \
+"{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"4.5.0-beta.2\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system_app\":0}" \
 --force-scopes --wait-finish
 ```
 The command to unregister is given below (force is used to also remove apps whose container has been removed)
@@ -229,7 +229,7 @@ sudo -u www-data php occ app_api:app:register \
     --json-info "{\"appid\":\"context_chat_backend\",\
                   \"name\":\"Context Chat Backend\",\
                   \"daemon_config_name\":\"manual_install\",\
-                  \"version\":\"4.5.0-beta.1\",\
+                  \"version\":\"4.5.0-beta.2\",\
                   \"secret\":\"12345\",\
                   \"port\":10034,\
                   \"scopes\":[],\

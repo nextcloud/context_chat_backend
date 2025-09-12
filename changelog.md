@@ -9,6 +9,15 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 
+## 4.5.0-beta.2 - 2025-09-12
+
+### Changed
+- bump max NC version to 33
+
+### Fixed
+- let empty but set title headers pass (#211) @kyteinsky
+
+
 ## 4.5.0-beta.1 - 2025-09-09
 
 ### Fixed
