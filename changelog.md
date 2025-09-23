@@ -9,6 +9,22 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 
+## 4.5.0 - 2025-09-23
+
+### Changed
+- stable release of the 4.5.0-beta series
+- bump max NC version to 33
+- store worker logs and present them better (#200) @kyteinsky
+
+### Fixed
+- better parsing of version string for repairs (#209) @kyteinsky
+- suppress tokenizer max context length warning (#200) @kyteinsky
+- fix nc_py_api to 0.20.2 (#200) @kyteinsky
+
+### Added
+- add app version to file logs (#201) @kyteinsky
+
+
 ## 4.5.0-beta.3 - 2025-09-12
 
 ### Changed
