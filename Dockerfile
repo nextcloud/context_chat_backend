@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-FROM nvidia/cuda:12.2.2-runtime-ubuntu22.04
+FROM docker.io/nvidia/cuda:12.2.2-runtime-ubuntu22.04
 
 ARG CCB_DB_NAME=ccb
 ARG CCB_DB_USER=ccbuser
