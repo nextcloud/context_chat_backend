@@ -11,11 +11,11 @@
 >
 > The HTTP request timeout is 50 minutes for all requests and can be changed with the `request_timeout` app config for the php app `context_chat` using the occ command (`occ config:app:set context_chat request_timeout --value=3000`, value is in seconds). The same also needs to be done for docker socket proxy. See [Slow responding ExApps](https://github.com/cloud-py-api/docker-socket-proxy?tab=readme-ov-file#slow-responding-exapps)
 >
-> An end-to-end example on how to build and register the backend manually (with CUDA) is at the end of this readme
+> An end-to-end example for dev setups on how to build and register the backend manually (with CUDA) is at the end of this readme
 >
 > See the [NC Admin docs](https://docs.nextcloud.com/server/latest/admin_manual/ai/app_context_chat.html) for requirements and known limitations.
 
-## Simple Install
+## Install
 
 Install the given apps for Context Chat to work as desired **in the given order**:
 - [AppAPI from the Apps page](https://apps.nextcloud.com/apps/app_api)
@@ -32,25 +32,26 @@ Install the given apps for Context Chat to work as desired **in the given order*
 > [!IMPORTANT]
 > To avoid task processing execution delay, setup at 4 background job workers in the main server (where Nextcloud is installed). The setup process is documented here: https://docs.nextcloud.com/server/latest/admin_manual/ai/overview.html#improve-ai-task-pickup-speed
 
-## Complex Install (without docker)
+## Dev Install (without docker)
 
-0. Install the required apps from [Simple Install](#simple-install) other than Context Chat Backend and setup background job workers
+0. Install the required apps from [Install](#install) other than Context Chat Backend and setup background job workers
 1. `python -m venv .venv`
 2. `. .venv/bin/activate`
 3. `pip install --upgrade pip setuptools wheel`
 4. Install requirements `pip install -r requirements.txt`
 5. Copy example.env to .env and fill in the variables
-6. Ensure the config file at `persistent_storage/config.yaml` points to the correct config file (cpu vs gpu). If you're unsure, delete it. It will be recreated upon launching the application. The default is to point to the gpu config.
-7. Configure `persistent_storage/config.yaml` for the model name, model type and its parameters (which also includes model file's path and model id as per requirements, see example config)
+6. Ensure the config file at `persistent_storage/config.yaml` points to the correct config file (cpu vs gpu). If you're unsure, delete it. It will be recreated upon launching the application.
+7. Configure `persistent_storage/config.yaml`
 8. Setup postgresql externally or use `dockerfile_scripts/pgsql/install.sh` to install it on a Debian-family system.
 9. Set the env var `EXTERNAL_DB` or the `connection` key in the `pgvector` config to the postgresql connection string if you're using an external database.
 10. Start the database (see `dockerfile_scripts/pgsql/setup.sh` for an example)
-11. `./main.py`
-12. [Follow the below steps to register the app in the app ecosystem](#register-as-an-ex-app)
+11. `./main_em.py` in one terminal/tmux pane
+12. `./main.py` in another
+13. [Follow the below steps to register the app in the app ecosystem](#register-as-an-ex-app)
 
-## Complex Install (with docker)
+## Dev Install (with docker)
 
-0. Install the required apps from [Simple Install](#simple-install) other than Context Chat Backend and setup background job workers
+0. Install the required apps from [Install](#install) other than Context Chat Backend and setup background job workers
 1. Build the image
     *(this is a good place to edit the example.env file before building the container)*
     `docker build -t context_chat_backend . -f Dockerfile`
@@ -67,7 +68,7 @@ occ app_api:daemon:register --net host manual_install "Manual Install" manual-in
 ```
 `host` will be `localhost` if nextcloud can access localhost or `host.docker.internal` if nextcloud is inside a docker container and the backend app is on localhost.
 
-If nextcloud is inside a container, `--add-host` option would be required by your nextcloud container. [See example above, pt. 2](#complex-install-with-docker)
+If nextcloud is inside a container, `--add-host` option would be required by your nextcloud container. [See example above, pt. 2](#dev-install-with-docker)
 
 **2. Register the app using the deploy daemon (be mindful of the port number and the app's version):**
 ```
@@ -167,7 +168,6 @@ Adjust the example.env to your needs so that it fits your environment
 docker run \
     -v ./config.yaml:/app/config.yaml \
     -v ./context_chat_backend:/app/context_chat_backend \
-    -v /var/run/docker.sock:/var/run/docker.sock \
     --env-file example.env \
     -p 10034:10034 \
     -e CUDA_VISIBLE_DEVICES=0 \
@@ -185,10 +185,6 @@ docker run \
 	`-v ./context_chat_backend:/app/context_chat_backend`
 
 	Mounts the context_chat_backend into the docker image
-
-	`-v /var/run/docker.sock:/var/run/docker.sock`
-
-	Mounts the Docker socket file from the host into the container. This is done to allow the Docker client running inside the container to communicate with the Docker daemon on the host, essentially controlling Docker and GPU from within the container.
 
 	`-v persistent_storage:/app/persistent_storage`
 
@@ -231,9 +227,7 @@ sudo -u www-data php occ app_api:app:register \
                   \"daemon_config_name\":\"manual_install\",\
                   \"version\":\"4.5.0\",\
                   \"secret\":\"12345\",\
-                  \"port\":10034,\
-                  \"scopes\":[],\
-                  \"system_app\":0}" \
+                  \"port\":10034}" \
     --force-scopes \
     --wait-finish
 ```
