@@ -227,7 +227,7 @@ sudo -u www-data php occ app_api:app:register \
                   \"daemon_config_name\":\"manual_install\",\
                   \"version\":\"4.5.0\",\
                   \"secret\":\"12345\",\
-                  \"port\":10034,\
+                  \"port\":10034}" \
     --force-scopes \
     --wait-finish
 ```
