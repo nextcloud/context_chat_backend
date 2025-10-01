@@ -29,7 +29,7 @@ Setup background job workers as described here: https://docs.nextcloud.com/serve
 	<bugs>https://github.com/nextcloud/context_chat_backend/issues</bugs>
 	<repository type="git">https://github.com/nextcloud/context_chat_backend.git</repository>
 	<dependencies>
-		<nextcloud min-version="30" max-version="33"/>
+		<nextcloud min-version="30" max-version="31"/>
 	</dependencies>
 	<external-app>
 		<docker-install>
