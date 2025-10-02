@@ -5,11 +5,10 @@ name: Integration test
 
 on:
   pull_request:
-    branches:
-      - master
   push:
     branches:
       - master
+      - stable*
 
 permissions:
   contents: read
@@ -64,7 +63,7 @@ jobs:
       matrix:
         php-versions: [ '8.1' ]
         databases: [ 'pgsql' ]
-        server-versions: [ 'master' ]
+        server-versions: [ 'stable32', 'master' ]
 
     name: Integration test on ${{ matrix.server-versions }} php@${{ matrix.php-versions }}
 
