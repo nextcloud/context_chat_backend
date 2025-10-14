@@ -59,7 +59,11 @@ if __name__ == '__main__':
 				if not ret.json().get('enabled', False):
 					raise RuntimeError('Main app is not enabled, sleeping for a while...')
 			except (httpx.RequestError, RuntimeError) as e:
-				print(f'{MAX_TRIES-_max_tries+1}/{MAX_TRIES}: Error checking main app status: {e}', flush=True)
+				print(
+					f'{MAX_TRIES-_max_tries+1}/{MAX_TRIES}:'
+					f' [Embedding server] Waiting for the main app to be enabled/ready: {e}',
+					flush=True,
+				)
 				_last_err = e
 				sleep(STARTUP_CHECK_SEC)
 				_max_tries -= 1
@@ -69,7 +73,14 @@ if __name__ == '__main__':
 			break
 
 	if not _enabled:
-		logger.error('Failed waiting for the main app to be enabled, exiting...', exc_info=_last_err)
+		logger.error(
+			'Failed waiting for the main app to be enabled. This could indicate an issue with the AppAPI'
+			' Deploy Daemon setup or some issue in the main app setup. Some common causes of the latter'
+			' could be no/no stable internet connection to download the required models, disk space full,'
+			' or this app not being able to contact the Nextcloud server to report progress of the model'
+			' download.',
+			exc_info=_last_err,
+		)
 		exit(1)
 
 	# update model path to be in the persistent storage if it is not already valid
