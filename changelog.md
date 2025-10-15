@@ -9,6 +9,17 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 
+## 5.0.0 - 2025-10-15
+
+### Changed
+- feat(podman): support build ExApp from source @oleksandr-nc
+- min NC 32 and CI adjustment (#221) @kyteinsky
+
+### Fixed
+- make the wait message not look like an error in em server (#225) @kyteinsky
+- ensure the decoded text from the document is utf-8 compat (#223) @kyteinsky
+
+
 ## 4.5.0 - 2025-09-23
 
 ### Changed
