@@ -129,7 +129,7 @@ def decode_source(source: UploadFile) -> str | None:
 		if _loader_map.get(mimetype):
 			result = _loader_map[mimetype](source.file)
 			source.file.close()
-			return result
+			return result.encode('utf-8', 'ignore').decode('utf-8', 'ignore')
 
 		result = source.file.read().decode('utf-8', 'ignore')
 		source.file.close()
