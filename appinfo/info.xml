@@ -19,6 +19,8 @@ Install the given apps for Context Chat to work as desired **in the given order*
 - Text2Text Task Processing Provider like [llm2 from the External Apps page](https://apps.nextcloud.com/apps/llm2) or [integration_openai from the Apps page](https://apps.nextcloud.com/apps/integration_openai)
 
 Setup background job workers as described here: https://docs.nextcloud.com/server/latest/admin_manual/ai/overview.html#improve-ai-task-pickup-speed
+
+HaRP is not supported in this app yet, please use Docker Socket Proxy (DSP) as the Deploy Daemon in AppAPI.
 ]]></description>
 	<version>5.0.0</version>
 	<licence>agpl</licence>

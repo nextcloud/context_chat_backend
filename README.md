@@ -14,6 +14,8 @@
 > An end-to-end example for dev setups on how to build and register the backend manually (with CUDA) is at the end of this readme
 >
 > See the [NC Admin docs](https://docs.nextcloud.com/server/latest/admin_manual/ai/app_context_chat.html) for requirements and known limitations.
+>
+> HaRP is not supported in this app yet, please use Docker Socket Proxy (DSP) as the Deploy Daemon in AppAPI.
 
 ## Install
 
