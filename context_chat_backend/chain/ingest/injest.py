@@ -186,6 +186,16 @@ def embed_sources(
 			f'{source.filename} ({_decode_latin_1(source.headers["title"])})'
 			for source in sources_filtered
 		],
+		'invalid_source_ids': [
+			source.filename for source in sources
+			if not is_valid_source_id(source.filename)  # pyright: ignore[reportArgumentType]
+		],
+		'not_allowed_file_ids': [
+			source.filename for source in sources
+			if not _allowed_file(source)
+		],
+		'len(source_ids)': len(sources_filtered),
+		'len(total_source_ids)': len(sources),
 	})
 
 	vectordb = vectordb_loader.load()
