@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 [project]
 name = "context_chat_backend"
-version = "5.0.0"
+version = "5.0.1"
 requires-python = ">=3.11"
 authors = [
 	{ name = "Anupam Kumar", email = "kyteinsky@gmail.com" }

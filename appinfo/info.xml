@@ -22,7 +22,7 @@ Setup background job workers as described here: https://docs.nextcloud.com/serve
 
 HaRP is not supported in this app yet, please use Docker Socket Proxy (DSP) as the Deploy Daemon in AppAPI.
 ]]></description>
-	<version>5.0.0</version>
+	<version>5.0.1</version>
 	<licence>agpl</licence>
 	<author mail="kyteinsky@gmail.com" homepage="https://github.com/kyteinsky">Anupam Kumar</author>
 	<namespace>Context Chat</namespace>
@@ -37,7 +37,7 @@ HaRP is not supported in this app yet, please use Docker Socket Proxy (DSP) as t
 		<docker-install>
 			<registry>ghcr.io</registry>
 			<image>nextcloud/context_chat_backend</image>
-			<image-tag>5.0.0</image-tag>
+			<image-tag>5.0.1</image-tag>
 		</docker-install>
 		<routes>
 			<route>
