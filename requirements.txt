@@ -12,7 +12,7 @@ langchain-unstructured
 llama_cpp_python
 msg-parser
 # fix it to the version before niquests
-nc_py_api==0.20.2
+nc_py_api==0.22.0
 odfdo
 odfpy
 openpyxl
