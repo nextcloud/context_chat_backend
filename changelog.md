@@ -9,6 +9,15 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 
+## 5.0.1 - 2025-11-12
+
+### Fixed
+- expand the source id regex item part (@232) @kyteinsky
+
+### Changed
+- document HaRP being not supported (@231) @kyteinsky
+
+
 ## 5.0.0 - 2025-10-15
 
 ### Changed
