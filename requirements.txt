@@ -6,10 +6,12 @@ docx2txt>=0.9
 epub2txt>=0.1.6
 fastapi>=0.122.0
 httpx>=0.28.1
-langchain>=0.3.27
-langchain-community>=0.3.21
-langchain-postgres>=0.0.16
-langchain-unstructured>=0.1.6
+# fix the langchain package versions to avoid long computation in pip dep resolution
+# langchain is stuck at <1.0.0 due to langhchain-unstructured not being updated yet
+langchain==0.3.27
+langchain-community==0.3.21
+langchain-postgres==0.0.16
+langchain-unstructured==0.1.6
 llama_cpp_python>=0.3.16
 msg-parser>=1.2.0
 # fix it to the version before niquests
