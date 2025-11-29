@@ -15,7 +15,7 @@ langchain-unstructured==0.1.6
 llama_cpp_python>=0.3.16
 msg-parser>=1.2.0
 # fix it to the version before niquests
-nc_py_api==0.20.2
+nc_py_api==0.23.0
 odfdo>=3.17.6
 odfpy>=1.4.1
 openpyxl>=3.1.5
