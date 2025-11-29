@@ -9,7 +9,7 @@ httpx>=0.28.1
 # fix the langchain package versions to avoid long computation in pip dep resolution
 # langchain is stuck at <1.0.0 due to langhchain-unstructured not being updated yet
 langchain==0.3.27
-langchain-community==0.3.21
+langchain-community==0.4.1
 langchain-postgres==0.0.16
 langchain-unstructured==0.1.6
 llama_cpp_python>=0.3.16
