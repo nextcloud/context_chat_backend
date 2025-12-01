@@ -16,7 +16,7 @@ def ensure_config_file():
 	'''
 	Ensures the config file is present.
 	'''
-	subprocess.run(['./hwdetect.sh', 'config'], check=True, shell=False)  # noqa: S603
+	subprocess.run(['./hwdetect.sh', 'config'], check=True, shell=False)
 
 
 def repair_run():
