@@ -53,6 +53,7 @@ setup_env_vars()
 repair_run()
 ensure_config_file()
 logger = logging.getLogger('ccb.controller')
+__download_models_from_hf = os.environ.get('CC_DOWNLOAD_MODELS_FROM_HF', 'true').lower() in ('1', 'true', 'yes')
 
 models_to_fetch = {
 	# embedding model
@@ -65,7 +66,7 @@ models_to_fetch = {
 		'allow_patterns': ['config.json', 'merges.txt', 'tokenizer.json', 'tokenizer_config.json', 'vocab.json'],
 		'revision': '607a30d783dfa663caf39e06633721c8d4cfcd7e',
 	}
-}
+} if __download_models_from_hf else {}
 app_enabled = Event()
 
 def enabled_handler(enabled: bool, _: NextcloudApp | AsyncNextcloudApp) -> str:
