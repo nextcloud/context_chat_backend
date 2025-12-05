@@ -53,6 +53,11 @@ HaRP is not supported in this app yet, please use Docker Socket Proxy (DSP) as t
 				<display-name>PostgreSQL URI</display-name>
 				<description>A URI in the form of "postgresql+psycopg://pguser:pgpass@localhost:5432/nextcloud" that supports the pgvector extension. If this is set, no separate internal database will be setup for vector storage. This should be accessible by the ex-app container nc_app_context_chat_backend.</description>
 			</variable>
+			<variable>
+				<name>CC_DOWNLOAD_MODELS_FROM_HF</name>
+				<display-name>Auto-download models from Huggingface</display-name>
+				<description>When set to "false", "0" or "no", initial download of the Huggingface models will be skipped in the init phase. They would have to be downloaded and placed in the persistent storage manually or through a mount point.</description>
+			</variable>
 		</environment-variables>
 	</external-app>
 </info>
