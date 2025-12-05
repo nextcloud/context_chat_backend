@@ -9,6 +9,15 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 
+## 5.1.0 - 2025-12-05
+
+### Added
+- add env var to skip model downloads from huggingface (#242) @kyteinsky
+
+### Fixed
+- narrow down pip's package search and other ci fixes (#236) @kyteinsky
+
+
 ## 5.0.1 - 2025-11-12
 
 ### Fixed
