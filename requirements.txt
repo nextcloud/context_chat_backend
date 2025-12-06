@@ -8,7 +8,7 @@ fastapi>=0.122.0
 httpx>=0.28.1
 # fix the langchain package versions to avoid long computation in pip dep resolution
 # langchain is stuck at <1.0.0 due to langhchain-unstructured not being updated yet
-langchain==0.3.27
+langchain==1.1.2
 langchain-community==0.3.21
 langchain-postgres==0.0.16
 langchain-unstructured==0.1.6
