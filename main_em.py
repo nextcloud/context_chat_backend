@@ -23,6 +23,23 @@ STARTUP_CHECK_SEC = 10
 MAX_TRIES = 180  # 30 minutes max
 
 
+def _get_main_app_httpx_client_host() -> tuple[httpx.Client, str]:
+	"""Get an HTTPX client to connect to the main app, depending on the deployment type.
+
+	The second return value is the base URL to use for the main app.
+	Returns
+	-------
+		httpx.Client: The HTTPX client.
+		str: The base URL to use for the main app.
+	"""
+	_headers = {}
+	sign_request(_headers)
+	if os.getenv('HP_SHARED_KEY'):
+		transport = httpx.HTTPTransport(uds=os.getenv("HP_EXAPP_SOCK", "/tmp/exapp.sock"))  # noqa: S108
+		return httpx.Client(transport=transport, headers=_headers), 'main_app'
+	return httpx.Client(headers=_headers), f'http://{os.environ["APP_HOST"]}:{os.environ["APP_PORT"]}'
+
+
 if __name__ == '__main__':
 	# intial buffer
 	sleep(STARTUP_CHECK_SEC)
@@ -47,30 +64,28 @@ if __name__ == '__main__':
 	_max_tries = MAX_TRIES
 	_enabled = False
 	_last_err = None
-	_headers = {}
-	sign_request(_headers)
+	client, base_url = _get_main_app_httpx_client_host()
 	# wait for the main process to be ready, check the /enabled endpoint
 	while _max_tries > 0:
-		with httpx.Client() as client:
-			try:
-				ret = client.get(f'http://{os.environ["APP_HOST"]}:{os.environ["APP_PORT"]}/enabled', headers=_headers)
-				ret.raise_for_status()
+		try:
+			ret = client.get(f'http://{base_url}/enabled')
+			ret.raise_for_status()
 
-				if not ret.json().get('enabled', False):
-					raise RuntimeError('Main app is not enabled, sleeping for a while...')
-			except (httpx.RequestError, RuntimeError) as e:
-				print(
-					f'{MAX_TRIES-_max_tries+1}/{MAX_TRIES}:'
-					f' [Embedding server] Waiting for the main app to be enabled/ready: {e}',
-					flush=True,
-				)
-				_last_err = e
-				sleep(STARTUP_CHECK_SEC)
-				_max_tries -= 1
-				continue
+			if not ret.json().get('enabled', False):
+				raise RuntimeError('Main app is not enabled, sleeping for a while...')
+		except (httpx.RequestError, RuntimeError) as e:
+			print(
+				f'{MAX_TRIES-_max_tries+1}/{MAX_TRIES}:'
+				f' [Embedding server] Waiting for the main app to be enabled/ready: {e}',
+				flush=True,
+			)
+			_last_err = e
+			sleep(STARTUP_CHECK_SEC)
+			_max_tries -= 1
+			continue
 
-			_enabled = True
-			break
+		_enabled = True
+		break
 
 	if not _enabled:
 		logger.error(

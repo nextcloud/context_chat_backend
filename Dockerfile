@@ -25,6 +25,8 @@ ADD dockerfile_scripts/install_py11.sh dockerfile_scripts/install_py11.sh
 RUN ./dockerfile_scripts/install_py11.sh
 ADD dockerfile_scripts/pgsql dockerfile_scripts/pgsql
 RUN ./dockerfile_scripts/pgsql/install.sh
+ADD dockerfile_scripts/install_frpc.sh dockerfile_scripts/install_frpc.sh
+RUN ./dockerfile_scripts/install_frpc.sh
 RUN apt-get autoclean
 ADD dockerfile_scripts/entrypoint.sh dockerfile_scripts/entrypoint.sh
 
@@ -48,6 +50,7 @@ COPY config.?pu.yaml .
 COPY logger_config.yaml .
 COPY logger_config_em.yaml .
 COPY hwdetect.sh .
+COPY harp_connect.sh .
 COPY supervisord.conf /etc/supervisor/supervisord.conf
 
 ENTRYPOINT ["supervisord", "-c", "/etc/supervisor/supervisord.conf"]
