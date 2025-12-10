@@ -36,9 +36,11 @@ def _get_main_app_httpx_client_host() -> tuple[httpx.Client, str]:
 	_headers = {}
 	sign_request(_headers)
 	if os.getenv('HP_SHARED_KEY'):
-		transport = httpx.HTTPTransport(uds=os.getenv("HP_EXAPP_SOCK", "/tmp/exapp.sock"))  # noqa: S108
+		transport = httpx.HTTPTransport(uds=os.getenv('HP_EXAPP_SOCK', '/tmp/exapp.sock'))  # noqa: S108
 		return httpx.Client(transport=transport, headers=_headers), 'main_app'
-	return httpx.Client(headers=_headers), f'http://{os.environ["APP_HOST"]}:{os.environ["APP_PORT"]}'
+
+	connect_host = 'localhost' if os.environ['APP_HOST'] in ('0.0.0.0', '::') else os.environ['APP_HOST']  # noqa: S104
+	return httpx.Client(headers=_headers), f'{connect_host}:{os.environ["APP_PORT"]}'
 
 
 if __name__ == '__main__':
