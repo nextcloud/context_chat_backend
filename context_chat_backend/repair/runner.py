@@ -16,10 +16,19 @@ def get_previous_version(version_info_path: str) -> tuple[int, bool]:
 		return (0, False)
 
 	with open(version_info_path) as f:
-		version_string = f.read()
+		version_string = f.read().strip()
 
-	major, minor, patch = version_string.split('.')
-	repairs_pending = not (patch.endswith('+') and version_string.rstrip('+') == os.environ['APP_VERSION'])
+	if not version_string:
+		return (0, False)
+
+	splits = version_string.split('.')
+	major = splits[0]
+	minor = splits[1] if len(splits) > 1 else '0'
+
+	repairs_pending = not (
+		version_string.endswith('+')
+		and version_string.rstrip('+') == os.environ['APP_VERSION']
+	)
 
 	return (int(major + minor.zfill(3)), repairs_pending)
 

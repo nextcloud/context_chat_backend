@@ -53,9 +53,9 @@ def get_config(file_path: str) -> TConfig:
 	# convert protocol, host and port to base_url
 	embedding = config.get('embedding')
 	if embedding is None:
-		raise AssertionError('Error: embedding should be defined in the config file')
+		raise AssertionError('Error: "embedding" key should be defined in the config file')
 	if not isinstance(embedding, dict):
-		raise AssertionError('Error: embedding should be a dictionary')
+		raise AssertionError('Error: "embedding" config should be a dictionary')
 	if 'protocol' in embedding and 'host' in embedding and 'port' in embedding:
 		embedding['base_url'] = f"{embedding['protocol']}://{embedding['host']}:{embedding['port']}"
 		del embedding['protocol']

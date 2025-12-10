@@ -4,7 +4,7 @@
 #
 
 # isort: off
-from .chain.types import ContextException, LLMOutput, ScopeType
+from .chain.types import ContextException, LLMOutput, ScopeType, SearchResult
 from .types import LoaderException, EmbeddingException
 from .vectordb.types import DbException, SafeDbException, UpdateAccessOp
 # isort: on
@@ -12,7 +12,9 @@ from .vectordb.types import DbException, SafeDbException, UpdateAccessOp
 import logging
 import multiprocessing as mp
 import os
+import tempfile
 import threading
+import zipfile
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from functools import wraps
@@ -25,11 +27,13 @@ from langchain.llms.base import LLM
 from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import persistent_storage, set_handlers
 from pydantic import BaseModel, ValidationInfo, field_validator
+from starlette.responses import FileResponse
 
+from .chain.context import do_doc_search
 from .chain.ingest.injest import embed_sources
 from .chain.one_shot import process_context_query, process_query
 from .config_parser import get_config
-from .dyn_loader import EmbeddingModelLoader, LLMModelLoader, VectorDBLoader
+from .dyn_loader import LLMModelLoader, VectorDBLoader
 from .models.types import LlmException
 from .ocs_utils import AppAPIAuthMiddleware
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
@@ -49,12 +53,20 @@ setup_env_vars()
 repair_run()
 ensure_config_file()
 logger = logging.getLogger('ccb.controller')
+__download_models_from_hf = os.environ.get('CC_DOWNLOAD_MODELS_FROM_HF', 'true').lower() in ('1', 'true', 'yes')
 
 models_to_fetch = {
-	"https://huggingface.co/Ralriki/multilingual-e5-large-instruct-GGUF/resolve/8738f8d3d8f311808479ecd5756607e24c6ca811/multilingual-e5-large-instruct-q6_k.gguf": {  # noqa: E501
-		"save_path": os.path.join(persistent_storage(), 'model_files',  "multilingual-e5-large-instruct-q6_k.gguf")
+	# embedding model
+	'https://huggingface.co/Ralriki/multilingual-e5-large-instruct-GGUF/resolve/8738f8d3d8f311808479ecd5756607e24c6ca811/multilingual-e5-large-instruct-q6_k.gguf': {  # noqa: E501
+		'save_path': os.path.join(persistent_storage(), 'model_files',  'multilingual-e5-large-instruct-q6_k.gguf')
+	},
+	# tokenizer model for estimating token count of queries
+	'gpt2': {
+		'cache_dir': os.path.join(persistent_storage(), 'model_files/hub'),
+		'allow_patterns': ['config.json', 'merges.txt', 'tokenizer.json', 'tokenizer_config.json', 'vocab.json'],
+		'revision': '607a30d783dfa663caf39e06633721c8d4cfcd7e',
 	}
-}
+} if __download_models_from_hf else {}
 app_enabled = Event()
 
 def enabled_handler(enabled: bool, _: NextcloudApp | AsyncNextcloudApp) -> str:
@@ -78,7 +90,6 @@ async def lifespan(app: FastAPI):
 	t.start()
 	yield
 	vectordb_loader.offload()
-	embedding_loader.offload()
 	llm_loader.offload()
 
 
@@ -90,9 +101,7 @@ app.extra['CONFIG'] = app_config
 
 # loaders
 
-# global embedding_loader so the server is not started multiple times
-embedding_loader = EmbeddingModelLoader(app_config)
-vectordb_loader = VectorDBLoader(embedding_loader, app_config)
+vectordb_loader = VectorDBLoader(app_config)
 llm_loader = LLMModelLoader(app, app_config)
 
 
@@ -315,11 +324,13 @@ def _(userId: str = Body(embed=True)):
 
 	return JSONResponse('User deleted')
 
+
 @app.post('/countIndexedDocuments')
 @enabled_guard(app)
 def _():
 	counts = exec_in_proc(target=count_documents_by_provider, args=(vectordb_loader,))
 	return JSONResponse(counts)
+
 
 @app.put('/loadSources')
 @enabled_guard(app)
@@ -344,7 +355,7 @@ def _(sources: list[UploadFile]):
 
 		if not (
 			value_of(source.headers.get('userIds'))
-			and value_of(source.headers.get('title'))
+			and source.headers.get('title', None) is not None
 			and value_of(source.headers.get('type'))
 			and value_of(source.headers.get('modified'))
 			and source.headers['modified'].isdigit()
@@ -371,12 +382,12 @@ def _(sources: list[UploadFile]):
 			_indexing[source.filename] = source.size
 
 	try:
-		added_sources, not_added_sources = exec_in_proc(
+		loaded_sources, not_added_sources = exec_in_proc(
 			target=embed_sources,
 			args=(vectordb_loader, app.extra['CONFIG'], sources)
 		)
-	except DbException as e:
-		raise e
+	except (DbException, EmbeddingException):
+		raise
 	except Exception as e:
 		raise DbException('Error: failed to load sources') from e
 	finally:
@@ -385,13 +396,14 @@ def _(sources: list[UploadFile]):
 				_indexing.pop(source.filename, None)
 		doc_parse_semaphore.release()
 
-	if len(added_sources) != len(sources):
+	if len(loaded_sources) != len(sources):
 		logger.debug('Some sources were not loaded', extra={
-			'Count of newly loaded sources': f'{len(added_sources)}/{len(sources)}',
-			'source_ids': added_sources,
+			'Count of loaded sources': f'{len(loaded_sources)}/{len(sources)}',
+			'source_ids': loaded_sources,
 		})
 
-	return JSONResponse({'loaded_sources': added_sources, 'sources_to_retry': not_added_sources})
+	# loaded sources include the existing sources that may only have their access updated
+	return JSONResponse({'loaded_sources': loaded_sources, 'sources_to_retry': not_added_sources})
 
 
 class Query(BaseModel):
@@ -467,3 +479,29 @@ def _(query: Query) -> LLMOutput:
 
 	with llm_lock:
 		return execute_query(query, in_proc=False)
+
+
+@app.post('/docSearch')
+@enabled_guard(app)
+def _(query: Query) -> list[SearchResult]:
+	# useContext from Query is not used here
+	return exec_in_proc(target=do_doc_search, args=(
+		query.userId,
+		query.query,
+		vectordb_loader,
+		query.ctxLimit,
+		query.scopeType,
+		query.scopeList,
+	))
+
+
+@app.get('/downloadLogs')
+def download_logs() -> FileResponse:
+	with tempfile.NamedTemporaryFile('wb', delete=False) as tmp:
+		with zipfile.ZipFile(tmp, mode='w', compression=zipfile.ZIP_DEFLATED) as zip_file:
+			files = os.listdir(os.path.join(persistent_storage(), 'logs'))
+			for file in files:
+				file_path = os.path.join(persistent_storage(), 'logs', file)
+				if os.path.isfile(file_path): # Might be a folder (just skip it then)
+					zip_file.write(file_path)
+		return FileResponse(tmp.name, media_type='application/zip', filename='docker_logs.zip')

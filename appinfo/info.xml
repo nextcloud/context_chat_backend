@@ -20,7 +20,7 @@ Install the given apps for Context Chat to work as desired **in the given order*
 
 Setup background job workers as described here: https://docs.nextcloud.com/server/latest/admin_manual/ai/overview.html#improve-ai-task-pickup-speed
 ]]></description>
-	<version>4.1.0</version>
+	<version>5.1.0</version>
 	<licence>agpl</licence>
 	<author mail="kyteinsky@gmail.com" homepage="https://github.com/kyteinsky">Anupam Kumar</author>
 	<namespace>Context Chat</namespace>
@@ -29,19 +29,32 @@ Setup background job workers as described here: https://docs.nextcloud.com/serve
 	<bugs>https://github.com/nextcloud/context_chat_backend/issues</bugs>
 	<repository type="git">https://github.com/nextcloud/context_chat_backend.git</repository>
 	<dependencies>
-		<nextcloud min-version="30" max-version="31"/>
+		<nextcloud min-version="32" max-version="33"/>
 	</dependencies>
 	<external-app>
 		<docker-install>
 			<registry>ghcr.io</registry>
 			<image>nextcloud/context_chat_backend</image>
-			<image-tag>4.1.0</image-tag>
+			<image-tag>5.1.0</image-tag>
 		</docker-install>
+		<routes>
+			<route>
+				<url>downloadLogs</url>
+				<verb>GET</verb>
+				<access_level>ADMIN</access_level>
+				<headers_to_exclude>[]</headers_to_exclude>
+			</route>
+		</routes>
 		<environment-variables>
 			<variable>
 				<name>EXTERNAL_DB</name>
 				<display-name>PostgreSQL URI</display-name>
 				<description>A URI in the form of "postgresql+psycopg://pguser:pgpass@localhost:5432/nextcloud" that supports the pgvector extension. If this is set, no separate internal database will be setup for vector storage. This should be accessible by the ex-app container nc_app_context_chat_backend.</description>
+			</variable>
+			<variable>
+				<name>CC_DOWNLOAD_MODELS_FROM_HF</name>
+				<display-name>Auto-download models from Huggingface</display-name>
+				<description>When set to "false", "0" or "no", initial download of the Huggingface models will be skipped in the init phase. They would have to be downloaded and placed in the persistent storage manually or through a mount point.</description>
 			</variable>
 		</environment-variables>
 	</external-app>

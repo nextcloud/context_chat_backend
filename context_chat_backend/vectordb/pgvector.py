@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 
 import sqlalchemy as sa
+import sqlalchemy.dialects.postgresql as postgresql_dialects
 import sqlalchemy.orm as orm
 from dotenv import load_dotenv
 from fastapi import UploadFile
@@ -16,7 +17,7 @@ from langchain_core.embeddings import Embeddings
 from langchain_postgres.vectorstores import Base, PGVector
 
 from ..chain.types import InDocument, ScopeType
-from ..types import EmbeddingException
+from ..types import EmbeddingException, RetryableEmbeddingException
 from ..utils import timed
 from .base import BaseVectorDB
 from .types import DbException, SafeDbException, UpdateAccessOp
@@ -89,7 +90,7 @@ class AccessListStore(Base):
 	)
 
 	@classmethod
-	def get_all(cls, session: sa.orm.Session) -> list[str]:
+	def get_all(cls, session: orm.Session) -> list[str]:
 		try:
 			return [r.uid for r in session.query(cls.uid).distinct().all()]
 		except Exception as e:
@@ -129,8 +130,12 @@ class VectorDB(BaseVectorDB):
 				raise DbException('Error: getting a list of all users from access list') from e
 
 	def add_indocuments(self, indocuments: list[InDocument]) -> tuple[list[str], list[str]]:
+		"""
+		Raises
+			EmbeddingException: if the embedding request definitively fails
+		"""
 		added_sources = []
-		not_added_sources = []
+		retry_sources = []
 		batch_size = PG_BATCH_SIZE // 5
 
 		with self.session_maker() as session:
@@ -154,24 +159,35 @@ class VectorDB(BaseVectorDB):
 
 					self.decl_update_access(indoc.userIds, indoc.source_id, session)
 					added_sources.append(indoc.source_id)
+					session.commit()
 				except SafeDbException as e:
+					# for when the source_id is not found. This here can be an error in the DB
+					# and the source should be retried later
 					logger.exception('Error adding documents to vectordb', exc_info=e, extra={
 						'source_id': indoc.source_id,
 					})
+					retry_sources.append(indoc.source_id)
+					continue
+				except RetryableEmbeddingException as e:
+					# temporary error, continue with the next document
+					logger.exception('Error adding documents to vectordb, should be retried later.', exc_info=e, extra={
+						'source_id': indoc.source_id,
+					})
+					retry_sources.append(indoc.source_id)
 					continue
 				except EmbeddingException as e:
 					logger.exception('Error adding documents to vectordb', exc_info=e, extra={
 						'source_id': indoc.source_id,
 					})
-					not_added_sources.append(indoc.source_id)
-					continue
+					raise
 				except Exception as e:
 					logger.exception('Error adding documents to vectordb', exc_info=e, extra={
 						'source_id': indoc.source_id,
 					})
+					retry_sources.append(indoc.source_id)
 					continue
 
-		return added_sources, not_added_sources
+		return added_sources, retry_sources
 
 	@timed
 	def check_sources(self, sources: list[UploadFile]) -> tuple[list[str], list[str]]:
@@ -246,7 +262,7 @@ class VectorDB(BaseVectorDB):
 			session.commit()
 
 			stmt = (
-				sa.dialects.postgresql.insert(AccessListStore)
+				postgresql_dialects.insert(AccessListStore)
 				.values([
 					{
 						'uid': user_id,
@@ -297,7 +313,7 @@ class VectorDB(BaseVectorDB):
 			match op:
 				case UpdateAccessOp.allow:
 					stmt = (
-						sa.dialects.postgresql.insert(AccessListStore)
+						postgresql_dialects.insert(AccessListStore)
 						.values([
 							{
 								'uid': user_id,

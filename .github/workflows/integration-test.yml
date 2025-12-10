@@ -1,31 +1,17 @@
-# SPDX-FileCopyrightText: Nextcloud contributors
+# SPDX-FileCopyrightText: 2025 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 name: Integration test
 
 on:
   pull_request:
-    paths:
-      - main.py
-      - config.cpu.yaml
-      - config.gpu.yaml
-      - context_chat_backend/**
-      - appinfo/**
-      - example.env
-      - hwdetect.sh
-      - persistent_storage/**
   push:
     branches:
       - master
-    paths:
-      - main.py
-      - config.cpu.yaml
-      - config.gpu.yaml
-      - context_chat_backend/**
-      - appinfo/**
-      - example.env
-      - hwdetect.sh
-      - persistent_storage/**
+      - stable*
+
+permissions:
+  contents: read
 
 concurrency:
   group: integration-test-${{ github.head_ref || github.run_id }}
@@ -33,16 +19,51 @@ concurrency:
 
 
 jobs:
-  transcription:
-    runs-on: ubuntu-22.04
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+
+    outputs:
+      src: ${{ steps.changes.outputs.src}}
+
+    steps:
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: changes
+        continue-on-error: true
+        with:
+          filters: |
+            src:
+              - 'main.py'
+              - 'main_em.py'
+              - 'config.cpu.yaml'
+              - 'config.gpu.yaml'
+              - 'context_chat_backend/**'
+              - 'appinfo/**'
+              - 'example.env'
+              - 'hwdetect.sh'
+              - 'persistent_storage/**'
+              - 'project.toml'
+              - 'requirements.txt'
+              - 'logger_config.yaml'
+              - 'logger_config_em.yaml'
+              - 'supervisord.conf'
+              - '.github/workflows/integration-test.yml'
+
+  integration:
+    runs-on: ubuntu-24.04
+
+    needs: changes
+    if: needs.changes.outputs.src != 'false'
 
     strategy:
       # do not stop on another job's failure
       fail-fast: false
       matrix:
-        php-versions: [ '8.1' ]
+        php-versions: [ '8.2' ]
         databases: [ 'pgsql' ]
-        server-versions: [ 'master' ]
+        server-versions: [ 'stable32', 'master' ]
 
     name: Integration test on ${{ matrix.server-versions }} php@${{ matrix.php-versions }}
 
@@ -76,13 +97,8 @@ jobs:
         with:
           repository: nextcloud/server
           ref: ${{ matrix.server-versions }}
-
-      - name: Checkout submodules
-        shell: bash
-        run: |
-          auth_header="$(git config --local --get http.https://github.com/.extraheader)"
-          git submodule sync --recursive
-          git -c "http.extraheader=$auth_header" -c protocol.version=2 submodule update --init --force --recursive --depth=1
+          submodules: 'recursive'
+          persist-credentials: false
 
       - name: Set up php ${{ matrix.php-versions }}
         uses: shivammathur/setup-php@9e72090525849c5e82e596468b86eb55e9cc5401 # v2
@@ -96,11 +112,13 @@ jobs:
         with:
           repository: nextcloud/context_chat
           path: apps/context_chat
+          persist-credentials: false
 
       - name: Checkout backend
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           path: context_chat_backend/
+          persist-credentials: false
 
       - name: Get app version
         id: appinfo
@@ -133,6 +151,7 @@ jobs:
         with:
           repository: nextcloud/documentation
           path: data/admin/files/documentation
+          persist-credentials: false
 
       - name: Prepare docs
         run: |
@@ -160,16 +179,22 @@ jobs:
         run: |
           cd context_chat_backend
           pip install --upgrade pip setuptools wheel
+          # use the cpu version of torch to not run out of space
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          sed -i '/torch(vision)?/d' requirements.txt
           pip install -r requirements.txt
           cp example.env .env
           echo "NEXTCLOUD_URL=http://localhost:8080" >> .env
+          python3 -u ./main_em.py > em_backend_logs 2>&1 &
           python3 -u ./main.py > backend_logs 2>&1 &
           echo $! > ../pid.txt          # Save the process ID (PID)
+          sleep 60 # Wait for the backend to get ready
 
       - name: Register backend
         run: |
           ./occ app_api:daemon:register --net host manual_install "Manual Install" manual-install http localhost http://localhost:8080
           ./occ app_api:app:register context_chat_backend manual_install --json-info "{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"${{ fromJson(steps.appinfo.outputs.result).version }}\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system_app\":0}" --force-scopes --wait-finish
+          ls -la context_chat_backend/persistent_storage/*
 
       - name: Scan files, baseline
         run: |
@@ -194,10 +219,17 @@ jobs:
 
       - name: Run the prompts
         run: |
-          ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' &
-          ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' &
-          ./occ context_chat:prompt admin "Which factors are taken into account for the Ethical AI Rating?"
-          ./occ context_chat:prompt admin "Welche Faktoren beeinflussen das Ethical AI Rating?"
+          ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' > worker1_logs 2>&1 &
+          ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' > worker2_logs 2>&1 &
+
+          OUT1=$(./occ context_chat:prompt admin "Which factors are taken into account for the Ethical AI Rating?")
+          echo "$OUT1"
+          echo '--------------------------------------------------'
+          OUT2=$(./occ context_chat:prompt admin "Welche Faktoren beeinflussen das Ethical AI Rating?")
+          echo "$OUT2"
+
+          echo "$OUT1" | grep -q "If all of these points are met, we give a Green label." || exit 1
+          echo "$OUT2" | grep -q "If all of these points are met, we give a Green label." || exit 1
 
       - name: Check python memory usage
         run: |
@@ -210,7 +242,7 @@ jobs:
           final_mem=$(cat after_scan_mem.txt | tr -d ' ')
           echo "Initial Memory Usage: $initial_mem%"
           echo "Memory Usage after scan: $final_mem%"
-          
+
           if (( $(echo "$final_mem > $initial_mem" | bc -l) )); then
             echo "Memory usage has increased during scan. Possible memory leak detected!"
           else
@@ -223,19 +255,59 @@ jobs:
           final_mem=$(cat after_prompt_mem.txt | tr -d ' ')
           echo "Initial Memory Usage: $initial_mem%"
           echo "Memory Usage after prompt: $final_mem%"
-          
+
           if (( $(echo "$final_mem > $initial_mem" | bc -l) )); then
             echo "Memory usage has increased during prompt. Possible memory leak detected!"
           else
             echo "Memory usage during prompt is stable. No memory leak detected."
           fi
 
-      - name: Show logs
+      - name: Show server logs
         if: always()
         run: |
           cat data/nextcloud.log
-          echo '--------------------------------------------------'
-          cat context_chat_backend/backend_logs || echo "No backend logs"
-          echo '--------------------------------------------------'
-          tail -v -n +1 context_chat_backend/persistent_storage/logs/* || echo "No logs in logs directory"
-          
+
+      - name: Show context_chat specific logs
+        if: always()
+        run: |
+          cat data/context_chat.log
+
+      - name: Show task processing worker logs
+        if: always()
+        run: |
+          tail -v -n +1 worker?_logs || echo "No worker logs"
+
+      - name: Show main app logs
+        if: always()
+        run: |
+          cat context_chat_backend/backend_logs || echo "No main backend logs"
+
+      - name: Show main app JSON logs
+        if: always()
+        run: |
+          tail -v -n +1 context_chat_backend/persistent_storage/logs/ccb.log* || echo "No logs in logs directory"
+
+      - name: Show embedding server logs
+        if: always()
+        run: |
+          cat context_chat_backend/em_backend_logs || echo "No main backend logs"
+
+      - name: Show embedding server JSON logs
+        if: always()
+        run: |
+          tail -v -n +1 context_chat_backend/persistent_storage/logs/em_server.log* || echo "No logs in logs directory"
+
+  summary:
+    permissions:
+      contents: none
+    runs-on: ubuntu-latest-low
+    needs: [changes, integration]
+
+    if: always()
+
+    # This is the summary, we just avoid to rename it so that branch protection rules still match
+    name: integration-test
+
+    steps:
+      - name: Summary status
+        run: if ${{ needs.changes.outputs.src != 'false' && needs.integration.result != 'success' }}; then exit 1; fi

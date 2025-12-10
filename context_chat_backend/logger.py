@@ -12,7 +12,10 @@ import logging.handlers
 import os
 from time import gmtime
 
+from dotenv import load_dotenv
 from ruamel.yaml import YAML
+
+load_dotenv()
 
 __all__ = ['JSONFormatter', 'setup_logging']
 
@@ -62,6 +65,7 @@ class JSONFormatter(logging.Formatter):
 			"timestamp": dt.datetime.fromtimestamp(
 				record.created, tz=dt.UTC,
 			).isoformat(),
+			"version": os.getenv("APP_VERSION", "unknown"),
 		}
 		if record.exc_info is not None:
 			always_fields["exc_info"] = self.formatException(record.exc_info)
@@ -84,8 +88,8 @@ class JSONFormatter(logging.Formatter):
 		return message
 
 
-def get_logging_config() -> dict:
-	with open('logger_config.yaml') as f:
+def get_logging_config(config_path: str) -> dict:
+	with open(config_path) as f:
 		try:
 			yaml = YAML(typ='safe')
 			config: dict = yaml.load(f)

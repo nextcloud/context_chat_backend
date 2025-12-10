@@ -8,6 +8,139 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+
+## 5.1.0 - 2025-12-05
+
+### Added
+- add env var to skip model downloads from huggingface (#242) @kyteinsky
+
+### Fixed
+- narrow down pip's package search and other ci fixes (#236) @kyteinsky
+
+
+## 5.0.1 - 2025-11-12
+
+### Fixed
+- expand the source id regex item part (@232) @kyteinsky
+
+### Changed
+- document HaRP being not supported (@231) @kyteinsky
+
+
+## 5.0.0 - 2025-10-15
+
+### Changed
+- feat(podman): support build ExApp from source @oleksandr-nc
+- min NC 32 and CI adjustment (#221) @kyteinsky
+
+### Fixed
+- make the wait message not look like an error in em server (#225) @kyteinsky
+- ensure the decoded text from the document is utf-8 compat (#223) @kyteinsky
+
+
+## 4.5.0 - 2025-09-23
+
+### Changed
+- stable release of the 4.5.0-beta series
+- bump max NC version to 33
+- store worker logs and present them better (#200) @kyteinsky
+
+### Fixed
+- better parsing of version string for repairs (#209) @kyteinsky
+- suppress tokenizer max context length warning (#200) @kyteinsky
+- fix nc_py_api to 0.20.2 (#200) @kyteinsky
+
+### Added
+- add app version to file logs (#201) @kyteinsky
+
+
+## 4.5.0-beta.3 - 2025-09-12
+
+### Changed
+- actually bump max NC version to 33
+
+
+## 4.5.0-beta.2 - 2025-09-12
+
+### Changed
+- bump max NC version to 33
+
+### Fixed
+- let empty but set title headers pass (#211) @kyteinsky
+
+
+## 4.5.0-beta.1 - 2025-09-09
+
+### Fixed
+- better parsing of version string for repairs (#209) @kyteinsky
+
+
+## 4.5.0-beta.0 - 2025-08-29
+
+### Fixed
+- suppress tokenizer max context length warning (#200) @kyteinsky
+- fix nc_py_api to 0.20.2 (#200) @kyteinsky
+
+### Changed
+- store worker logs and present them better (#200) @kyteinsky
+
+### Added
+- add app version to file logs (#201) @kyteinsky
+
+
+## 4.4.1 - 2025-07-31
+
+### Fixed
+
+- fail fast for fatal embedding server errors (#198) @kyteinsky
+- no initial check for the embedding loader (#198) @kyteinsky
+- better retry mechanism in the embedding server (#198) @kyteinsky
+
+
+## 4.4.0 - 2025-07-21
+
+### Fixed
+- improve source tracking so no file stat is lost (#190) @kyteinsky
+- improve OCS signing error messages (#189) @kyteinsky
+- handle encrypted pdf decryption error (#195) @kyteinsky
+
+### Changed
+- maintenance update (#184) @kyteinsky
+- update issue template to attach logs (#193) @lukasdotcom
+- bump llama_cpp_python (#196) @kyteinsky
+
+### Added
+- add doc search endpoint (#185) @kyteinsky
+- pre download the tokenizer instead of mid operation (#191) @kyteinsky
+- add endpoint for downloading logs (#192) @lukasdotcom
+- use supervisord to manage the processes (#194) @kyteinsky
+
+
+## 4.3.0 - 2025-05-08
+
+### Fixed
+- fix(nc_texttotext): retries and graceful error handling for schedule (#179) @kyteinsky
+- fix(dyn_loader): richer error message for embedding server start fail (#179) @kyteinsky
+- fix(deps): add libreoffice to install_deps (#180) @kyteinsky
+
+### Changed
+- bump minor version to match the companion app
+
+
+## 4.2.0 - 2025-04-03
+
+### Changed
+- bump minor version to match the companion app
+
+
+## 4.1.1 - 2025-04-02
+
+### Fixed
+- do not fail access update requests if source is not found in db (#163) @kyteinsky
+- fix for when too many sources/chunks for postgres IN (#166) @Lukasdotcom
+- retry on httpx exceptions in embedding requests (#168) @kyteinsky
+
+
 ## 4.1.0 - 2025-02-21
 
 ### Fixed

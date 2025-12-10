@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-FROM nvidia/cuda:12.2.2-runtime-ubuntu22.04
+FROM docker.io/nvidia/cuda:12.2.2-runtime-ubuntu22.04
 
 ARG CCB_DB_NAME=ccb
 ARG CCB_DB_USER=ccbuser
@@ -25,6 +25,8 @@ ADD dockerfile_scripts/install_py11.sh dockerfile_scripts/install_py11.sh
 RUN ./dockerfile_scripts/install_py11.sh
 ADD dockerfile_scripts/pgsql dockerfile_scripts/pgsql
 RUN ./dockerfile_scripts/pgsql/install.sh
+ADD dockerfile_scripts/install_frpc.sh dockerfile_scripts/install_frpc.sh
+RUN ./dockerfile_scripts/install_frpc.sh
 RUN apt-get autoclean
 ADD dockerfile_scripts/entrypoint.sh dockerfile_scripts/entrypoint.sh
 
@@ -36,7 +38,7 @@ COPY requirements.txt .
 
 # Install requirements
 RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel
-RUN python3 -m pip install --no-cache-dir https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.4-cu122/llama_cpp_python-0.3.4-cp311-cp311-linux_x86_64.whl
+RUN python3 -m pip install --no-cache-dir https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.13-cu122/llama_cpp_python-0.3.13-cp311-cp311-linux_x86_64.whl
 RUN sed -i '/llama_cpp_python/d' requirements.txt
 RUN python3 -m pip install --no-cache-dir -r requirements.txt && python3 -m pip cache purge
 
@@ -46,6 +48,9 @@ COPY main.py .
 COPY main_em.py .
 COPY config.?pu.yaml .
 COPY logger_config.yaml .
+COPY logger_config_em.yaml .
 COPY hwdetect.sh .
+COPY harp_connect.sh .
+COPY supervisord.conf /etc/supervisor/supervisord.conf
 
-ENTRYPOINT [ "./dockerfile_scripts/entrypoint.sh" ]
+ENTRYPOINT ["supervisord", "-c", "/etc/supervisor/supervisord.conf"]

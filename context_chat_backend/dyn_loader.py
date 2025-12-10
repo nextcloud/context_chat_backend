@@ -6,16 +6,10 @@
 
 import gc
 import logging
-import multiprocessing as mp
-import os
-import signal
-import subprocess
 from abc import ABC, abstractmethod
-from datetime import datetime
-from time import sleep, time
+from time import time
 from typing import Any
 
-import psutil
 import torch
 from fastapi import FastAPI
 from langchain.llms.base import LLM
@@ -38,64 +32,10 @@ class Loader(ABC):
 	def offload(self):
 		...
 
-pid = mp.Value('i', 0)
-
-class EmbeddingModelLoader(Loader):
-	def __init__(self, config: TConfig) -> None:
-		self.config = config
-		logfile_path = os.path.join(
-			os.environ['EM_SERVER_LOG_PATH'],
-			f'embedding_server_{datetime.now().strftime("%Y-%m-%d")}.log',
-		)
-		self.logfile = open(logfile_path, 'a+')
-
-	def load(self):
-		global pid
-
-		emconf = self.config.embedding
-
-		# start the embedding server if workers are > 0
-		if emconf.workers > 0:
-			# compare with None, as PID can be 0, you never know
-			if pid.value > 0 and psutil.pid_exists(pid.value):
-				return
-
-			proc = subprocess.Popen(  # noqa: S603
-				['./main_em.py'],
-				stdout=self.logfile,
-				stderr=self.logfile,
-				stdin=None,
-				close_fds=True,
-				env=os.environ,
-			)
-			pid.value = proc.pid
-
-		# poll for heartbeat
-		try_ = 0
-		em_model = NetworkEmbeddings(app_config=self.config)
-		while try_ < 20:
-			try:
-				# test the server is up
-				em_model.embed_query('heartbeat')
-				return
-			except Exception:
-				logger.debug(f'Try {try_} failed in exception', exc_info=True)
-			try_ += 1
-			sleep(3)
-
-		logger.error('Error: the embedding server is not responding')
-
-	def offload(self):
-		global pid
-		if pid.value > 0 and psutil.pid_exists(pid.value):
-			os.kill(pid.value, signal.SIGTERM)
-		self.logfile.close()
-
 
 class VectorDBLoader(Loader):
-	def __init__(self, em_loader: EmbeddingModelLoader, config: TConfig) -> None:
+	def __init__(self, config: TConfig) -> None:
 		self.config = config
-		self.em_loader = em_loader
 
 	def load(self) -> BaseVectorDB:
 		try:
@@ -104,14 +44,12 @@ class VectorDBLoader(Loader):
 			raise LoaderException() from e
 
 		try:
-			self.em_loader.load()
 			embedding_model = NetworkEmbeddings(app_config=self.config)
 			return client_klass(embedding_model, **self.config.vectordb[1])  # type: ignore
 		except DbException as e:
 			raise LoaderException() from e
 
 	def offload(self) -> None:
-		self.em_loader.offload()
 		clear_cache()
 
 

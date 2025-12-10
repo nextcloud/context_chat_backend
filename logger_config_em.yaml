@@ -1,0 +1,57 @@
+#
+# SPDX-FileCopyrightText: 2022 MCODING, LLC
+# SPDX-FileCopyrightText: 2025 Nextcloud GmbH and Nextcloud contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  default:
+    format: '%(asctime)s: [%(levelname)s|%(module)s]: %(message)s'
+    datefmt: '%Y-%m-%dT%H:%M:%S%z'
+
+  json:
+    (): context_chat_backend.logger.JSONFormatter
+    fmt_keys:
+      timestamp: timestamp
+      level: levelname
+      logger: name
+      message: message
+      filename: filename
+      function: funcName
+      line: lineno
+      thread_name: threadName
+      pid: process
+
+
+handlers:
+  stderr:
+    class: logging.StreamHandler
+    level: WARNING
+    formatter: default
+    stream: ext://sys.stderr
+
+  file_json:
+    class: logging.handlers.RotatingFileHandler
+    level: DEBUG
+    formatter: json
+    filename: logs/em_server.log
+    maxBytes: 20971520
+    backupCount: 10
+
+
+loggers:
+  root:
+    level: WARNING
+    handlers:
+    - stderr
+    - file_json
+
+  emserver:
+    level: DEBUG
+    handlers:
+    - stderr
+    - file_json
+    propagate: false

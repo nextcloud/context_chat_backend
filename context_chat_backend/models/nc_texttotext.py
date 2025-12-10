@@ -69,11 +69,34 @@ class CustomLLM(LLM):
 		else:
 			logger.warning('No user ID provided for Nextcloud TextToText provider')
 
-		response = nc.ocs(
-			'POST',
-			'/ocs/v1.php/taskprocessing/schedule',
-			json={'type': 'core:text2text', 'appId': 'context_chat_backend', 'input': {'input': prompt}},
-		)
+		sched_tries = 3
+		while True:
+			try:
+				sched_tries -= 1
+				if sched_tries <= 0:
+					raise LlmException('Failed to schedule Nextcloud TaskProcessing task, tried 3 times')
+
+				response = nc.ocs(
+					'POST',
+					'/ocs/v1.php/taskprocessing/schedule',
+					json={'type': 'core:text2text', 'appId': 'context_chat_backend', 'input': {'input': prompt}},
+				)
+				break
+			except NextcloudException as e:
+				if e.status_code == httpx.codes.PRECONDITION_FAILED:
+					raise LlmException(
+						'Failed to schedule Nextcloud TaskProcessing task: '
+						'This app is setup to use a text generation provider in Nextcloud. '
+						'No such provider is installed on Nextcloud instance. '
+						'Please install integration_openai, llm2 or any other text2text provider.'
+					) from e
+
+				if e.status_code == httpx.codes.TOO_MANY_REQUESTS:
+					logger.warning('Rate limited during task scheduling, waiting 10s before retrying')
+					time.sleep(10)
+					continue
+
+				raise LlmException('Failed to schedule Nextcloud TaskProcessing task') from e
 
 		try:
 			task = Response.model_validate(response).task
@@ -103,8 +126,8 @@ class CustomLLM(LLM):
 					i += 1
 					continue
 				except NextcloudException as e:
-					if e.status_code == 429:
-						logger.warning('Rate limited during task polling, waiting 10s more')
+					if e.status_code == httpx.codes.TOO_MANY_REQUESTS:
+						logger.warning('Rate limited during task polling, waiting 10s before retrying')
 						time.sleep(10)
 						i += 2
 						continue

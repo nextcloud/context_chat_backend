@@ -7,11 +7,13 @@ import logging
 from os import getenv
 
 import uvicorn
+from nc_py_api.ex_app import run_app
 
 from context_chat_backend.types import TConfig  # isort: skip
 from context_chat_backend.controller import app  # isort: skip
-from context_chat_backend.utils import to_int  # isort: skip
 from context_chat_backend.logger import get_logging_config, setup_logging  # isort: skip
+
+LOGGER_CONFIG_NAME = 'logger_config.yaml'
 
 def _setup_log_levels(debug: bool):
 	'''
@@ -40,7 +42,7 @@ def _setup_log_levels(debug: bool):
 
 
 if __name__ == '__main__':
-	logging_config = get_logging_config()
+	logging_config = get_logging_config(LOGGER_CONFIG_NAME)
 	setup_logging(logging_config)
 	app_config: TConfig = app.extra['CONFIG']
 	_setup_log_levels(app_config.debug)
@@ -54,10 +56,8 @@ if __name__ == '__main__':
 	uv_log_config['loggers']['uvicorn']['handlers'].append('file_json')
 	uv_log_config['loggers']['uvicorn.access']['handlers'].append('file_json')
 
-	uvicorn.run(
-		app=app,
-		host=getenv('APP_HOST', '127.0.0.1'),
-		port=to_int(getenv('APP_PORT'), 9000),
+	run_app(
+		uvicorn_app=app,
 		http='h11',
 		interface='asgi3',
 		log_config=uv_log_config,
