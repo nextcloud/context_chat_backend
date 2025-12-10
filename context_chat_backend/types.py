@@ -27,7 +27,6 @@ class TEmbeddingLlama(BaseModel):
 	base_url: str = 'http://localhost:5000/v1'
 	workers: int = 1
 	request_timeout: int = 1750
-	offload_after_mins: int = 15
 	llama: dict
 	auth: None = None
 	model: None = None

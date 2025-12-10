@@ -19,7 +19,6 @@ embedding:
   # local embedding service
   base_url: http://localhost:5000/v1
   workers: 1
-  offload_after_mins: 15 # in minutes
   request_timeout: 1800 # in seconds
   llama:
     # all options: https://python.langchain.com/api_reference/community/embeddings/langchain_community.embeddings.llamacpp.LlamaCppEmbeddings.html
