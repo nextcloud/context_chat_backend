@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 import logging
-import os
 from collections.abc import Generator
 from time import sleep
 from typing import Literal, TypedDict
@@ -12,8 +11,14 @@ import httpx
 from langchain_core.embeddings import Embeddings
 from pydantic import BaseModel
 
-from .types import EmbeddingException, RetryableEmbeddingException, TConfig, TEmbeddingAuthApiKey, TEmbeddingAuthBasic
-from .utils import value_of
+from .types import (
+	EmbeddingException,
+	FatalEmbeddingException,
+	RetryableEmbeddingException,
+	TConfig,
+	TEmbeddingAuthApiKey,
+	TEmbeddingAuthBasic,
+)
 
 logger = logging.getLogger('ccb.nextwork_em')
 
@@ -66,27 +71,25 @@ class NetworkEmbeddings(Embeddings, BaseModel):
 					auth = ApiKeyAuth(apikey=apikey)
 				case TEmbeddingAuthBasic(username=username, password=password):
 					auth = httpx.BasicAuth(username=username, password=password)
-				case 'from_env' if value_of('CCB_EM_APIKEY'):
-					auth = ApiKeyAuth(apikey=os.environ['CCB_EM_APIKEY'])
-				case 'from_env' if value_of('CCB_EM_USERNAME'):
-					auth = httpx.BasicAuth(
-						username=os.environ['CCB_EM_USERNAME'],
-						password=os.environ['CCB_EM_PASSWORD'],
-					)
 
 			data = {'input': input_}
-			if emconf.model:
-				data['model'] = emconf.model
+			if emconf.model_name:
+				data['model'] = emconf.model_name
 
-			with httpx.Client() as client:
+			with httpx.Client(verify=self.app_config.httpx_verify_ssl) as client:
 				response = client.post(
 					f'{emconf.base_url.removesuffix("/")}/embeddings',
 					json=data,
 					timeout=emconf.request_timeout,
 					auth=auth,
 				)
-				if response.status_code != 200:
+				if response.status_code // 100 == 4:
+					raise FatalEmbeddingException(response.text)
+				if response.status_code // 100 != 2:
 					raise EmbeddingException(response.text)
+		except FatalEmbeddingException as e:
+			logger.error('Fatal error while getting embeddings: %s', str(e), exc_info=e)
+			raise e
 		except (
 			EmbeddingException,
 			httpx.RemoteProtocolError,

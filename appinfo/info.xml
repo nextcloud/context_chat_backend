@@ -56,6 +56,31 @@ Setup background job workers as described here: https://docs.nextcloud.com/serve
 				<display-name>Auto-download models from Huggingface</display-name>
 				<description>When set to "false", "0" or "no", initial download of the Huggingface models will be skipped in the init phase. They would have to be downloaded and placed in the persistent storage manually or through a mount point.</description>
 			</variable>
+			<variable>
+				<name>CC_EM_BASE_URL</name>
+				<display-name>External OpenAI-compatible endpoint</display-name>
+				<description>Set this to an OpenAI-compatible endpoint like https://api.my-local-llm.lan/v1. When set, the internal embedding server is not started. For authentication, set CC_EM_APIKEY or CC_EM_USERNAME and CC_EM_PASSWORD as needed.</description>
+			</variable>
+			<variable>
+				<name>CC_EM_MODEL_NAME</name>
+				<display-name>External embedding model name</display-name>
+				<description>Model name to be used with the OpenAI-compatible endpoint set in CC_EM_BASE_URL. For example, "text-embedding-3-small" or any other model supported by the endpoint. If unset, no model name is sent in the requests.</description>
+			</variable>
+			<variable>
+				<name>CC_EM_APIKEY</name>
+				<display-name>API key for authentication to CC_EM_BASE_URL</display-name>
+				<description>API key to be used for authenticating requests to the OpenAI-compatible endpoint set in CC_EM_BASE_URL. Either this or CC_EM_USERNAME and CC_EM_PASSWORD should be set if the endpoint requires authentication.</description>
+			</variable>
+			<variable>
+				<name>CC_EM_USERNAME</name>
+				<display-name>Username for authentication to CC_EM_BASE_URL</display-name>
+				<description>Username to be used for authenticating requests to the OpenAI-compatible endpoint set in CC_EM_BASE_URL.</description>
+			</variable>
+			<variable>
+				<name>CC_EM_PASSWORD</name>
+				<display-name>Password for authentication to CC_EM_BASE_URL</display-name>
+				<description>Password to be used for authenticating requests to the OpenAI-compatible endpoint set in CC_EM_BASE_URL.</description>
+			</variable>
 		</environment-variables>
 	</external-app>
 </info>

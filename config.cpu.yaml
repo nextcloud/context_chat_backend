@@ -16,10 +16,21 @@ vectordb:
     # 'connection' overrides the env var 'CCB_DB_URL'
 
 embedding:
-  # local embedding service
+  # embedding service config
+  # for external embedding service, set CC_EM_BASE_URL and CC_EM_APIKEY env vars during deployment
+  # if the env vars are set, this config is ignored
+  # request_timeout is always respected even for remote service
   base_url: http://localhost:5000/v1
   workers: 1
   request_timeout: 1800 # in seconds
+  # only for external embedding service
+  # remote_service: true
+  # model_name: text-embedding-3-small
+  # auth:
+  #   apikey: your_api_key_here
+  #   # -or-
+  #   username: your_username_here
+  #   password: your_password_here
   llama:
     # all options: https://python.langchain.com/api_reference/community/embeddings/langchain_community.embeddings.llamacpp.LlamaCppEmbeddings.html
     # 'model_alias' is reserved
@@ -27,16 +38,6 @@ embedding:
     model: multilingual-e5-large-instruct-q6_k.gguf
     n_batch: 16
     n_ctx: 8192
-
-# # openai embedding service
-# embedding:
-#   base_url: https://api.openai.com/v1
-#   auth: # also supports username and password
-#     apikey:
-#   model: text-embedding-3-small
-#   workers: 0
-#   offload_after_mins: 15 # in minutes
-#   request_timeout: 1680 # in seconds
 
 
 llm:

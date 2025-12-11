@@ -6,20 +6,21 @@
 import logging
 import os
 from time import sleep
-from urllib import URL
+from urllib.parse import urlparse
 
 import httpx
 import uvicorn
 
+from context_chat_backend.types import DEFAULT_EM_MODEL_ALIAS  # isort: skip
 from context_chat_backend.config_parser import get_config  # isort: skip
 from context_chat_backend.logger import get_logging_config, setup_logging  # isort: skip
 from context_chat_backend.ocs_utils import sign_request  # isort: skip
 from context_chat_backend.setup_functions import ensure_config_file, setup_env_vars  # isort: skip
+from context_chat_backend.utils import redact_config	# isort: skip
 
 
 LOGGER_CONFIG_NAME = 'logger_config_em.yaml'
 # todo: config and env var for this
-MODEL_ALIAS = 'em_model'
 STARTUP_CHECK_SEC = 10
 MAX_TRIES = 180  # 30 minutes max
 
@@ -52,11 +53,13 @@ if __name__ == '__main__':
 	app_config = get_config(os.environ['CC_CONFIG_PATH'])
 	em_conf = app_config.embedding
 
-	if em_conf.workers <= 0:
-		print('No embedding workers configured, exiting...', flush=True)
+	if em_conf.workers <= 0 or em_conf.remote_service:
+		print('Exiting embedding server as it is not configured to run locally.', flush=True)
 		exit(0)
 
-	print('Embedder config:\n' + em_conf.model_dump_json(indent=2), flush=True)
+	# redact sensitive info before logging, although no api key or password should be present
+	# in local embedding server config
+	print('Embedder config:\n' + redact_config(em_conf).model_dump_json(indent=2), flush=True)
 
 	logging_config = get_logging_config(LOGGER_CONFIG_NAME)
 	setup_logging(logging_config)
@@ -121,11 +124,11 @@ if __name__ == '__main__':
 	from llama_cpp.server.app import create_app
 	from llama_cpp.server.settings import ModelSettings, ServerSettings
 
-	base_url = URL(em_conf.base_url)
-	host = base_url.components.hostname or base_url.path or '127.0.0.1'
-	port = base_url.components.port or 5000
+	base_url = urlparse(em_conf.base_url)
+	host = base_url.hostname or '127.0.0.1'
+	port = base_url.port or 5000
 	server_settings = ServerSettings(host=host, port=port)
-	model_settings = [ModelSettings(model_alias=MODEL_ALIAS, embedding=True, **em_conf.llama)]
+	model_settings = [ModelSettings(model_alias=DEFAULT_EM_MODEL_ALIAS, embedding=True, **em_conf.llama)]
 	app = create_app(
 		server_settings=server_settings,
 		model_settings=model_settings,
