@@ -14,6 +14,8 @@ from typing import Any, TypeGuard, TypeVar
 
 from fastapi.responses import JSONResponse as FastAPIJSONResponse
 
+from .types import TConfig, TEmbeddingAuthApiKey, TEmbeddingAuthBasic, TEmbeddingConfig
+
 T = TypeVar('T')
 _logger = logging.getLogger('ccb.utils')
 
@@ -121,3 +123,22 @@ def timed(func: Callable):
 		return res
 
 	return wrapper
+
+
+def redact_config(config: TConfig | TEmbeddingConfig) -> TConfig | TEmbeddingConfig:
+	'''
+	Redact sensitive information from the config for logging
+	'''
+	if isinstance(config, TConfig):
+		em_conf = config.embedding
+	else:
+		em_conf = config
+
+	if em_conf.auth:
+		if isinstance(em_conf.auth, TEmbeddingAuthApiKey):
+			em_conf.auth.apikey = '***REDACTED***'
+		elif isinstance(em_conf.auth, TEmbeddingAuthBasic):
+			em_conf.auth.username = '***REDACTED***'
+			em_conf.auth.password = '***REDACTED***'  # noqa: S105
+
+	return config

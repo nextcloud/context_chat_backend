@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 import logging
+from collections.abc import Generator
 from time import sleep
 from typing import Literal, TypedDict
 
@@ -10,7 +11,14 @@ import httpx
 from langchain_core.embeddings import Embeddings
 from pydantic import BaseModel
 
-from .types import EmbeddingException, RetryableEmbeddingException, TConfig
+from .types import (
+	EmbeddingException,
+	FatalEmbeddingException,
+	RetryableEmbeddingException,
+	TConfig,
+	TEmbeddingAuthApiKey,
+	TEmbeddingAuthBasic,
+)
 
 logger = logging.getLogger('ccb.nextwork_em')
 
@@ -34,6 +42,15 @@ class CreateEmbeddingResponse(TypedDict):
 	usage: EmbeddingUsage
 
 
+class ApiKeyAuth(httpx.Auth):
+	def __init__(self, apikey: str | bytes) -> None:
+		self._apikey = apikey
+
+	def auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, httpx.Response, None]:
+		request.headers['Authorization'] = f'Bearer {self._apikey}'
+		yield request
+
+
 class NetworkEmbeddings(Embeddings, BaseModel):
 	app_config: TConfig
 
@@ -47,14 +64,32 @@ class NetworkEmbeddings(Embeddings, BaseModel):
 		)
 
 		try:
-			with httpx.Client() as client:
+			match emconf.auth:
+				case None:
+					auth = httpx.USE_CLIENT_DEFAULT
+				case TEmbeddingAuthApiKey(apikey=apikey):
+					auth = ApiKeyAuth(apikey=apikey)
+				case TEmbeddingAuthBasic(username=username, password=password):
+					auth = httpx.BasicAuth(username=username, password=password)
+
+			data = {'input': input_}
+			if emconf.model_name:
+				data['model'] = emconf.model_name
+
+			with httpx.Client(verify=self.app_config.httpx_verify_ssl) as client:
 				response = client.post(
-					f'{emconf.protocol}://{emconf.host}:{emconf.port}/v1/embeddings',
-					json={'input': input_},
+					f'{emconf.base_url.removesuffix("/")}/embeddings',
+					json=data,
 					timeout=emconf.request_timeout,
+					auth=auth,
 				)
-				if response.status_code != 200:
+				if response.status_code // 100 == 4:
+					raise FatalEmbeddingException(response.text)
+				if response.status_code // 100 != 2:
 					raise EmbeddingException(response.text)
+		except FatalEmbeddingException as e:
+			logger.error('Fatal error while getting embeddings: %s', str(e), exc_info=e)
+			raise e
 		except (
 			EmbeddingException,
 			httpx.RemoteProtocolError,

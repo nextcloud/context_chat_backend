@@ -5,20 +5,33 @@
 from pydantic import BaseModel
 
 __all__ = [
+	'DEFAULT_EM_MODEL_ALIAS',
 	'EmbeddingException',
 	'LoaderException',
 	'TConfig',
-	'TEmbedding',
+	'TEmbeddingAuthApiKey',
+	'TEmbeddingAuthBasic',
+	'TEmbeddingConfig',
 ]
 
-class TEmbedding(BaseModel):
-	protocol: str
-	host: str
-	port: int
-	workers: int
-	offload_after_mins: int
-	request_timeout: int
-	llama: dict
+DEFAULT_EM_MODEL_ALIAS = 'em_model'
+
+
+class TEmbeddingAuthApiKey(BaseModel):
+	apikey: str
+
+class TEmbeddingAuthBasic(BaseModel):
+	username: str
+	password: str
+
+class TEmbeddingConfig(BaseModel):
+	base_url: str = 'http://localhost:5000/v1'
+	workers: int = 1
+	request_timeout: int = 1750
+	model_name: str | None = DEFAULT_EM_MODEL_ALIAS
+	auth: TEmbeddingAuthApiKey | TEmbeddingAuthBasic | None = None
+	remote_service: bool = False
+	llama: dict = dict()  # noqa: C408
 
 
 class TConfig(BaseModel):
@@ -32,7 +45,7 @@ class TConfig(BaseModel):
 	doc_parser_worker_limit: int
 
 	vectordb: tuple[str, dict]
-	embedding: TEmbedding
+	embedding: TEmbeddingConfig
 	llm: tuple[str, dict]
 
 
@@ -49,4 +62,11 @@ class RetryableEmbeddingException(EmbeddingException):
 
 	This keeps the indexing loop running and adds to the retry list.
 	The parent exception would break the loop and stop the indexing process.
+	"""
+
+class FatalEmbeddingException(EmbeddingException):
+	"""
+	Exception that indicates a fatal error in the embedding request.
+
+	Either malformed request, authentication error, or other non-retryable error.
 	"""

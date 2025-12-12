@@ -2,10 +2,13 @@
 # SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+import os
+
 from ruamel.yaml import YAML
 
 from .models.loader import models
-from .types import TConfig
+from .types import TConfig, TEmbeddingAuthApiKey, TEmbeddingAuthBasic, TEmbeddingConfig
+from .utils import value_of
 from .vectordb.loader import vector_dbs
 
 
@@ -47,6 +50,58 @@ def get_config(file_path: str) -> TConfig:
 			f'Error: llm model should be at least one of {models["llm"]} in the config file'
 		)
 
+	# convert protocol, host and port to base_url
+	embedding = config.get('embedding')
+	if (embedding is None or not isinstance(embedding, dict)) and not os.getenv('CC_EM_BASE_URL'):
+		raise AssertionError(
+			'Error: "embedding" key should be defined in the config file or CC_EM_BASE_URL env var should be set in the'
+			' Deploy Options.'
+		)
+
+	if os.getenv('CC_EM_BASE_URL'):
+		if os.getenv('CC_EM_APIKEY'):
+			auth = TEmbeddingAuthApiKey(apikey=os.environ['CC_EM_APIKEY'])
+		elif os.getenv('CC_EM_USERNAME') and os.getenv('CC_EM_PASSWORD'):
+			auth = TEmbeddingAuthBasic(
+				username=os.environ['CC_EM_USERNAME'],
+				password=os.environ['CC_EM_PASSWORD'],
+			)
+		else:
+			auth = None
+
+		try:
+			# override embedding config from env vars
+			embedding_config = TEmbeddingConfig(
+				base_url=os.environ['CC_EM_BASE_URL'],
+				model_name=value_of(os.getenv('CC_EM_MODEL_NAME', None)),
+				auth=auth,
+				remote_service=True,
+				workers=0,
+				request_timeout=embedding.get('request_timeout', 1800) if embedding else 1800,
+			)
+		except Exception as e:
+			raise AssertionError(
+				'Error: could not create embedding config from env vars'
+			) from e
+
+	elif embedding is None:
+		raise AssertionError(
+			'Error: "embedding" key should be defined in the config file if CC_EM_BASE_URL env var is not set in the'
+			' Deploy Options.'
+		)
+	else:
+		# embedding from config file
+		if 'protocol' in embedding and 'host' in embedding and 'port' in embedding:
+			embedding['base_url'] = f"{embedding['protocol']}://{embedding['host']}:{embedding['port']}/v1"
+			del embedding['protocol']
+			del embedding['host']
+			del embedding['port']
+
+		try:
+			embedding_config = TEmbeddingConfig(**embedding)
+		except Exception as e:
+			raise AssertionError('Error: could not create embedding config from config file') from e
+
 	return TConfig(
 		debug=config.get('debug', False),
 		uvicorn_log_level=config.get('uvicorn_log_level', 'info'),
@@ -58,6 +113,6 @@ def get_config(file_path: str) -> TConfig:
 		doc_parser_worker_limit=config.get('doc_parser_worker_limit', 10),
 
 		vectordb=vectordb,
-		embedding=config.get('embedding', {}), # for a more appropriate response
+		embedding=embedding_config,
 		llm=llm,
 	)

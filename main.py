@@ -12,6 +12,7 @@ from nc_py_api.ex_app import run_app
 from context_chat_backend.types import TConfig  # isort: skip
 from context_chat_backend.controller import app  # isort: skip
 from context_chat_backend.logger import get_logging_config, setup_logging  # isort: skip
+from context_chat_backend.utils import redact_config  # isort: skip
 
 LOGGER_CONFIG_NAME = 'logger_config.yaml'
 
@@ -47,7 +48,7 @@ if __name__ == '__main__':
 	app_config: TConfig = app.extra['CONFIG']
 	_setup_log_levels(app_config.debug)
 
-	print('App config:\n' + app_config.model_dump_json(indent=2), flush=True)
+	print('App config:\n' + redact_config(app_config).model_dump_json(indent=2), flush=True)
 
 	uv_log_config = uvicorn.config.LOGGING_CONFIG  # pyright: ignore[reportAttributeAccessIssue]
 	uv_log_config['formatters']['json'] = logging_config['formatters']['json']
