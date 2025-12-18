@@ -7,7 +7,12 @@
 from .chain.types import ContextException, LLMOutput, ScopeType, SearchResult
 from .types import LoaderException, EmbeddingException
 from .vectordb.types import DbException, SafeDbException, UpdateAccessOp
-# isort: on
+from .setup_functions import ensure_config_file, repair_run, setup_env_vars
+
+# setup env vars before importing other modules
+setup_env_vars()
+
+# ruff: noqa: E402
 
 import logging
 import multiprocessing as mp
@@ -36,7 +41,6 @@ from .config_parser import get_config
 from .dyn_loader import LLMModelLoader, VectorDBLoader
 from .models.types import LlmException
 from .ocs_utils import AppAPIAuthMiddleware
-from .setup_functions import ensure_config_file, repair_run, setup_env_vars
 from .utils import JSONResponse, exec_in_proc, is_valid_provider_id, is_valid_source_id, value_of
 from .vectordb.service import (
 	count_documents_by_provider,
@@ -49,7 +53,6 @@ from .vectordb.service import (
 
 # setup
 
-setup_env_vars()
 repair_run()
 ensure_config_file()
 logger = logging.getLogger('ccb.controller')
