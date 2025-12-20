@@ -11,7 +11,7 @@ httpx>=0.28.1
 langchain==0.3.27
 langchain-community==0.3.21
 langchain-postgres==0.0.16
-langchain-unstructured==0.1.6
+langchain-unstructured==1.0.0
 llama_cpp_python>=0.3.16
 msg-parser>=1.2.0
 # fix it to the version before niquests
