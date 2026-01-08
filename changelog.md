@@ -9,6 +9,16 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 
+## 5.2.0 - 2025-01-08
+
+### Added
+- add HaRP support (#247) @kyteinsky
+- support external embedding service for scaling (#248) @kyteinsky
+
+### Fixed
+- setup env vars before any relevant imports (#251) @kyteinsky
+
+
 ## 5.1.0 - 2025-12-05
 
 ### Added
