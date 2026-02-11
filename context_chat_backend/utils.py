@@ -129,10 +129,12 @@ def redact_config(config: TConfig | TEmbeddingConfig) -> TConfig | TEmbeddingCon
 	'''
 	Redact sensitive information from the config for logging
 	'''
-	if isinstance(config, TConfig):
-		em_conf = config.embedding
+	config_copy = config.model_copy(deep=True)
+
+	if isinstance(config_copy, TConfig):
+		em_conf = config_copy.embedding
 	else:
-		em_conf = config
+		em_conf = config_copy
 
 	if em_conf.auth:
 		if isinstance(em_conf.auth, TEmbeddingAuthApiKey):
@@ -141,4 +143,4 @@ def redact_config(config: TConfig | TEmbeddingConfig) -> TConfig | TEmbeddingCon
 			em_conf.auth.username = '***REDACTED***'
 			em_conf.auth.password = '***REDACTED***'  # noqa: S105
 
-	return config
+	return config_copy
