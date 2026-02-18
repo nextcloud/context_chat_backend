@@ -5,47 +5,94 @@
 #
 import logging
 import os
+from base64 import b64encode
 from time import sleep
-from urllib.parse import urlparse
+from urllib.parse import quote_plus, urlparse
 
-import httpx
+import niquests
 import uvicorn
 
 from context_chat_backend.types import DEFAULT_EM_MODEL_ALIAS  # isort: skip
 from context_chat_backend.config_parser import get_config  # isort: skip
 from context_chat_backend.logger import get_logging_config, setup_logging  # isort: skip
-from context_chat_backend.ocs_utils import sign_request  # isort: skip
 from context_chat_backend.setup_functions import ensure_config_file, setup_env_vars  # isort: skip
 from context_chat_backend.utils import redact_config	# isort: skip
 
 
 LOGGER_CONFIG_NAME = 'logger_config_em.yaml'
-# todo: config and env var for this
 STARTUP_CHECK_SEC = 10
-MAX_TRIES = 180  # 30 minutes max
+MAX_TRIES = 180  # 180*10 secs = 30 minutes max
 
 
-def _get_main_app_httpx_client_host() -> tuple[httpx.Client, str]:
-	"""Get an HTTPX client to connect to the main app, depending on the deployment type.
-
-	The second return value is the base URL to use for the main app.
+def _get_main_app_client() -> niquests.Session:
+	"""
+	Get a niquests Session to connect to the main app, depending on the deployment type.
 	Returns
 	-------
-		httpx.Client: The HTTPX client.
-		str: The base URL to use for the main app.
+		niquests.Session: The niquests Session.
 	"""
-	_headers = {}
-	sign_request(_headers)
 	if os.getenv('HP_SHARED_KEY'):
-		transport = httpx.HTTPTransport(uds=os.getenv('HP_EXAPP_SOCK', '/tmp/exapp.sock'))  # noqa: S108
-		return httpx.Client(transport=transport, headers=_headers), 'main_app'
+		base_url = 'http+unix://' + quote_plus(os.getenv('HP_EXAPP_SOCK', '/tmp/exapp.sock'))  # noqa: S108
+	else:
+		connect_host = 'localhost' if os.environ['APP_HOST'] in ('0.0.0.0', '::') else os.environ['APP_HOST']  # noqa: S104
+		base_url = f'http://{connect_host}:{os.environ["APP_PORT"]}'
 
-	connect_host = 'localhost' if os.environ['APP_HOST'] in ('0.0.0.0', '::') else os.environ['APP_HOST']  # noqa: S104
-	return httpx.Client(headers=_headers), f'{connect_host}:{os.environ["APP_PORT"]}'
+	return niquests.Session(base_url=base_url, headers={
+		'EX-APP-ID': os.getenv('APP_ID', 'context_chat_backend'),
+		'EX-APP-VERSION': os.getenv('APP_VERSION', ''),
+		'OCS-APIRequest': 'true',
+		'AUTHORIZATION-APP-API': b64encode(f':{os.getenv("APP_SECRET", "")}'.encode()).decode('utf-8'),
+	})
+
+
+def _wait_main_app_enabled() -> None:
+	'''
+	Raises
+	------
+	RuntimeError: If the main app is not enabled/ready within the expected time.
+	niquests.RequestException: If there is an error while making the request to the main app
+	'''
+	_max_tries = MAX_TRIES
+	_last_err = None
+	client = _get_main_app_client()
+
+	# wait for the main process to be ready
+	while _max_tries > 0:
+		try:
+			response = client.get('/enabled')
+			response.raise_for_status()
+			enabled = response.json().get('enabled', False)
+			if enabled:
+				return
+			print(
+				f'{(MAX_TRIES-_max_tries+1)*STARTUP_CHECK_SEC}/{MAX_TRIES*STARTUP_CHECK_SEC} secs:'
+				f' [Embedding server] Waiting for the main app to be enabled/ready. Current enabled state: {enabled}',
+				flush=True,
+			)
+		except niquests.RequestException as e:
+			print(
+				f'{(MAX_TRIES-_max_tries+1)*STARTUP_CHECK_SEC}/{MAX_TRIES*STARTUP_CHECK_SEC} secs:'
+				f' [Embedding server] Waiting for the main app to be enabled/ready, errors are expected initially: {e}',
+				flush=True,
+			)
+			if _max_tries == 1:
+				_last_err = e
+		except Exception as e:
+			raise RuntimeError('Unexpected error while waiting for the main app to be enabled/ready') from e
+		finally:
+			sleep(STARTUP_CHECK_SEC)
+			_max_tries -= 1
+
+	# if we exhausted all tries
+	raise _last_err or RuntimeError('Timed out waiting for the main app to be enabled/ready.')
 
 
 if __name__ == '__main__':
 	# intial buffer
+	print(
+		f"Waiting for {STARTUP_CHECK_SEC} seconds before starting embedding server to allow main app to start",
+		flush=True,
+	)
 	sleep(STARTUP_CHECK_SEC)
 
 	setup_env_vars()
@@ -67,40 +114,16 @@ if __name__ == '__main__':
 	if app_config.debug:
 		logger.setLevel(logging.DEBUG)
 
-	_max_tries = MAX_TRIES
-	_enabled = False
-	_last_err = None
-	client, base_url = _get_main_app_httpx_client_host()
-	# wait for the main process to be ready, check the /enabled endpoint
-	while _max_tries > 0:
-		try:
-			ret = client.get(f'http://{base_url}/enabled')
-			ret.raise_for_status()
-
-			if not ret.json().get('enabled', False):
-				raise RuntimeError('Main app is not enabled, sleeping for a while...')
-		except (httpx.RequestError, RuntimeError) as e:
-			print(
-				f'{MAX_TRIES-_max_tries+1}/{MAX_TRIES}:'
-				f' [Embedding server] Waiting for the main app to be enabled/ready: {e}',
-				flush=True,
-			)
-			_last_err = e
-			sleep(STARTUP_CHECK_SEC)
-			_max_tries -= 1
-			continue
-
-		_enabled = True
-		break
-
-	if not _enabled:
+	try:
+		_wait_main_app_enabled()
+	except Exception as e:
 		logger.error(
 			'Failed waiting for the main app to be enabled. This could indicate an issue with the AppAPI'
 			' Deploy Daemon setup or some issue in the main app setup. Some common causes of the latter'
 			' could be no/no stable internet connection to download the required models, disk space full,'
 			' or this app not being able to contact the Nextcloud server to report progress of the model'
 			' download.',
-			exc_info=_last_err,
+			exc_info=e,
 		)
 		exit(1)
 

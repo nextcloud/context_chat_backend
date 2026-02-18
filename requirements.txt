@@ -5,7 +5,7 @@ ctransformers>=0.2.27
 docx2txt>=0.9
 epub2txt>=0.1.6
 fastapi>=0.122.0
-httpx>=0.28.1
+niquests>=3.17.0
 # fix the langchain package versions to avoid long computation in pip dep resolution
 # langchain is stuck at <1.0.0 due to langhchain-unstructured not being updated yet
 langchain==0.3.27
@@ -14,8 +14,7 @@ langchain-postgres==0.0.16
 langchain-unstructured==0.1.6
 llama_cpp_python>=0.3.16
 msg-parser>=1.2.0
-# fix it to the version before niquests
-nc_py_api==0.20.2
+nc_py_api>=0.24.0
 odfdo>=3.17.6
 odfpy>=1.4.1
 openpyxl>=3.1.5
