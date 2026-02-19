@@ -31,6 +31,7 @@ class TEmbeddingConfig(BaseModel):
 	model_name: str | None = DEFAULT_EM_MODEL_ALIAS
 	auth: TEmbeddingAuthApiKey | TEmbeddingAuthBasic | None = None
 	remote_service: bool = False
+	batch_size: int = 100  # max texts per embedding API request, 0 = no batching
 	llama: dict = dict()  # noqa: C408
 
 
