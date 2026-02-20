@@ -63,7 +63,7 @@ jobs:
       matrix:
         php-versions: [ '8.2' ]
         databases: [ 'pgsql' ]
-        server-versions: [ 'stable32', 'master' ]
+        server-versions: [ 'stable32', 'stable33', 'master' ]
 
     name: Integration test on ${{ matrix.server-versions }} php@${{ matrix.php-versions }}
 
