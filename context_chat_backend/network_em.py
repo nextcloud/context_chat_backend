@@ -3,11 +3,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 import logging
-from collections.abc import Generator
 from time import sleep
 from typing import Literal, TypedDict
 
-import httpx
+import niquests
 from langchain_core.embeddings import Embeddings
 from pydantic import BaseModel
 
@@ -42,15 +41,6 @@ class CreateEmbeddingResponse(TypedDict):
 	usage: EmbeddingUsage
 
 
-class ApiKeyAuth(httpx.Auth):
-	def __init__(self, apikey: str | bytes) -> None:
-		self._apikey = apikey
-
-	def auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, httpx.Response, None]:
-		request.headers['Authorization'] = f'Bearer {self._apikey}'
-		yield request
-
-
 class NetworkEmbeddings(Embeddings, BaseModel):
 	app_config: TConfig
 
@@ -66,43 +56,46 @@ class NetworkEmbeddings(Embeddings, BaseModel):
 		try:
 			match emconf.auth:
 				case None:
-					auth = httpx.USE_CLIENT_DEFAULT
+					auth = None
 				case TEmbeddingAuthApiKey(apikey=apikey):
-					auth = ApiKeyAuth(apikey=apikey)
+					auth = niquests.auth.BearerTokenAuth(token=apikey)  # pyright: ignore[reportAttributeAccessIssue]
 				case TEmbeddingAuthBasic(username=username, password=password):
-					auth = httpx.BasicAuth(username=username, password=password)
+					auth = niquests.auth.HTTPBasicAuth(username=username, password=password)  # pyright: ignore[reportAttributeAccessIssue]
 
 			data = {'input': input_}
 			if emconf.model_name:
 				data['model'] = emconf.model_name
 
-			with httpx.Client(verify=self.app_config.httpx_verify_ssl) as client:
-				response = client.post(
-					f'{emconf.base_url.removesuffix("/")}/embeddings',
-					json=data,
-					timeout=emconf.request_timeout,
-					auth=auth,
-				)
-				if response.status_code // 100 == 4:
-					raise FatalEmbeddingException(response.text)
-				if response.status_code // 100 != 2:
-					raise EmbeddingException(response.text)
+			response = niquests.post(
+				f'{emconf.base_url.removesuffix("/")}/embeddings',
+				json=data,
+				timeout=emconf.request_timeout,
+				auth=auth,
+				verify=self.app_config.verify_ssl,
+			)
+			if response.status_code is None:
+				raise EmbeddingException('Error: no response from embedding service')
+			if response.status_code // 100 == 4:
+				raise FatalEmbeddingException(response.text)
+			if response.status_code // 100 != 2:
+				raise EmbeddingException(response.text)
 		except FatalEmbeddingException as e:
 			logger.error('Fatal error while getting embeddings: %s', str(e), exc_info=e)
 			raise e
-		except (
-			EmbeddingException,
-			httpx.RemoteProtocolError,
-			httpx.ReadError,
-			httpx.LocalProtocolError,
-			httpx.PoolTimeout,
-		) as e:
+		except EmbeddingException as e:
 			if try_ > 0:
 				logger.debug('Retrying embedding request in 5 secs', extra={'try': try_})
 				sleep(5)
 				return self._get_embedding(input_, try_ - 1)
 			raise RetryableEmbeddingException('Error: request to get embeddings failed') from e
-		except httpx.ConnectError as e:
+		except niquests.exceptions.Timeout as e:
+			if try_ > 0:
+				logger.debug('Timeout while getting embeddings, retrying in 5 secs', extra={'try': try_})
+				sleep(5)
+				return self._get_embedding(input_, try_ - 1)
+			logger.error('Timeout while getting embeddings', exc_info=e)
+			raise EmbeddingException('Error: timeout while getting embeddings') from e
+		except niquests.exceptions.ConnectionError as e:
 			if self.app_config.embedding.workers > 0:
 				logger.error(
 					'Error connecting to the embedding server, check if it is running and the logs',
@@ -111,13 +104,6 @@ class NetworkEmbeddings(Embeddings, BaseModel):
 				raise EmbeddingException('Error: failed to connect to the embedding service') from e
 			logger.error('Error connecting to the remote embedding service', exc_info=e)
 			raise EmbeddingException('Error: failed to connect to the remote embedding service') from e
-		except httpx.NetworkError as e:
-			if try_ > 0:
-				logger.debug('Network error while getting embeddings, retrying in 5 secs', extra={'try': try_})
-				sleep(5)
-				return self._get_embedding(input_, try_ - 1)
-			logger.error('Network error while getting embeddings', exc_info=e)
-			raise EmbeddingException('Error: network error while getting embeddings') from e
 		except Exception as e:
 			logger.error('Unexpected error while getting embeddings', exc_info=e)
 			raise EmbeddingException('Error: unexpected error while getting embeddings') from e

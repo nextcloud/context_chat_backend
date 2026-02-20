@@ -38,7 +38,7 @@ class TConfig(BaseModel):
 	debug: bool
 	uvicorn_log_level: str
 	disable_aaa: bool
-	httpx_verify_ssl: bool
+	verify_ssl: bool
 	use_colors: bool
 	uvicorn_workers: int
 	embedding_chunk_size: int

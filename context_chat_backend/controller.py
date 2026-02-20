@@ -40,7 +40,7 @@ from .chain.one_shot import process_context_query, process_query
 from .config_parser import get_config
 from .dyn_loader import LLMModelLoader, VectorDBLoader
 from .models.types import LlmException
-from .ocs_utils import AppAPIAuthMiddleware
+from nc_py_api.ex_app import AppAPIAuthMiddleware
 from .utils import JSONResponse, exec_in_proc, is_valid_provider_id, is_valid_source_id, value_of
 from .vectordb.service import (
 	count_documents_by_provider,

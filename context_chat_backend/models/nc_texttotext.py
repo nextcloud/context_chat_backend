@@ -6,7 +6,7 @@ import logging
 import time
 from typing import Any
 
-import httpx
+import niquests
 from langchain_core.callbacks.manager import CallbackManagerForLLMRun
 from langchain_core.language_models.llms import LLM
 from nc_py_api import NextcloudApp, NextcloudException
@@ -83,7 +83,7 @@ class CustomLLM(LLM):
 				)
 				break
 			except NextcloudException as e:
-				if e.status_code == httpx.codes.PRECONDITION_FAILED:
+				if e.status_code == niquests.codes.precondition_failed:  # pyright: ignore[reportAttributeAccessIssue]
 					raise LlmException(
 						'Failed to schedule Nextcloud TaskProcessing task: '
 						'This app is setup to use a text generation provider in Nextcloud. '
@@ -91,7 +91,7 @@ class CustomLLM(LLM):
 						'Please install integration_openai, llm2 or any other text2text provider.'
 					) from e
 
-				if e.status_code == httpx.codes.TOO_MANY_REQUESTS:
+				if e.status_code == niquests.codes.too_many_requests:  # pyright: ignore[reportAttributeAccessIssue]
 					logger.warning('Rate limited during task scheduling, waiting 10s before retrying')
 					time.sleep(10)
 					continue
@@ -116,17 +116,15 @@ class CustomLLM(LLM):
 				try:
 					response = nc.ocs('GET', f'/ocs/v1.php/taskprocessing/task/{task.id}')
 				except (
-					httpx.RemoteProtocolError,
-					httpx.ReadError,
-					httpx.LocalProtocolError,
-					httpx.PoolTimeout,
+					niquests.exceptions.ConnectionError,
+					niquests.exceptions.Timeout,
 				) as e:
 					logger.warning('Ignored error during task polling', exc_info=e)
 					time.sleep(5)
 					i += 1
 					continue
 				except NextcloudException as e:
-					if e.status_code == httpx.codes.TOO_MANY_REQUESTS:
+					if e.status_code == niquests.codes.too_many_requests:  # pyright: ignore[reportAttributeAccessIssue]
 						logger.warning('Rate limited during task polling, waiting 10s before retrying')
 						time.sleep(10)
 						i += 2
