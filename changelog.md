@@ -9,6 +9,21 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 
+## 4.6.0 - 2026-02-23
+
+### Changed
+- pin max NC version to 31
+
+### Fixed
+- narrow down pip's package search (#238) @kyteinsky
+- fix langchain package versions (#238) @kyteinsky
+- ensure the decoded text from the document is utf-8 compat (#227) @kyteinsky
+- make the wait message not look like an error (#226) @kyteinsky
+
+### Added
+- support podman @oleksandr-nc
+
+
 ## 4.5.0 - 2025-09-23
 
 ### Changed
