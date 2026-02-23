@@ -9,7 +9,17 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 
-## 5.2.0 - 2025-01-08
+## 5.3.0 - 2026-02-23
+
+### Added
+- migrate from httpx to niquests (#275) @kyteinsky
+- added support for NC 34
+
+### Fixed
+- deep copy config before redaction (#272) @kyteinsky
+
+
+## 5.2.0 - 2026-01-08
 
 ### Added
 - add HaRP support (#247) @kyteinsky
