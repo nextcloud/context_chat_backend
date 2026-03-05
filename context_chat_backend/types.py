@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+from enum import Enum
+
 from pydantic import BaseModel
 
 __all__ = [
@@ -71,3 +73,9 @@ class FatalEmbeddingException(EmbeddingException):
 
 	Either malformed request, authentication error, or other non-retryable error.
 	"""
+
+
+class AppRole(str, Enum):
+	NORMAL = 'normal'
+	INDEXING = 'indexing'
+	RP = 'rp'
