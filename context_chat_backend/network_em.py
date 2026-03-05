@@ -117,7 +117,15 @@ class NetworkEmbeddings(Embeddings, BaseModel):
 		return [d['embedding'] for d in resp['data']]  # pyright: ignore[reportReturnType]
 
 	def embed_documents(self, texts: list[str]) -> list[list[float]]:
-		return self._get_embedding(texts)  # pyright: ignore[reportReturnType]
+		batch_size = self.app_config.embedding.batch_size
+		if batch_size <= 0 or len(texts) <= batch_size:
+			return self._get_embedding(texts)  # pyright: ignore[reportReturnType]
+
+		results: list[list[float]] = []
+		for i in range(0, len(texts), batch_size):
+			batch_embeddings = self._get_embedding(texts[i:i + batch_size])
+			results.extend(batch_embeddings)  # pyright: ignore[reportArgumentType]
+		return results
 
 	def embed_query(self, text: str) -> list[float]:
 		return self._get_embedding(text)  # pyright: ignore[reportReturnType]

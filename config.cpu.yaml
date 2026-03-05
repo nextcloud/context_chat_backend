@@ -23,6 +23,7 @@ embedding:
   base_url: http://localhost:5000/v1
   workers: 1
   request_timeout: 1800 # in seconds
+  # batch_size: 100 # max texts per embedding API request, 0 = no batching
   # only for external embedding service
   # remote_service: true
   # model_name: text-embedding-3-small
