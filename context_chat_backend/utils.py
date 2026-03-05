@@ -4,6 +4,7 @@
 #
 import logging
 import multiprocessing as mp
+import os
 import re
 import traceback
 from collections.abc import Callable
@@ -14,7 +15,7 @@ from typing import Any, TypeGuard, TypeVar
 
 from fastapi.responses import JSONResponse as FastAPIJSONResponse
 
-from .types import TConfig, TEmbeddingAuthApiKey, TEmbeddingAuthBasic, TEmbeddingConfig
+from .types import AppRole, TConfig, TEmbeddingAuthApiKey, TEmbeddingAuthBasic, TEmbeddingConfig
 
 T = TypeVar('T')
 _logger = logging.getLogger('ccb.utils')
@@ -144,3 +145,13 @@ def redact_config(config: TConfig | TEmbeddingConfig) -> TConfig | TEmbeddingCon
 			em_conf.auth.password = '***REDACTED***'  # noqa: S105
 
 	return config_copy
+
+
+def get_app_role() -> AppRole:
+	role = os.getenv('APP_ROLE', '').lower()
+	if role == '':
+		return AppRole.NORMAL
+	if role not in ['indexing', 'rp']:
+		_logger.warning(f'Invalid app role: {role}, defaulting to all roles')
+		return AppRole.NORMAL
+	return AppRole(role)
