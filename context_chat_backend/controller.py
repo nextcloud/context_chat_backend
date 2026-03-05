@@ -42,6 +42,7 @@ from .dyn_loader import LLMModelLoader, VectorDBLoader
 from .models.types import LlmException
 from nc_py_api.ex_app import AppAPIAuthMiddleware
 from .utils import JSONResponse, exec_in_proc, is_valid_provider_id, is_valid_source_id, value_of
+from .task_fetcher import start_bg_threads, stop_bg_threads
 from .vectordb.service import (
 	count_documents_by_provider,
 	decl_update_access,
@@ -73,11 +74,16 @@ models_to_fetch = {
 app_enabled = Event()
 
 def enabled_handler(enabled: bool, _: NextcloudApp | AsyncNextcloudApp) -> str:
-	if enabled:
-		app_enabled.set()
-		# todo: start bg threads to fetch docs, updates and requests to process
-	else:
-		app_enabled.clear()
+	try:
+		if enabled:
+			app_enabled.set()
+			start_bg_threads()
+		else:
+			app_enabled.clear()
+			stop_bg_threads()
+	except Exception as e:
+		logger.exception('Error in enabled handler:', exc_info=e)
+		return f'Error in enabled handler: {e}'
 
 	logger.info(f'App {("disabled", "enabled")[enabled]}')
 	return ''
@@ -95,6 +101,7 @@ async def lifespan(app: FastAPI):
 	yield
 	vectordb_loader.offload()
 	llm_loader.offload()
+	stop_bg_threads()
 
 
 app_config = get_config(os.environ['CC_CONFIG_PATH'])
