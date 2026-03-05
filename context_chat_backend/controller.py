@@ -75,6 +75,7 @@ app_enabled = Event()
 def enabled_handler(enabled: bool, _: NextcloudApp | AsyncNextcloudApp) -> str:
 	if enabled:
 		app_enabled.set()
+		# todo: start bg threads to fetch docs, updates and requests to process
 	else:
 		app_enabled.clear()
 
@@ -213,6 +214,13 @@ def _():
 	return JSONResponse(content={'enabled': app_enabled.is_set()}, status_code=200)
 
 
+@app.post('/countIndexedDocuments')
+@enabled_guard(app)
+def _():
+	counts = exec_in_proc(target=count_documents_by_provider, args=(vectordb_loader,))
+	return JSONResponse(counts)
+
+
 @app.post('/updateAccessDeclarative')
 @enabled_guard(app)
 def _(
@@ -326,13 +334,6 @@ def _(userId: str = Body(embed=True)):
 	exec_in_proc(target=delete_user, args=(vectordb_loader, userId))
 
 	return JSONResponse('User deleted')
-
-
-@app.post('/countIndexedDocuments')
-@enabled_guard(app)
-def _():
-	counts = exec_in_proc(target=count_documents_by_provider, args=(vectordb_loader,))
-	return JSONResponse(counts)
 
 
 @app.put('/loadSources')
