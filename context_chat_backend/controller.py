@@ -27,7 +27,7 @@ from threading import Event, Thread
 from time import sleep
 from typing import Annotated, Any
 
-from fastapi import Body, FastAPI, Request, UploadFile
+from fastapi import Body, FastAPI, Request
 from langchain.llms.base import LLM
 from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import persistent_storage, set_handlers
@@ -35,14 +35,13 @@ from pydantic import BaseModel, ValidationInfo, field_validator
 from starlette.responses import FileResponse
 
 from .chain.context import do_doc_search
-from .chain.ingest.injest import embed_sources
 from .chain.one_shot import process_context_query, process_query
 from .config_parser import get_config
 from .dyn_loader import LLMModelLoader, VectorDBLoader
 from .models.types import LlmException
 from nc_py_api.ex_app import AppAPIAuthMiddleware
 from .utils import JSONResponse, exec_in_proc, is_valid_provider_id, is_valid_source_id, value_of
-from .task_fetcher import start_bg_threads, stop_bg_threads
+from .task_fetcher import start_bg_threads, wait_for_bg_threads
 from .vectordb.service import (
 	count_documents_by_provider,
 	decl_update_access,
@@ -57,6 +56,7 @@ from .vectordb.service import (
 repair_run()
 ensure_config_file()
 logger = logging.getLogger('ccb.controller')
+app_config = get_config(os.environ['CC_CONFIG_PATH'])
 __download_models_from_hf = os.environ.get('CC_DOWNLOAD_MODELS_FROM_HF', 'true').lower() in ('1', 'true', 'yes')
 
 models_to_fetch = {
@@ -77,10 +77,10 @@ def enabled_handler(enabled: bool, _: NextcloudApp | AsyncNextcloudApp) -> str:
 	try:
 		if enabled:
 			app_enabled.set()
-			start_bg_threads()
+			start_bg_threads(app_config, app_enabled)
 		else:
 			app_enabled.clear()
-			stop_bg_threads()
+			wait_for_bg_threads()
 	except Exception as e:
 		logger.exception('Error in enabled handler:', exc_info=e)
 		return f'Error in enabled handler: {e}'
@@ -101,10 +101,9 @@ async def lifespan(app: FastAPI):
 	yield
 	vectordb_loader.offload()
 	llm_loader.offload()
-	stop_bg_threads()
+	wait_for_bg_threads()
 
 
-app_config = get_config(os.environ['CC_CONFIG_PATH'])
 app = FastAPI(debug=app_config.debug, lifespan=lifespan)  # pyright: ignore[reportArgumentType]
 
 app.extra['CONFIG'] = app_config
@@ -343,86 +342,78 @@ def _(userId: str = Body(embed=True)):
 	return JSONResponse('User deleted')
 
 
-@app.put('/loadSources')
-@enabled_guard(app)
-def _(sources: list[UploadFile]):
-	global _indexing
+# @app.put('/loadSources')
+# @enabled_guard(app)
+# def _(sources: list[UploadFile]):
+# 	global _indexing
 
-	if len(sources) == 0:
-		return JSONResponse('No sources provided', 400)
+# 	if len(sources) == 0:
+# 		return JSONResponse('No sources provided', 400)
 
-	filtered_sources = []
+# 	for source in sources:
+# 		if not value_of(source.filename):
+# 			return JSONResponse(f'Invalid source filename for: {source.headers.get("title")}', 400)
 
-	for source in sources:
-		if not value_of(source.filename):
-			logger.warning('Skipping source with invalid source_id', extra={
-				'source_id': source.filename,
-				'title': source.headers.get('title'),
-			})
-			continue
+# 		with index_lock:
+# 			if source.filename in _indexing:
+# 				# this request will be retried by the client
+# 				return JSONResponse(
+# 					f'This source ({source.filename}) is already being processed in another request, try again later',
+# 					503,
+# 					headers={'cc-retry': 'true'},
+# 				)
 
-		with index_lock:
-			if source.filename in _indexing:
-				# this request will be retried by the client
-				return JSONResponse(
-					f'This source ({source.filename}) is already being processed in another request, try again later',
-					503,
-					headers={'cc-retry': 'true'},
-				)
+# 		if not (
+# 			value_of(source.headers.get('userIds'))
+# 			and source.headers.get('title', None) is not None
+# 			and value_of(source.headers.get('type'))
+# 			and value_of(source.headers.get('modified'))
+# 			and source.headers['modified'].isdigit()
+# 			and value_of(source.headers.get('provider'))
+# 		):
+# 			logger.error('Invalid/missing headers received', extra={
+# 				'source_id': source.filename,
+# 				'title': source.headers.get('title'),
+# 				'headers': source.headers,
+# 			})
+# 			return JSONResponse(f'Invaild/missing headers for: {source.filename}', 400)
 
-		if not (
-			value_of(source.headers.get('userIds'))
-			and source.headers.get('title', None) is not None
-			and value_of(source.headers.get('type'))
-			and value_of(source.headers.get('modified'))
-			and source.headers['modified'].isdigit()
-			and value_of(source.headers.get('provider'))
-		):
-			logger.warning('Skipping source with invalid/missing headers', extra={
-				'source_id': source.filename,
-				'title': source.headers.get('title'),
-				'headers': source.headers,
-			})
-			continue
+# 	# wait for 10 minutes before failing the request
+# 	semres = doc_parse_semaphore.acquire(block=True, timeout=10*60)
+# 	if not semres:
+# 		return JSONResponse(
+# 			'Document parser worker limit reached, try again in some time or consider increasing the limit',
+# 			503,
+# 			headers={'cc-retry': 'true'}
+# 		)
 
-		filtered_sources.append(source)
+# 	with index_lock:
+# 		for source in sources:
+# 			_indexing[source.filename] = source.size
 
-	# wait for 10 minutes before failing the request
-	semres = doc_parse_semaphore.acquire(block=True, timeout=10*60)
-	if not semres:
-		return JSONResponse(
-			'Document parser worker limit reached, try again in some time or consider increasing the limit',
-			503,
-			headers={'cc-retry': 'true'}
-		)
+# 	try:
+# 		loaded_sources, not_added_sources = exec_in_proc(
+# 			target=embed_sources,
+# 			args=(vectordb_loader, app.extra['CONFIG'], sources)
+# 		)
+# 	except (DbException, EmbeddingException):
+# 		raise
+# 	except Exception as e:
+# 		raise DbException('Error: failed to load sources') from e
+# 	finally:
+# 		with index_lock:
+# 			for source in sources:
+# 				_indexing.pop(source.filename, None)
+# 		doc_parse_semaphore.release()
 
-	with index_lock:
-		for source in filtered_sources:
-			_indexing[source.filename] = source.size
+# 	if len(loaded_sources) != len(sources):
+# 		logger.debug('Some sources were not loaded', extra={
+# 			'Count of loaded sources': f'{len(loaded_sources)}/{len(sources)}',
+# 			'source_ids': loaded_sources,
+# 		})
 
-	try:
-		loaded_sources, not_added_sources = exec_in_proc(
-			target=embed_sources,
-			args=(vectordb_loader, app.extra['CONFIG'], filtered_sources)
-		)
-	except (DbException, EmbeddingException):
-		raise
-	except Exception as e:
-		raise DbException('Error: failed to load sources') from e
-	finally:
-		with index_lock:
-			for source in filtered_sources:
-				_indexing.pop(source.filename, None)
-		doc_parse_semaphore.release()
-
-	if len(loaded_sources) != len(filtered_sources):
-		logger.debug('Some sources were not loaded', extra={
-			'Count of loaded sources': f'{len(loaded_sources)}/{len(filtered_sources)}',
-			'source_ids': loaded_sources,
-		})
-
-	# loaded sources include the existing sources that may only have their access updated
-	return JSONResponse({'loaded_sources': loaded_sources, 'sources_to_retry': not_added_sources})
+# 	# loaded sources include the existing sources that may only have their access updated
+# 	return JSONResponse({'loaded_sources': loaded_sources, 'sources_to_retry': not_added_sources})
 
 
 class Query(BaseModel):

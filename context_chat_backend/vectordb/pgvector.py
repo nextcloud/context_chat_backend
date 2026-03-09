@@ -11,14 +11,13 @@ import sqlalchemy as sa
 import sqlalchemy.dialects.postgresql as postgresql_dialects
 import sqlalchemy.orm as orm
 from dotenv import load_dotenv
-from fastapi import UploadFile
 from langchain.schema import Document
 from langchain.vectorstores import VectorStore
 from langchain_core.embeddings import Embeddings
 from langchain_postgres.vectorstores import Base, PGVector
 
 from ..chain.types import InDocument, ScopeType
-from ..types import EmbeddingException, RetryableEmbeddingException
+from ..types import EmbeddingException, IndexingError, RetryableEmbeddingException, SourceItem
 from ..utils import timed
 from .base import BaseVectorDB
 from .types import DbException, SafeDbException, UpdateAccessOp
@@ -130,17 +129,16 @@ class VectorDB(BaseVectorDB):
 			except Exception as e:
 				raise DbException('Error: getting a list of all users from access list') from e
 
-	def add_indocuments(self, indocuments: list[InDocument]) -> tuple[list[str], list[str]]:
+	def add_indocuments(self, indocuments: dict[int, InDocument]) -> dict[int, IndexingError | None]:
 		"""
 		Raises
 			EmbeddingException: if the embedding request definitively fails
 		"""
-		added_sources = []
-		retry_sources = []
+		results = {}
 		batch_size = PG_BATCH_SIZE // 5
 
 		with self.session_maker() as session:
-			for indoc in indocuments:
+			for php_db_id, indoc in indocuments.items():
 				try:
 					# query paramerters limitation in postgres is 65535 (https://www.postgresql.org/docs/current/limits.html)
 					# so we chunk the documents into (5 values * 10k) chunks
@@ -170,7 +168,7 @@ class VectorDB(BaseVectorDB):
 						)
 
 					self.decl_update_access(indoc.userIds, indoc.source_id, session)
-					added_sources.append(indoc.source_id)
+					results[php_db_id] = None
 					session.commit()
 				except SafeDbException as e:
 					# for when the source_id is not found. This here can be an error in the DB
@@ -178,51 +176,67 @@ class VectorDB(BaseVectorDB):
 					logger.exception('Error adding documents to vectordb', exc_info=e, extra={
 						'source_id': indoc.source_id,
 					})
-					retry_sources.append(indoc.source_id)
+					results[php_db_id] = IndexingError(
+						error=str(e),
+						retryable=True,
+					)
 					continue
 				except RetryableEmbeddingException as e:
 					# temporary error, continue with the next document
 					logger.exception('Error adding documents to vectordb, should be retried later.', exc_info=e, extra={
 						'source_id': indoc.source_id,
 					})
-					retry_sources.append(indoc.source_id)
+					results[php_db_id] = IndexingError(
+						error=str(e),
+						retryable=True,
+					)
 					continue
 				except EmbeddingException as e:
 					logger.exception('Error adding documents to vectordb', exc_info=e, extra={
 						'source_id': indoc.source_id,
 					})
-					raise
+					results[php_db_id] = IndexingError(
+						error=str(e),
+						retryable=False,
+					)
+					continue
 				except Exception as e:
 					logger.exception('Error adding documents to vectordb', exc_info=e, extra={
 						'source_id': indoc.source_id,
 					})
-					retry_sources.append(indoc.source_id)
+					results[php_db_id] = IndexingError(
+						error='An unexpected error occurred while adding documents to the database.',
+						retryable=True,
+					)
 					continue
 
-		return added_sources, retry_sources
+		return results
 
 	@timed
-	def check_sources(self, sources: list[UploadFile]) -> tuple[list[str], list[str]]:
+	def check_sources(self, sources: dict[int, SourceItem]) -> tuple[list[str], list[str]]:
+		'''
+		returns a tuple of (existing_source_ids, to_embed_source_ids)
+		'''
 		with self.session_maker() as session:
 			try:
 				stmt = (
 					sa.select(DocumentsStore.source_id)
-					.filter(DocumentsStore.source_id.in_([source.filename for source in sources]))
+					.filter(DocumentsStore.source_id.in_([source.reference for source in sources.values()]))
 					.with_for_update()
 				)
 
 				results = session.execute(stmt).fetchall()
 				existing_sources = {r.source_id for r in results}
-				to_embed = [source.filename for source in sources if source.filename not in existing_sources]
+				to_embed = [source.reference for source in sources.values() if source.reference not in existing_sources]
 
 				to_delete = []
 
-				for source in sources:
+				for source in sources.values():
 					stmt = (
 						sa.select(DocumentsStore.source_id)
-						.filter(DocumentsStore.source_id == source.filename)
+						.filter(DocumentsStore.source_id == source.reference)
 						.filter(DocumentsStore.modified < sa.cast(
-							datetime.fromtimestamp(int(source.headers['modified'])),
+							datetime.fromtimestamp(int(source.modified)),
 							sa.DateTime,
 						))
 					)
@@ -239,14 +253,13 @@ class VectorDB(BaseVectorDB):
 				session.rollback()
 				raise DbException('Error: checking sources in vectordb') from e
 
-			still_existing_sources = [
-				source
-				for source in existing_sources
-				if source not in to_delete
+			still_existing_source_ids = [
+				source_id
+				for source_id in existing_sources
+				if source_id not in to_delete
 			]
 
-			# the pyright issue stems from source.filename, which has already been validated
-			return list(still_existing_sources), to_embed  # pyright: ignore[reportReturnType]
+			return list(still_existing_source_ids), to_embed
 
 	def decl_update_access(self, user_ids: list[str], source_id: str, session_: orm.Session | None = None):
 		session = session_ or self.session_maker()
