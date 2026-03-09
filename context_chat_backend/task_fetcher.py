@@ -5,6 +5,7 @@
 
 import asyncio
 import logging
+import os
 from contextlib import suppress
 from enum import Enum
 from io import BytesIO
@@ -35,6 +36,8 @@ APP_ROLE = get_app_role()
 THREADS = {}
 LOGGER = logging.getLogger('ccb.task_fetcher')
 FILES_INDEXING_BATCH_SIZE = 64  # todo: config?
+# divides the batch into these many chunks
+PARALLEL_FILE_PARSING = max(1, (os.cpu_count() or 2) - 1)  # todo: config?
 # max concurrent fetches to avoid overloading the NC server or hitting rate limits
 CONCURRENT_FILE_FETCHES = 10  # todo: config?
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB, todo: config?
@@ -217,8 +220,18 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 				else:
 					source_errors[file_id] = result
 
-			files_result = _load_sources(source_files)
-			providers_result = _load_sources(q_items.content_providers)
+			files_result = {}
+			providers_result = {}
+			chunk_size = FILES_INDEXING_BATCH_SIZE // PARALLEL_FILE_PARSING
+
+			# chunk file parsing for better file operation parallelism
+			for i in range(0, len(source_files), chunk_size):
+				chunk = dict(list(source_files.items())[i:i+chunk_size])
+				files_result.update(_load_sources(chunk))
+
+			for i in range(0, len(q_items.content_providers), chunk_size):
+				chunk = dict(list(q_items.content_providers.items())[i:i+chunk_size])
+				providers_result.update(_load_sources(chunk))
 
 			if (
 				any(isinstance(res, IndexingError) for res in files_result.values())
