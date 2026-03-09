@@ -5,12 +5,12 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from fastapi import UploadFile
 from langchain.schema import Document
 from langchain.schema.embeddings import Embeddings
 from langchain.schema.vectorstore import VectorStore
 
 from ..chain.types import InDocument, ScopeType
+from ..types import IndexingError, SourceItem
 from ..utils import timed
 from .types import UpdateAccessOp
 
@@ -62,7 +62,7 @@ class BaseVectorDB(ABC):
 		'''
 
 	@abstractmethod
-	def add_indocuments(self, indocuments: list[InDocument]) -> tuple[list[str],list[str]]:
+	def add_indocuments(self, indocuments: dict[int, InDocument]) -> dict[int, IndexingError | None]:
 		'''
 		Adds the given indocuments to the vectordb and updates the docs + access tables.
 
@@ -79,10 +79,7 @@ class BaseVectorDB(ABC):
 
 	@timed
 	@abstractmethod
-	def check_sources(
-		self,
-		sources: list[UploadFile],
-	) -> tuple[list[str], list[str]]:
+	def check_sources(self, sources: dict[int, SourceItem]) -> tuple[list[str], list[str]]:
 		'''
 		Checks the sources in the vectordb if they are already embedded
 			and are up to date.
