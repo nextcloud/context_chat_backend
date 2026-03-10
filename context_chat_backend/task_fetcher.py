@@ -304,11 +304,11 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 
 
 
-def updates_processing_thread(app_config: TConfig):
+def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 	...
 
 
-def request_processing_thread(app_config: TConfig):
+def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 	...
 
 
@@ -317,12 +317,12 @@ def start_bg_threads(app_config: TConfig, app_enabled: Event):
 		case AppRole.INDEXING | AppRole.NORMAL:
 			THREADS[ThreadType.FILES_INDEXING] = Thread(
 				target=files_indexing_thread,
-				args=(app_config, Event),
+				args=(app_config, app_enabled),
 				name='FilesIndexingThread',
 			)
 			THREADS[ThreadType.UPDATES_PROCESSING] = Thread(
 				target=updates_processing_thread,
-				args=(app_config, Event),
+				args=(app_config, app_enabled),
 				name='UpdatesProcessingThread',
 			)
 			THREADS[ThreadType.FILES_INDEXING].start()
@@ -330,7 +330,7 @@ def start_bg_threads(app_config: TConfig, app_enabled: Event):
 		case AppRole.RP | AppRole.NORMAL:
 			THREADS[ThreadType.REQUEST_PROCESSING] = Thread(
 				target=request_processing_thread,
-				args=(app_config, Event),
+				args=(app_config, app_enabled),
 				name='RequestProcessingThread',
 			)
 			THREADS[ThreadType.REQUEST_PROCESSING].start()
