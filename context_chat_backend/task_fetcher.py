@@ -44,6 +44,7 @@ from .vectordb.types import DbException, SafeDbException
 
 APP_ROLE = get_app_role()
 THREADS = {}
+THREAD_STOP_EVENT = Event()
 LOGGER = logging.getLogger('ccb.task_fetcher')
 FILES_INDEXING_BATCH_SIZE = 64  # todo: config?
 # divides the batch into these many chunks
@@ -199,8 +200,8 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 
 
 	while True:
-		if not app_enabled.is_set():
-			LOGGER.info('Files indexing thread is stopping as the app is disabled')
+		if THREAD_STOP_EVENT.is_set():
+			LOGGER.info('Files indexing thread is stopping due to stop event being set')
 			return
 
 		try:
@@ -329,8 +330,8 @@ def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 		return
 
 	while True:
-		if not app_enabled.is_set():
-			LOGGER.info('Files indexing thread is stopping as the app is disabled')
+		if THREAD_STOP_EVENT.is_set():
+			LOGGER.info('Updates processing thread is stopping due to stop event being set')
 			return
 
 		try:
@@ -490,6 +491,14 @@ def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 def start_bg_threads(app_config: TConfig, app_enabled: Event):
 	match APP_ROLE:
 		case AppRole.INDEXING | AppRole.NORMAL:
+			if (
+				ThreadType.FILES_INDEXING in THREADS
+				or ThreadType.UPDATES_PROCESSING in THREADS
+			):
+				LOGGER.info('Background threads already running, skipping start')
+				return
+
+			THREAD_STOP_EVENT.clear()
 			THREADS[ThreadType.FILES_INDEXING] = Thread(
 				target=files_indexing_thread,
 				args=(app_config, app_enabled),
@@ -502,7 +511,13 @@ def start_bg_threads(app_config: TConfig, app_enabled: Event):
 			)
 			THREADS[ThreadType.FILES_INDEXING].start()
 			THREADS[ThreadType.UPDATES_PROCESSING].start()
+
 		case AppRole.RP | AppRole.NORMAL:
+			if ThreadType.REQUEST_PROCESSING in THREADS:
+				LOGGER.info('Background threads already running, skipping start')
+				return
+
+			THREAD_STOP_EVENT.clear()
 			THREADS[ThreadType.REQUEST_PROCESSING] = Thread(
 				target=request_processing_thread,
 				args=(app_config, app_enabled),
@@ -516,12 +531,17 @@ def wait_for_bg_threads():
 		case AppRole.INDEXING | AppRole.NORMAL:
 			if (ThreadType.FILES_INDEXING not in THREADS or ThreadType.UPDATES_PROCESSING not in THREADS):
 				return
+
+			THREAD_STOP_EVENT.set()
 			THREADS[ThreadType.FILES_INDEXING].join()
 			THREADS[ThreadType.UPDATES_PROCESSING].join()
 			THREADS.pop(ThreadType.FILES_INDEXING)
 			THREADS.pop(ThreadType.UPDATES_PROCESSING)
+
 		case AppRole.RP | AppRole.NORMAL:
 			if (ThreadType.REQUEST_PROCESSING not in THREADS):
 				return
+
+			THREAD_STOP_EVENT.set()
 			THREADS[ThreadType.REQUEST_PROCESSING].join()
 			THREADS.pop(ThreadType.REQUEST_PROCESSING)
