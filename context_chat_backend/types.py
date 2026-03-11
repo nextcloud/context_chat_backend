@@ -136,10 +136,10 @@ class CommonSourceItem(BaseModel):
 	# source_id of the form "appId__providerId: itemId"
 	reference: Annotated[str, AfterValidator(_validate_source_id)]
 	title: str
-	modified: int | str  # todo: int/string?
+	modified: int
 	type: str
 	provider: Annotated[str, AfterValidator(_validate_provider_id)]
-	size: int
+	size: float
 
 	@field_validator('modified', mode='before')
 	@classmethod
@@ -160,16 +160,17 @@ class CommonSourceItem(BaseModel):
 			raise ValueError('Must be a non-empty string')
 		return v.strip()
 
+	@field_validator('size')
+	@classmethod
+	def validate_size(cls, v):
+		if isinstance(v, int | float) and v >= 0:
+			return float(v)
+		raise ValueError(f'Invalid size value: {v}, must be a non-negative number')
+
 	@model_validator(mode='after')
 	def validate_type(self) -> Self:
 		if self.reference.startswith(FILES_PROVIDER_ID) and self.type not in SUPPORTED_MIMETYPES:
 			raise ValueError(f'Unsupported file type: {self.type} for reference {self.reference}')
-		return self
-
-	@model_validator(mode='after')
-	def validate_size(self) -> Self:
-		if not isinstance(self.size, int) or self.size < 0:
-			raise ValueError(f'Invalid size value: {self.size}, must be a non-negative integer')
 		return self
 
 
