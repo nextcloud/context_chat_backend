@@ -125,15 +125,29 @@ async def __fetch_files_content(
 	semaphore = asyncio.Semaphore(CONCURRENT_FILE_FETCHES)
 	tasks = []
 
-	for file_id, file_item in files.items():
-		if file_item.size > MAX_FILE_SIZE:
-			LOGGER.info(
-				f'Skipping file id {file_id}, source id {file_item.reference} due to size'
-				f' {(file_item.size/(1024*1024)):.2f} MiB exceeding the limit {(MAX_FILE_SIZE/(1024*1024)):.2f} MiB',
+	for db_id, file in files.items():
+		try:
+			# to detect any validation errors but it should not happen since file.reference is validated
+			file.file_id  # noqa: B018
+		except ValueError as e:
+			LOGGER.error(
+				f'Invalid file reference format for db id {db_id}, file reference {file.reference}: {e}',
+				exc_info=e,
 			)
-			source_items[file_id] = IndexingError(
+			source_items[db_id] = IndexingError(
+				error=f'Invalid file reference format: {file.reference}',
+				retryable=False,
+			)
+			continue
+
+		if file.size > MAX_FILE_SIZE:
+			LOGGER.info(
+				f'Skipping db id {db_id}, file id {file.file_id}, source id {file.reference} due to size'
+				f' {(file.size/(1024*1024)):.2f} MiB exceeding the limit {(MAX_FILE_SIZE/(1024*1024)):.2f} MiB',
+			)
+			source_items[db_id] = IndexingError(
 				error=(
-					f'File size {(file_item.size/(1024*1024)):.2f} MiB'
+					f'File size {(file.size/(1024*1024)):.2f} MiB'
 					f' exceeds the limit {(MAX_FILE_SIZE/(1024*1024)):.2f} MiB'
 				),
 				retryable=False,
@@ -141,39 +155,44 @@ async def __fetch_files_content(
 			continue
 		# todo: perform the existing file check before fetching the content to avoid unnecessary fetches
 		# any user id from the list should have read access to the file
-		tasks.append(asyncio.ensure_future(__fetch_file_content(semaphore, file_id, file_item.userIds[0])))
+		tasks.append(asyncio.ensure_future(__fetch_file_content(semaphore, file.file_id, file.userIds[0])))
 
 	results = await asyncio.gather(*tasks, return_exceptions=True)
-	for (file_id, file_item), result in zip(files.items(), results, strict=True):
+	for (db_id, file), result in zip(files.items(), results, strict=True):
 		if isinstance(result, IndexingException):
 			LOGGER.error(
-				f'Error fetching content for file id {file_id}, reference {file_item.reference}: {result}',
+				f'Error fetching content for db id {db_id}, file id {file.file_id}, reference {file.reference}'
+				f': {result}',
 				exc_info=result,
 			)
-			source_items[file_id] = IndexingError(
+			source_items[db_id] = IndexingError(
 				error=str(result),
 				retryable=result.retryable,
 			)
 		elif isinstance(result, str) or isinstance(result, BytesIO):
-			source_items[file_id] = SourceItem(
-				**file_item.model_dump(),
-				content=result,
+			source_items[db_id] = SourceItem(
+				**{
+					**file.model_dump(),
+					'content': result,
+				}
 			)
 		elif isinstance(result, BaseException):
 			LOGGER.error(
-				f'Unexpected error fetching content for file id {file_id}, reference {file_item.reference}: {result}',
+				f'Unexpected error fetching content for db id {db_id}, file id {file.file_id},'
+				f' reference {file.reference}: {result}',
 				exc_info=result,
 			)
-			source_items[file_id] = IndexingError(
+			source_items[db_id] = IndexingError(
 				error=f'Unexpected error: {result}',
 				retryable=True,
 			)
 		else:
 			LOGGER.error(
-				f'Unknown error fetching content for file id {file_id}, reference {file_item.reference}: {result}',
+				f'Unknown error fetching content for db id {db_id}, file id {file.file_id}, reference {file.reference}'
+				f': {result}',
 				exc_info=True,
 			)
-			source_items[file_id] = IndexingError(
+			source_items[db_id] = IndexingError(
 				error='Unknown error',
 				retryable=True,
 			)
@@ -232,11 +251,11 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			if q_items.files:
 				fetched_files = asyncio.run(__fetch_files_content(q_items.files))
 
-			for file_id, result in fetched_files.items():
+			for db_id, result in fetched_files.items():
 				if isinstance(result, SourceItem):
-					source_files[file_id] = result
+					source_files[db_id] = result
 				else:
-					source_errors[file_id] = result
+					source_errors[db_id] = result
 
 			files_result = {}
 			providers_result = {}
@@ -257,8 +276,8 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			):
 				LOGGER.error('Some sources failed to index', extra={
 					'file_errors': {
-						file_id: error
-						for file_id, error in files_result.items()
+						db_id: error
+						for db_id, error in files_result.items()
 						if isinstance(error, IndexingError)
 					},
 					'provider_errors': {
@@ -280,12 +299,12 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			continue
 
 		# delete the entries from the PHP side queue where indexing succeeded or the error is not retryable
-		to_delete_file_ids = [
-			file_id for file_id, result in files_result.items()
+		to_delete_files_db_ids = [
+			db_id for db_id, result in files_result.items()
 			if result is None or (isinstance(result, IndexingError) and not result.retryable)
 		]
-		to_delete_provider_ids = [
-			provider_id for provider_id, result in providers_result.items()
+		to_delete_provider_db_ids = [
+			db_id for db_id, result in providers_result.items()
 			if result is None or (isinstance(result, IndexingError) and not result.retryable)
 		]
 
@@ -294,8 +313,8 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 				'DELETE',
 				'/ocs/v2.php/apps/context_chat/queues/documents/',
 				json={
-					'files': to_delete_file_ids,
-					'content_providers': to_delete_provider_ids,
+					'files': to_delete_files_db_ids,
+					'content_providers': to_delete_provider_db_ids,
 				},
 			)
 		except (
@@ -310,8 +329,8 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 					'DELETE',
 					'/ocs/v2.php/apps/context_chat/queues/documents/',
 					json={
-						'files': to_delete_file_ids,
-						'content_providers': to_delete_provider_ids,
+						'files': to_delete_files_db_ids,
+						'content_providers': to_delete_provider_db_ids,
 					},
 				)
 			continue
