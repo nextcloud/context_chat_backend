@@ -88,6 +88,7 @@ async def lifespan(app: FastAPI):
 	nc = NextcloudApp()
 	if nc.enabled_state:
 		app_enabled.set()
+		start_bg_threads(app_config, app_enabled)
 	logger.info(f'App enable state at startup: {app_enabled.is_set()}')
 	t = Thread(target=background_thread_task, args=())
 	t.start()
