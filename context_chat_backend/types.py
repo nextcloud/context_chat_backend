@@ -7,7 +7,7 @@ from enum import Enum
 from io import BytesIO
 from typing import Annotated, Literal, Self
 
-from pydantic import AfterValidator, BaseModel, Discriminator, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, Discriminator, computed_field, field_validator, model_validator
 
 from .mimetype_list import SUPPORTED_MIMETYPES
 from .vectordb.types import UpdateAccessOp
@@ -67,6 +67,21 @@ def _validate_user_ids(user_ids: list[str]) -> list[str]:
 
 def _validate_user_id(user_id: str) -> str:
 	return _validate_user_ids([user_id])[0]
+
+
+def _get_file_id_from_source_ref(source_ref: str) -> int:
+	'''
+	source reference is in the format "FILES_PROVIDER_ID: <file_id>".
+	'''
+	if not source_ref.startswith(f'{FILES_PROVIDER_ID}: '):
+		raise ValueError(f'Source reference does not start with expected prefix: {source_ref}')
+
+	try:
+		return int(source_ref[len(f'{FILES_PROVIDER_ID}: '):])
+	except ValueError as e:
+		raise ValueError(
+			f'Invalid source reference format for extracting file_id: {source_ref}'
+		) from e
 
 
 class TEmbeddingAuthApiKey(BaseModel):
@@ -176,6 +191,11 @@ class CommonSourceItem(BaseModel):
 
 class ReceivedFileItem(CommonSourceItem):
 	content: None
+
+	@computed_field
+	@property
+	def file_id(self) -> int:
+		return _get_file_id_from_source_ref(self.reference)
 
 
 class SourceItem(CommonSourceItem):

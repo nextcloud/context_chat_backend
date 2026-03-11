@@ -24,7 +24,6 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 from functools import wraps
 from threading import Event, Thread
-from time import sleep
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -130,9 +129,11 @@ if not app_config.disable_aaa:
 # logger background thread
 
 def background_thread_task():
-	while(True):
-		logger.info(f'Currently indexing {len(_indexing)} documents (filename, size): ', extra={'_indexing': _indexing})
-		sleep(10)
+	# todo
+	# while(True):
+	# 	logger.info(f'Currently indexing {len(_indexing)} documents (filename, size): ', extra={'_indexing': _indexing})
+	# 	sleep(10)
+	...
 
 # exception handlers
 
