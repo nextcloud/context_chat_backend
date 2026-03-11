@@ -19,9 +19,11 @@ from pydantic import ValidationError
 from .chain.ingest.injest import embed_sources
 from .dyn_loader import VectorDBLoader
 from .types import (
+	ActionsQueueItems,
+	ActionType,
 	AppRole,
 	EmbeddingException,
-	FilesQueueItem,
+	FilesQueueItems,
 	IndexingError,
 	IndexingException,
 	LoaderException,
@@ -30,7 +32,15 @@ from .types import (
 	TConfig,
 )
 from .utils import exec_in_proc, get_app_role
-from .vectordb.types import DbException
+from .vectordb.service import (
+	decl_update_access,
+	delete_by_provider,
+	delete_by_source,
+	delete_user,
+	update_access,
+	update_access_provider,
+)
+from .vectordb.types import DbException, SafeDbException
 
 APP_ROLE = get_app_role()
 THREADS = {}
@@ -41,6 +51,8 @@ PARALLEL_FILE_PARSING = max(1, (os.cpu_count() or 2) - 1)  # todo: config?
 # max concurrent fetches to avoid overloading the NC server or hitting rate limits
 CONCURRENT_FILE_FETCHES = 10  # todo: config?
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB, todo: config?
+ACTIONS_BATCH_SIZE = 512  # todo: config?
+POLLING_COOLDOWN = 30
 
 
 class ThreadType(Enum):
@@ -201,9 +213,14 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			)
 
 			try:
-				q_items = FilesQueueItem.model_validate(q_items_res)
+				q_items: FilesQueueItems = FilesQueueItems.model_validate(q_items_res)
 			except ValidationError as e:
 				raise Exception(f'Error validating queue items response: {e}\nResponse content: {q_items_res}') from e
+
+			if not q_items.files and not q_items.content_providers:
+				LOGGER.debug('No documents to index')
+				sleep(POLLING_COOLDOWN)
+				continue
 
 			# populate files content and convert to source items
 			fetched_files = {}
@@ -305,7 +322,165 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 
 
 def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
-	...
+	try:
+		vectordb_loader = VectorDBLoader(app_config)
+	except LoaderException as e:
+		LOGGER.error('Error initializing vector DB loader, files indexing thread will not start:', exc_info=e)
+		return
+
+	while True:
+		if not app_enabled.is_set():
+			LOGGER.info('Files indexing thread is stopping as the app is disabled')
+			return
+
+		try:
+			nc = NextcloudApp()
+			q_items_res = nc.ocs(
+				'GET',
+				'/apps/context_chat/queues/actions',
+				params={ 'n': ACTIONS_BATCH_SIZE }
+			)
+
+			try:
+				q_items: ActionsQueueItems = ActionsQueueItems.model_validate(q_items_res)
+			except ValidationError as e:
+				raise Exception(f'Error validating queue items response: {e}\nResponse content: {q_items_res}') from e
+		except (
+			niquests.exceptions.ConnectionError,
+			niquests.exceptions.Timeout,
+		) as e:
+			LOGGER.info('Temporary error fetching updates to process, will retry:', exc_info=e)
+			sleep(5)
+			continue
+		except Exception as e:
+			LOGGER.exception('Error fetching updates to process:', exc_info=e)
+			sleep(5)
+			continue
+
+		if not q_items.actions:
+			LOGGER.debug('No updates to process')
+			sleep(POLLING_COOLDOWN)
+			continue
+
+		processed_event_ids = []
+		errored_events = {}
+		for i, (db_id, action_item) in enumerate(q_items.actions.items()):
+			try:
+				match action_item.type:
+					case ActionType.DELETE_SOURCE_IDS:
+						exec_in_proc(target=delete_by_source, args=(vectordb_loader, action_item.payload.sourceIds))
+
+					case ActionType.DELETE_PROVIDER_ID:
+						exec_in_proc(target=delete_by_provider, args=(vectordb_loader, action_item.payload.providerId))
+
+					case ActionType.DELETE_USER_ID:
+						exec_in_proc(target=delete_user, args=(vectordb_loader, action_item.payload.userId))
+
+					case ActionType.UPDATE_ACCESS_SOURCE_ID:
+						exec_in_proc(
+							target=update_access,
+							args=(
+								vectordb_loader,
+								action_item.payload.op,
+								action_item.payload.userIds,
+								action_item.payload.sourceId,
+							),
+						)
+
+					case ActionType.UPDATE_ACCESS_PROVIDER_ID:
+						exec_in_proc(
+							target=update_access_provider,
+							args=(
+								vectordb_loader,
+								action_item.payload.op,
+								action_item.payload.userIds,
+								action_item.payload.providerId,
+							),
+						)
+
+					case ActionType.UPDATE_ACCESS_DECL_SOURCE_ID:
+						exec_in_proc(
+							target=decl_update_access,
+							args=(
+								vectordb_loader,
+								action_item.payload.userIds,
+								action_item.payload.sourceId,
+							),
+						)
+
+					case _:
+						LOGGER.warning(
+							f'Unknown action type {action_item.type} for action id {db_id},'
+							f' type {action_item.type}, skipping and marking as processed',
+							extra={ 'action_item': action_item },
+						)
+						continue
+
+				processed_event_ids.append(db_id)
+			except SafeDbException as e:
+				LOGGER.debug(
+					f'Safe DB error thrown while processing action id {db_id}, type {action_item.type},'
+					" it's safe to ignore and mark as processed.",
+					exc_info=e,
+					extra={ 'action_item': action_item },
+				)
+				processed_event_ids.append(db_id)
+				continue
+
+			except (LoaderException, DbException) as e:
+				LOGGER.error(
+					f'Error deleting source for action id {db_id}, type {action_item.type}: {e}',
+					exc_info=e,
+					extra={ 'action_item': action_item },
+				)
+				errored_events[db_id] = str(e)
+				continue
+
+			except Exception as e:
+				LOGGER.error(
+					f'Unexpected error processing action id {db_id}, type {action_item.type}: {e}',
+					exc_info=e,
+					extra={ 'action_item': action_item },
+				)
+				errored_events[db_id] = f'Unexpected error: {e}'
+				continue
+
+			if (i + 1) % 20 == 0:
+				LOGGER.debug(f'Processed {i + 1} updates, sleeping for a bit to allow other operations to proceed')
+				sleep(2)
+
+		LOGGER.info(f'Processed {len(processed_event_ids)} updates with {len(errored_events)} errors', extra={
+			'errored_events': errored_events,
+		})
+
+		if len(processed_event_ids) == 0:
+			LOGGER.debug('No updates processed, skipping reporting to the server')
+			continue
+
+		try:
+			nc.ocs(
+				'DELETE',
+				'/apps/context_chat/queues/actions/',
+				json={ 'actions': processed_event_ids },
+			)
+		except (
+			niquests.exceptions.ConnectionError,
+			niquests.exceptions.Timeout,
+		) as e:
+			LOGGER.info('Temporary error reporting processed updates, will retry:', exc_info=e)
+			sleep(5)
+			with suppress(Exception):
+				nc = NextcloudApp()
+				nc.ocs(
+					'DELETE',
+					'/apps/context_chat/queues/actions/',
+					json={ 'ids': processed_event_ids },
+				)
+			continue
+		except Exception as e:
+			LOGGER.exception('Error reporting processed updates:', exc_info=e)
+			sleep(5)
+			continue
 
 
 def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:

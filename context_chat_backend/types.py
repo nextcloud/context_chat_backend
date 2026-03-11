@@ -4,12 +4,13 @@
 #
 from enum import Enum
 from io import BytesIO
-from typing import Self
+from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Discriminator, field_validator
 
 from .mimetype_list import SUPPORTED_MIMETYPES
 from .utils import is_valid_provider_id, is_valid_source_id
+from .vectordb.types import UpdateAccessOp
 
 __all__ = [
 	'DEFAULT_EM_MODEL_ALIAS',
@@ -182,7 +183,7 @@ class SourceItem(CommonSourceItem):
 		raise ValueError('Content must be either a non-empty string or a non-empty BytesIO')
 
 
-class FilesQueueItem(BaseModel):
+class FilesQueueItems(BaseModel):
 	files: dict[int, ReceivedFileItem]  # [db id]: FileItem
 	content_providers: dict[int, SourceItem]  # [db id]: SourceItem
 
@@ -198,3 +199,179 @@ class IndexingException(Exception):
 class IndexingError(BaseModel):
 	error: str
 	retryable: bool = False
+
+
+# PHP equivalent for reference:
+
+# class ActionType {
+# 	// { sourceIds: array<string> }
+# 	public const DELETE_SOURCE_IDS = 'delete_source_ids';
+# 	// { providerId: string }
+# 	public const DELETE_PROVIDER_ID = 'delete_provider_id';
+# 	// { userId: string }
+# 	public const DELETE_USER_ID = 'delete_user_id';
+# 	// { op: string, userIds: array<string>, sourceId: string }
+# 	public const UPDATE_ACCESS_SOURCE_ID = 'update_access_source_id';
+# 	// { op: string, userIds: array<string>, providerId: string }
+# 	public const UPDATE_ACCESS_PROVIDER_ID = 'update_access_provider_id';
+# 	// { userIds: array<string>, sourceId: string }
+# 	public const UPDATE_ACCESS_DECL_SOURCE_ID = 'update_access_decl_source_id';
+# }
+
+
+def _validate_source_ids(source_ids: list[str]) -> list[str]:
+	if (
+		not isinstance(source_ids, list)
+		or not all(isinstance(sid, str) and sid.strip() != '' for sid in source_ids)
+		or len(source_ids) == 0
+	):
+		raise ValueError('sourceIds must be a non-empty list of non-empty strings')
+	return [sid.strip() for sid in source_ids]
+
+
+def _validate_provider_id(provider_id: str) -> str:
+	if not isinstance(provider_id, str) or not is_valid_provider_id(provider_id):
+		raise ValueError('providerId must be a valid provider ID string')
+	return provider_id
+
+
+def _validate_user_ids(user_ids: list[str]) -> list[str]:
+	if (
+		not isinstance(user_ids, list)
+		or not all(isinstance(uid, str) and uid.strip() != '' for uid in user_ids)
+		or len(user_ids) == 0
+	):
+		raise ValueError('userIds must be a non-empty list of non-empty strings')
+	return [uid.strip() for uid in user_ids]
+
+
+class ActionPayloadDeleteSourceIds(BaseModel):
+	sourceIds: list[str]
+
+	@field_validator('sourceIds', mode='after')
+	def validate_source_ids(self) -> Self:
+		self.sourceIds = _validate_source_ids(self.sourceIds)
+		return self
+
+
+class ActionPayloadDeleteProviderId(BaseModel):
+	providerId: str
+
+	@field_validator('providerId')
+	def validate_provider_id(self) -> Self:
+		self.providerId = _validate_provider_id(self.providerId)
+		return self
+
+
+class ActionPayloadDeleteUserId(BaseModel):
+	userId: str
+
+	@field_validator('userId')
+	def validate_user_id(self) -> Self:
+		self.userId = _validate_user_ids([self.userId])[0]
+		return self
+
+
+class ActionPayloadUpdateAccessSourceId(BaseModel):
+	op: UpdateAccessOp
+	userIds: list[str]
+	sourceId: str
+
+	@field_validator('userIds', mode='after')
+	def validate_user_ids(self) -> Self:
+		self.userIds = _validate_user_ids(self.userIds)
+		return self
+
+	@field_validator('sourceId')
+	def validate_source_id(self) -> Self:
+		self.sourceId = _validate_source_ids([self.sourceId])[0]
+		return self
+
+
+class ActionPayloadUpdateAccessProviderId(BaseModel):
+	op: UpdateAccessOp
+	userIds: list[str]
+	providerId: str
+
+	@field_validator('userIds', mode='after')
+	def validate_user_ids(self) -> Self:
+		self.userIds = _validate_user_ids(self.userIds)
+		return self
+
+	@field_validator('providerId')
+	def validate_provider_id(self) -> Self:
+		self.providerId = _validate_provider_id(self.providerId)
+		return self
+
+
+class ActionPayloadUpdateAccessDeclSourceId(BaseModel):
+	userIds: list[str]
+	sourceId: str
+
+	@field_validator('userIds', mode='after')
+	def validate_user_ids(self) -> Self:
+		self.userIds = _validate_user_ids(self.userIds)
+		return self
+
+	@field_validator('sourceId')
+	def validate_source_id(self) -> Self:
+		self.sourceId = _validate_source_ids([self.sourceId])[0]
+		return self
+
+
+class ActionType(str, Enum):
+	DELETE_SOURCE_IDS = 'delete_source_ids'
+	DELETE_PROVIDER_ID = 'delete_provider_id'
+	DELETE_USER_ID = 'delete_user_id'
+	UPDATE_ACCESS_SOURCE_ID = 'update_access_source_id'
+	UPDATE_ACCESS_PROVIDER_ID = 'update_access_provider_id'
+	UPDATE_ACCESS_DECL_SOURCE_ID = 'update_access_decl_source_id'
+
+
+class CommonActionsQueueItem(BaseModel):
+	id: int
+
+
+class ActionsQueueItemDeleteSourceIds(CommonActionsQueueItem):
+	type: Literal[ActionType.DELETE_SOURCE_IDS]
+	payload: ActionPayloadDeleteSourceIds
+
+
+class ActionsQueueItemDeleteProviderId(CommonActionsQueueItem):
+	type: Literal[ActionType.DELETE_PROVIDER_ID]
+	payload: ActionPayloadDeleteProviderId
+
+
+class ActionsQueueItemDeleteUserId(CommonActionsQueueItem):
+	type: Literal[ActionType.DELETE_USER_ID]
+	payload: ActionPayloadDeleteUserId
+
+
+class ActionsQueueItemUpdateAccessSourceId(CommonActionsQueueItem):
+	type: Literal[ActionType.UPDATE_ACCESS_SOURCE_ID]
+	payload: ActionPayloadUpdateAccessSourceId
+
+
+class ActionsQueueItemUpdateAccessProviderId(CommonActionsQueueItem):
+	type: Literal[ActionType.UPDATE_ACCESS_PROVIDER_ID]
+	payload: ActionPayloadUpdateAccessProviderId
+
+
+class ActionsQueueItemUpdateAccessDeclSourceId(CommonActionsQueueItem):
+	type: Literal[ActionType.UPDATE_ACCESS_DECL_SOURCE_ID]
+	payload: ActionPayloadUpdateAccessDeclSourceId
+
+
+ActionsQueueItem = Annotated[
+	ActionsQueueItemDeleteSourceIds
+	| ActionsQueueItemDeleteProviderId
+	| ActionsQueueItemDeleteUserId
+	| ActionsQueueItemUpdateAccessSourceId
+	| ActionsQueueItemUpdateAccessProviderId
+	| ActionsQueueItemUpdateAccessDeclSourceId,
+	Discriminator('type'),
+]
+
+
+class ActionsQueueItems(BaseModel):
+	actions: dict[int, ActionsQueueItem]

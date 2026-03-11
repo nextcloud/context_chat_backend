@@ -129,7 +129,7 @@ def _increase_access_for_existing_sources(
 	for db_id, source in existing_sources.items():
 		try:
 			vectordb.update_access(
-				UpdateAccessOp.allow,
+				UpdateAccessOp.ALLOW,
 				list(map(_decode_latin_1, source.userIds)),
 				source.reference,
 			)

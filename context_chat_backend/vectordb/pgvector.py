@@ -324,7 +324,7 @@ class VectorDB(BaseVectorDB):
 				)
 
 			match op:
-				case UpdateAccessOp.allow:
+				case UpdateAccessOp.ALLOW:
 					stmt = (
 						postgresql_dialects.insert(AccessListStore)
 						.values([
@@ -339,7 +339,7 @@ class VectorDB(BaseVectorDB):
 					session.execute(stmt)
 					session.commit()
 
-				case UpdateAccessOp.deny:
+				case UpdateAccessOp.DENY:
 					stmt = (
 						sa.delete(AccessListStore)
 						.filter(AccessListStore.uid.in_(user_ids))
@@ -427,11 +427,12 @@ class VectorDB(BaseVectorDB):
 			stmt_doc = (
 				sa.delete(DocumentsStore)
 				.filter(DocumentsStore.source_id.in_(source_ids))
-				.returning(DocumentsStore.chunks)
+				.returning(DocumentsStore.chunks, DocumentsStore.source_id)
 			)
 
 			doc_result = session.execute(stmt_doc)
 			chunks_to_delete = [str(c) for res in doc_result for c in res.chunks]
+			deleted_source_ids = [str(res.source_id) for res in doc_result]
 		except Exception as e:
 			session.rollback()
 			if session_ is None:
@@ -457,6 +458,14 @@ class VectorDB(BaseVectorDB):
 			if session_ is None:
 				session.close()
 
+		undeleted_source_ids = set(source_ids) - set(deleted_source_ids)
+		if len(undeleted_source_ids) > 0:
+			logger.info(
+				f'Source ids {undeleted_source_ids} were not deleted from documents store.'
+				' This can be due to the source ids not existing in the documents store due to'
+				' already being deleted or not having been added yet.'
+			)
+
 	def delete_provider(self, provider_key: str):
 		with self.session_maker() as session:
 			try:
@@ -470,6 +479,10 @@ class VectorDB(BaseVectorDB):
 
 				doc_result = session.execute(stmt)
 				chunks_to_delete = [str(c) for res in doc_result for c in res.chunks]
+
+				if len(chunks_to_delete) == 0:
+					logger.info(f'No documents found for provider {provider_key} when attempting to delete provider.')
+					return
 			except Exception as e:
 				session.rollback()
 				raise DbException('Error: deleting provider from docs store') from e
@@ -503,7 +516,16 @@ class VectorDB(BaseVectorDB):
 				session.rollback()
 				raise DbException('Error: deleting user from access list') from e
 
-			self._cleanup_if_orphaned(list(source_ids), session)
+			try:
+				self._cleanup_if_orphaned(list(source_ids), session)
+			except Exception as e:
+				session.rollback()
+				logger.error(
+					'Error cleaning up orphaned source ids after deleting user, manual cleanup might be required',
+					exc_info=e,
+					extra={ 'source_ids': list(source_ids) },
+				)
+				raise DbException('Error: cleaning up orphaned source ids after deleting user') from e
 
 	def count_documents_by_provider(self) -> dict[str, int]:
 		try:

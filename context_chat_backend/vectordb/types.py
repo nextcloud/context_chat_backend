@@ -14,5 +14,5 @@ class SafeDbException(Exception):
 
 
 class UpdateAccessOp(Enum):
-	allow = 'allow'
-	deny = 'deny'
+	ALLOW = 'allow'
+	DENY = 'deny'
