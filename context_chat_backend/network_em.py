@@ -79,6 +79,7 @@ class NetworkEmbeddings(Embeddings, BaseModel):
 				raise FatalEmbeddingException(response.text)
 			if response.status_code // 100 != 2:
 				raise EmbeddingException(response.text)
+		# todo: rework exception handling and their downstream interpretation
 		except FatalEmbeddingException as e:
 			logger.error('Fatal error while getting embeddings: %s', str(e), exc_info=e)
 			raise e
@@ -108,10 +109,14 @@ class NetworkEmbeddings(Embeddings, BaseModel):
 			logger.error('Unexpected error while getting embeddings', exc_info=e)
 			raise EmbeddingException('Error: unexpected error while getting embeddings') from e
 
-		# converts TypedDict to a pydantic model
-		resp = CreateEmbeddingResponse(**response.json())
-		if isinstance(input_, str):
-			return resp['data'][0]['embedding']
+		try:
+			# converts TypedDict to a pydantic model
+			resp = CreateEmbeddingResponse(**response.json())
+			if isinstance(input_, str):
+				return resp['data'][0]['embedding']
+		except Exception as e:
+			logger.error('Error parsing embedding response', exc_info=e)
+			raise EmbeddingException('Error: failed to parse embedding response') from e
 
 		# only one embedding in d['embedding'] since truncate is True
 		return [d['embedding'] for d in resp['data']]  # pyright: ignore[reportReturnType]

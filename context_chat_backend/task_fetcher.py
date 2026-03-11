@@ -261,6 +261,7 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			providers_result = {}
 			chunk_size = FILES_INDEXING_BATCH_SIZE // PARALLEL_FILE_PARSING
 
+			# todo: do it in asyncio, it's not truly parallel yet
 			# chunk file parsing for better file operation parallelism
 			for i in range(0, len(source_files), chunk_size):
 				chunk = dict(list(source_files.items())[i:i+chunk_size])
