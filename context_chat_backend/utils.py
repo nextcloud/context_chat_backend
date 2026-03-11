@@ -5,7 +5,6 @@
 import logging
 import multiprocessing as mp
 import os
-import re
 import traceback
 from collections.abc import Callable
 from functools import partial, wraps
@@ -100,15 +99,6 @@ def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daem
 		raise result['error']
 
 	return result['value']
-
-
-def is_valid_source_id(source_id: str) -> bool:
-	# note the ":" in the item id part
-	return re.match(r'^[a-zA-Z0-9_-]+__[a-zA-Z0-9_-]+: [a-zA-Z0-9:-]+$', source_id) is not None
-
-
-def is_valid_provider_id(provider_id: str) -> bool:
-	return re.match(r'^[a-zA-Z0-9_-]+__[a-zA-Z0-9_-]+$', provider_id) is not None
 
 
 def timed(func: Callable):

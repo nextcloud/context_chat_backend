@@ -2,14 +2,14 @@
 # SPDX-FileCopyrightText: 2024 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+import re
 from enum import Enum
 from io import BytesIO
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, Discriminator, field_validator
+from pydantic import AfterValidator, BaseModel, Discriminator, field_validator, model_validator
 
 from .mimetype_list import SUPPORTED_MIMETYPES
-from .utils import is_valid_provider_id, is_valid_source_id
 from .vectordb.types import UpdateAccessOp
 
 __all__ = [
@@ -24,6 +24,49 @@ __all__ = [
 
 DEFAULT_EM_MODEL_ALIAS = 'em_model'
 FILES_PROVIDER_ID = 'files__default'
+
+
+def is_valid_source_id(source_id: str) -> bool:
+	# note the ":" in the item id part
+	return re.match(r'^[a-zA-Z0-9_-]+__[a-zA-Z0-9_-]+: [a-zA-Z0-9:-]+$', source_id) is not None
+
+
+def is_valid_provider_id(provider_id: str) -> bool:
+	return re.match(r'^[a-zA-Z0-9_-]+__[a-zA-Z0-9_-]+$', provider_id) is not None
+
+
+def _validate_source_ids(source_ids: list[str]) -> list[str]:
+	if (
+		not isinstance(source_ids, list)
+		or not all(isinstance(sid, str) and sid.strip() != '' for sid in source_ids)
+		or len(source_ids) == 0
+	):
+		raise ValueError('sourceIds must be a non-empty list of non-empty strings')
+	return [sid.strip() for sid in source_ids]
+
+
+def _validate_source_id(source_id: str) -> str:
+	return _validate_source_ids([source_id])[0]
+
+
+def _validate_provider_id(provider_id: str) -> str:
+	if not isinstance(provider_id, str) or not is_valid_provider_id(provider_id):
+		raise ValueError('providerId must be a valid provider ID string')
+	return provider_id
+
+
+def _validate_user_ids(user_ids: list[str]) -> list[str]:
+	if (
+		not isinstance(user_ids, list)
+		or not all(isinstance(uid, str) and uid.strip() != '' for uid in user_ids)
+		or len(user_ids) == 0
+	):
+		raise ValueError('userIds must be a non-empty list of non-empty strings')
+	return [uid.strip() for uid in user_ids]
+
+
+def _validate_user_id(user_id: str) -> str:
+	return _validate_user_ids([user_id])[0]
 
 
 class TEmbeddingAuthApiKey(BaseModel):
@@ -89,12 +132,13 @@ class AppRole(str, Enum):
 
 
 class CommonSourceItem(BaseModel):
-	userIds: list[str]
-	reference: str  # source_id of the form "appId__providerId: itemId"
+	userIds: Annotated[list[str], AfterValidator(_validate_user_ids)]
+	# source_id of the form "appId__providerId: itemId"
+	reference: Annotated[str, AfterValidator(_validate_source_id)]
 	title: str
 	modified: int | str  # todo: int/string?
 	type: str
-	provider: str
+	provider: Annotated[str, AfterValidator(_validate_provider_id)]
 	size: int
 
 	@field_validator('modified', mode='before')
@@ -116,42 +160,13 @@ class CommonSourceItem(BaseModel):
 			raise ValueError('Must be a non-empty string')
 		return v.strip()
 
-	@field_validator('userIds', mode='after')
-	def validate_user_ids(self) -> Self:
-		if (
-			not isinstance(self.userIds, list)
-			or not all(
-				isinstance(uid, str)
-				and uid.strip() != ''
-				for uid in self.userIds
-			)
-			or len(self.userIds) == 0
-		):
-			raise ValueError('userIds must be a non-empty list of non-empty strings')
-		self.userIds = [uid.strip() for uid in self.userIds]
-		return self
-
-	@field_validator('reference', mode='after')
-	def validate_reference_format(self) -> Self:
-		# validate reference format: "appId__providerId: itemId"
-		if not is_valid_source_id(self.reference):
-			raise ValueError('Invalid reference format, must be "appId__providerId: itemId"')
-		return self
-
-	@field_validator('provider', mode='after')
-	def validate_provider_format(self) -> Self:
-		# validate provider format: "appId__providerId"
-		if not is_valid_provider_id(self.provider):
-			raise ValueError('Invalid provider format, must be "appId__providerId"')
-		return self
-
-	@field_validator('type', mode='after')
+	@model_validator(mode='after')
 	def validate_type(self) -> Self:
 		if self.reference.startswith(FILES_PROVIDER_ID) and self.type not in SUPPORTED_MIMETYPES:
 			raise ValueError(f'Unsupported file type: {self.type} for reference {self.reference}')
 		return self
 
-	@field_validator('size', mode='after')
+	@model_validator(mode='after')
 	def validate_size(self) -> Self:
 		if not isinstance(self.size, int) or self.size < 0:
 			raise ValueError(f'Invalid size value: {self.size}, must be a non-negative integer')
@@ -181,6 +196,10 @@ class SourceItem(CommonSourceItem):
 				raise ValueError('Content must be a non-empty BytesIO')
 			return v
 		raise ValueError('Content must be either a non-empty string or a non-empty BytesIO')
+
+	class Config:
+		# to allow BytesIO in content field
+		arbitrary_types_allowed = True
 
 
 class FilesQueueItems(BaseModel):
@@ -219,104 +238,33 @@ class IndexingError(BaseModel):
 # }
 
 
-def _validate_source_ids(source_ids: list[str]) -> list[str]:
-	if (
-		not isinstance(source_ids, list)
-		or not all(isinstance(sid, str) and sid.strip() != '' for sid in source_ids)
-		or len(source_ids) == 0
-	):
-		raise ValueError('sourceIds must be a non-empty list of non-empty strings')
-	return [sid.strip() for sid in source_ids]
-
-
-def _validate_provider_id(provider_id: str) -> str:
-	if not isinstance(provider_id, str) or not is_valid_provider_id(provider_id):
-		raise ValueError('providerId must be a valid provider ID string')
-	return provider_id
-
-
-def _validate_user_ids(user_ids: list[str]) -> list[str]:
-	if (
-		not isinstance(user_ids, list)
-		or not all(isinstance(uid, str) and uid.strip() != '' for uid in user_ids)
-		or len(user_ids) == 0
-	):
-		raise ValueError('userIds must be a non-empty list of non-empty strings')
-	return [uid.strip() for uid in user_ids]
-
-
 class ActionPayloadDeleteSourceIds(BaseModel):
-	sourceIds: list[str]
-
-	@field_validator('sourceIds', mode='after')
-	def validate_source_ids(self) -> Self:
-		self.sourceIds = _validate_source_ids(self.sourceIds)
-		return self
+	sourceIds: Annotated[list[str], AfterValidator(_validate_source_ids)]
 
 
 class ActionPayloadDeleteProviderId(BaseModel):
-	providerId: str
-
-	@field_validator('providerId')
-	def validate_provider_id(self) -> Self:
-		self.providerId = _validate_provider_id(self.providerId)
-		return self
+	providerId: Annotated[str, AfterValidator(_validate_provider_id)]
 
 
 class ActionPayloadDeleteUserId(BaseModel):
-	userId: str
-
-	@field_validator('userId')
-	def validate_user_id(self) -> Self:
-		self.userId = _validate_user_ids([self.userId])[0]
-		return self
+	userId: Annotated[str, AfterValidator(_validate_user_id)]
 
 
 class ActionPayloadUpdateAccessSourceId(BaseModel):
 	op: UpdateAccessOp
-	userIds: list[str]
-	sourceId: str
-
-	@field_validator('userIds', mode='after')
-	def validate_user_ids(self) -> Self:
-		self.userIds = _validate_user_ids(self.userIds)
-		return self
-
-	@field_validator('sourceId')
-	def validate_source_id(self) -> Self:
-		self.sourceId = _validate_source_ids([self.sourceId])[0]
-		return self
+	userIds: Annotated[list[str], AfterValidator(_validate_user_ids)]
+	sourceId: Annotated[str, AfterValidator(_validate_source_id)]
 
 
 class ActionPayloadUpdateAccessProviderId(BaseModel):
 	op: UpdateAccessOp
-	userIds: list[str]
-	providerId: str
-
-	@field_validator('userIds', mode='after')
-	def validate_user_ids(self) -> Self:
-		self.userIds = _validate_user_ids(self.userIds)
-		return self
-
-	@field_validator('providerId')
-	def validate_provider_id(self) -> Self:
-		self.providerId = _validate_provider_id(self.providerId)
-		return self
+	userIds: Annotated[list[str], AfterValidator(_validate_user_ids)]
+	providerId: Annotated[str, AfterValidator(_validate_provider_id)]
 
 
 class ActionPayloadUpdateAccessDeclSourceId(BaseModel):
-	userIds: list[str]
-	sourceId: str
-
-	@field_validator('userIds', mode='after')
-	def validate_user_ids(self) -> Self:
-		self.userIds = _validate_user_ids(self.userIds)
-		return self
-
-	@field_validator('sourceId')
-	def validate_source_id(self) -> Self:
-		self.sourceId = _validate_source_ids([self.sourceId])[0]
-		return self
+	userIds: Annotated[list[str], AfterValidator(_validate_user_ids)]
+	sourceId: Annotated[str, AfterValidator(_validate_source_id)]
 
 
 class ActionType(str, Enum):
