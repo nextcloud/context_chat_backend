@@ -80,7 +80,7 @@ async def __fetch_file_content(
 			# a file pointer for storing the stream in memory until it is consumed
 			fp = BytesIO()
 			await nc._session.download2fp(
-				url_path=f'/apps/context_chat/files/{file_id}',
+				url_path=f'/ocs/v2.php/apps/context_chat/files/{file_id}',
 				fp=fp,
 				dav=False,
 				params={ 'userId': user_id },
@@ -209,7 +209,7 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			# todo: add the 'size' param to the return of this call.
 			q_items_res = nc.ocs(
 				'GET',
-				'/apps/context_chat/queues/documents',
+				'/ocs/v2.php/apps/context_chat/queues/documents',
 				params={ 'n': FILES_INDEXING_BATCH_SIZE }
 			)
 
@@ -292,7 +292,7 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 		try:
 			nc.ocs(
 				'DELETE',
-				'/apps/context_chat/queues/documents/',
+				'/ocs/v2.php/apps/context_chat/queues/documents/',
 				json={
 					'files': to_delete_file_ids,
 					'content_providers': to_delete_provider_ids,
@@ -308,7 +308,7 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 				nc = NextcloudApp()
 				nc.ocs(
 					'DELETE',
-					'/apps/context_chat/queues/documents/',
+					'/ocs/v2.php/apps/context_chat/queues/documents/',
 					json={
 						'files': to_delete_file_ids,
 						'content_providers': to_delete_provider_ids,
@@ -338,7 +338,7 @@ def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			nc = NextcloudApp()
 			q_items_res = nc.ocs(
 				'GET',
-				'/apps/context_chat/queues/actions',
+				'/ocs/v2.php/apps/context_chat/queues/actions',
 				params={ 'n': ACTIONS_BATCH_SIZE }
 			)
 
@@ -461,7 +461,7 @@ def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 		try:
 			nc.ocs(
 				'DELETE',
-				'/apps/context_chat/queues/actions/',
+				'/ocs/v2.php/apps/context_chat/queues/actions/',
 				json={ 'actions': processed_event_ids },
 			)
 		except (
@@ -474,7 +474,7 @@ def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 				nc = NextcloudApp()
 				nc.ocs(
 					'DELETE',
-					'/apps/context_chat/queues/actions/',
+					'/ocs/v2.php/apps/context_chat/queues/actions/',
 					json={ 'ids': processed_event_ids },
 				)
 			continue
