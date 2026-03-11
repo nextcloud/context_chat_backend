@@ -199,26 +199,87 @@ jobs:
           ls -la context_chat_backend/persistent_storage/*
           sleep 30 # Wait for the em server to get ready
 
-      - name: Scan files, baseline
-        run: |
-          ./occ files:scan admin
-          ./occ context_chat:scan admin -m text/plain
-
-      - name: Check python memory usage
+      - name: Initial memory usage check
         run: |
           ps -p $(cat pid.txt) -o pid,cmd,%mem,rss --sort=-%mem
           ps -p $(cat pid.txt) -o %mem --no-headers > initial_mem.txt
 
-      - name: Scan files
+      - name: Periodically check context_chat stats for 15 minutes to allow the backend to index the files
         run: |
-          ./occ files:scan admin
-          ./occ context_chat:scan admin -m text/markdown &
-          ./occ context_chat:scan admin -m text/x-rst
+          success=0
+          for i in {1..90}; do
+            echo "Checking stats, attempt $i..."
 
-      - name: Check python memory usage
-        run: |
-          ps -p $(cat pid.txt) -o pid,cmd,%mem,rss --sort=-%mem
-          ps -p $(cat pid.txt) -o %mem --no-headers > after_scan_mem.txt
+            mkfifo error_pipe
+            stats=$(timeout 5 ./occ context_chat:stats 2>error_pipe)
+            echo "Stats output:"
+            echo "$stats"
+            echo "---"
+
+            # Check for critical errors in output
+            if echo "$stats" | grep -q "Error during request"; then
+              echo "Backend connection error detected, retrying..."
+              rm -f error_pipe
+              sleep 10
+              continue
+            fi
+
+            # Extract Total eligible files
+            total_files=$(echo "$stats" | grep -oP 'Total eligible files:\s*\K\d+' || echo "")
+
+            # Extract Indexed documents count (files__default)
+            indexed_count=$(echo "$stats" | grep -oP "'files__default'\s*=>\s*\K\d+" || echo "")
+
+            # Validate parsed values
+            if [ -z "$total_files" ] || [ -z "$indexed_count" ]; then
+              echo "Error: Could not parse stats output properly"
+              if echo "$stats" | grep -q "Indexed documents:"; then
+                echo "  Indexed documents section found but could not extract count"
+              fi
+              rm -f error_pipe
+              sleep 10
+              continue
+            fi
+
+            echo "Total eligible files: $total_files"
+            echo "Indexed documents (files__default): $indexed_count"
+
+            # Calculate absolute difference
+            diff=$((total_files - indexed_count))
+            if [ $diff -lt 0 ]; then
+              diff=$((-diff))
+            fi
+
+            # Calculate 2% threshold using bc for floating point support
+            threshold=$(echo "scale=4; $total_files * 0.02" | bc)
+
+            # Check if difference is within tolerance
+            if (( $(echo "$diff <= $threshold" | bc -l) )); then
+              echo "Indexing within 2% tolerance (diff=$diff, threshold=$threshold)"
+              rm -f error_pipe
+              success=1
+              break
+            else
+              pct=$(echo "scale=2; ($diff / $total_files) * 100" | bc)
+              echo "Outside 2% tolerance: diff=$diff (${pct}%), threshold=$threshold"
+            fi
+
+            # Check if backend is still alive
+            ccb_alive=$(ps -p $(cat pid.txt) -o cmd= | grep -c "main.py" || echo "0")
+            if [ "$ccb_alive" -eq 0 ]; then
+              echo "Error: Context Chat Backend process is not running. Exiting."
+              rm -f error_pipe
+              exit 1
+            fi
+
+            rm -f error_pipe
+            sleep 10
+          done
+
+          if [ $success -ne 1 ]; then
+            echo "Max attempts reached"
+            exit 1
+          fi
 
       - name: Run the prompts
         run: |
@@ -250,19 +311,6 @@ jobs:
             echo "Memory usage has increased during scan. Possible memory leak detected!"
           else
             echo "Memory usage during scan is stable. No memory leak detected."
-          fi
-
-      - name: Compare memory usage and detect leak
-        run: |
-          initial_mem=$(cat after_scan_mem.txt | tr -d ' ')
-          final_mem=$(cat after_prompt_mem.txt | tr -d ' ')
-          echo "Initial Memory Usage: $initial_mem%"
-          echo "Memory Usage after prompt: $final_mem%"
-
-          if (( $(echo "$final_mem > $initial_mem" | bc -l) )); then
-            echo "Memory usage has increased during prompt. Possible memory leak detected!"
-          else
-            echo "Memory usage during prompt is stable. No memory leak detected."
           fi
 
       - name: Show server logs
