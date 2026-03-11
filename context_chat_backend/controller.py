@@ -6,7 +6,7 @@
 # isort: off
 from .chain.types import ContextException, LLMOutput, ScopeType, SearchResult
 from .types import LoaderException, EmbeddingException
-from .vectordb.types import DbException, SafeDbException, UpdateAccessOp
+from .vectordb.types import DbException, SafeDbException
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
 
 # setup env vars before importing other modules
@@ -25,9 +25,9 @@ from contextlib import asynccontextmanager
 from functools import wraps
 from threading import Event, Thread
 from time import sleep
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import Body, FastAPI, Request
+from fastapi import FastAPI, Request
 from langchain.llms.base import LLM
 from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import persistent_storage, set_handlers
@@ -40,16 +40,9 @@ from .config_parser import get_config
 from .dyn_loader import LLMModelLoader, VectorDBLoader
 from .models.types import LlmException
 from nc_py_api.ex_app import AppAPIAuthMiddleware
-from .utils import JSONResponse, exec_in_proc, is_valid_provider_id, is_valid_source_id, value_of
+from .utils import JSONResponse, exec_in_proc, value_of
 from .task_fetcher import start_bg_threads, wait_for_bg_threads
-from .vectordb.service import (
-	count_documents_by_provider,
-	decl_update_access,
-	delete_by_provider,
-	delete_by_source,
-	delete_user,
-	update_access,
-)
+from .vectordb.service import count_documents_by_provider
 
 # setup
 
@@ -227,119 +220,131 @@ def _():
 	return JSONResponse(counts)
 
 
-@app.post('/updateAccessDeclarative')
-@enabled_guard(app)
-def _(
-	userIds: Annotated[list[str], Body()],
-	sourceId: Annotated[str, Body()],
-):
-	logger.debug('Update access declarative request:', extra={
-		'user_ids': userIds,
-		'source_id': sourceId,
-	})
-
-	if len(userIds) == 0:
-		return JSONResponse('Empty list of user ids', 400)
-
-	if not is_valid_source_id(sourceId):
-		return JSONResponse('Invalid source id', 400)
-
-	exec_in_proc(target=decl_update_access, args=(vectordb_loader, userIds, sourceId))
-
-	return JSONResponse('Access updated')
+@app.get('/downloadLogs')
+def download_logs() -> FileResponse:
+	with tempfile.NamedTemporaryFile('wb', delete=False) as tmp:
+		with zipfile.ZipFile(tmp, mode='w', compression=zipfile.ZIP_DEFLATED) as zip_file:
+			files = os.listdir(os.path.join(persistent_storage(), 'logs'))
+			for file in files:
+				file_path = os.path.join(persistent_storage(), 'logs', file)
+				if os.path.isfile(file_path): # Might be a folder (just skip it then)
+					zip_file.write(file_path)
+		return FileResponse(tmp.name, media_type='application/zip', filename='docker_logs.zip')
 
 
-@app.post('/updateAccess')
-@enabled_guard(app)
-def _(
-	op: Annotated[UpdateAccessOp, Body()],
-	userIds: Annotated[list[str], Body()],
-	sourceId: Annotated[str, Body()],
-):
-	logger.debug('Update access request', extra={
-		'op': op,
-		'user_ids': userIds,
-		'source_id': sourceId,
-	})
+# @app.post('/updateAccessDeclarative')
+# @enabled_guard(app)
+# def _(
+# 	userIds: Annotated[list[str], Body()],
+# 	sourceId: Annotated[str, Body()],
+# ):
+# 	logger.debug('Update access declarative request:', extra={
+# 		'user_ids': userIds,
+# 		'source_id': sourceId,
+# 	})
 
-	if len(userIds) == 0:
-		return JSONResponse('Empty list of user ids', 400)
+# 	if len(userIds) == 0:
+# 		return JSONResponse('Empty list of user ids', 400)
 
-	if not is_valid_source_id(sourceId):
-		return JSONResponse('Invalid source id', 400)
+# 	if not is_valid_source_id(sourceId):
+# 		return JSONResponse('Invalid source id', 400)
 
-	exec_in_proc(target=update_access, args=(vectordb_loader, op, userIds, sourceId))
+# 	exec_in_proc(target=decl_update_access, args=(vectordb_loader, userIds, sourceId))
 
-	return JSONResponse('Access updated')
+# 	return JSONResponse('Access updated')
 
 
-@app.post('/updateAccessProvider')
-@enabled_guard(app)
-def _(
-	op: Annotated[UpdateAccessOp, Body()],
-	userIds: Annotated[list[str], Body()],
-	providerId: Annotated[str, Body()],
-):
-	logger.debug('Update access by provider request', extra={
-		'op': op,
-		'user_ids': userIds,
-		'provider_id': providerId,
-	})
+# @app.post('/updateAccess')
+# @enabled_guard(app)
+# def _(
+# 	op: Annotated[UpdateAccessOp, Body()],
+# 	userIds: Annotated[list[str], Body()],
+# 	sourceId: Annotated[str, Body()],
+# ):
+# 	logger.debug('Update access request', extra={
+# 		'op': op,
+# 		'user_ids': userIds,
+# 		'source_id': sourceId,
+# 	})
 
-	if len(userIds) == 0:
-		return JSONResponse('Empty list of user ids', 400)
+# 	if len(userIds) == 0:
+# 		return JSONResponse('Empty list of user ids', 400)
 
-	if not is_valid_provider_id(providerId):
-		return JSONResponse('Invalid provider id', 400)
+# 	if not is_valid_source_id(sourceId):
+# 		return JSONResponse('Invalid source id', 400)
 
-	exec_in_proc(target=update_access, args=(vectordb_loader, op, userIds, providerId))
+# 	exec_in_proc(target=update_access, args=(vectordb_loader, op, userIds, sourceId))
 
-	return JSONResponse('Access updated')
-
-
-@app.post('/deleteSources')
-@enabled_guard(app)
-def _(sourceIds: Annotated[list[str], Body(embed=True)]):
-	logger.debug('Delete sources request', extra={
-		'source_ids': sourceIds,
-	})
-
-	sourceIds = [source.strip() for source in sourceIds if source.strip() != '']
-
-	if len(sourceIds) == 0:
-		return JSONResponse('No sources provided', 400)
-
-	res = exec_in_proc(target=delete_by_source, args=(vectordb_loader, sourceIds))
-	if res is False:
-		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
-
-	return JSONResponse('All valid sources deleted')
+# 	return JSONResponse('Access updated')
 
 
-@app.post('/deleteProvider')
-@enabled_guard(app)
-def _(providerKey: str = Body(embed=True)):
-	logger.debug('Delete sources by provider for all users request', extra={ 'provider_key': providerKey })
+# @app.post('/updateAccessProvider')
+# @enabled_guard(app)
+# def _(
+# 	op: Annotated[UpdateAccessOp, Body()],
+# 	userIds: Annotated[list[str], Body()],
+# 	providerId: Annotated[str, Body()],
+# ):
+# 	logger.debug('Update access by provider request', extra={
+# 		'op': op,
+# 		'user_ids': userIds,
+# 		'provider_id': providerId,
+# 	})
 
-	if value_of(providerKey) is None:
-		return JSONResponse('Invalid provider key provided', 400)
+# 	if len(userIds) == 0:
+# 		return JSONResponse('Empty list of user ids', 400)
 
-	exec_in_proc(target=delete_by_provider, args=(vectordb_loader, providerKey))
+# 	if not is_valid_provider_id(providerId):
+# 		return JSONResponse('Invalid provider id', 400)
 
-	return JSONResponse('All valid sources deleted')
+# 	exec_in_proc(target=update_access_provider, args=(vectordb_loader, op, userIds, providerId))
+
+# 	return JSONResponse('Access updated')
 
 
-@app.post('/deleteUser')
-@enabled_guard(app)
-def _(userId: str = Body(embed=True)):
-	logger.debug('Remove access list for user, and orphaned sources', extra={ 'user_id': userId })
+# @app.post('/deleteSources')
+# @enabled_guard(app)
+# def _(sourceIds: Annotated[list[str], Body(embed=True)]):
+# 	logger.debug('Delete sources request', extra={
+# 		'source_ids': sourceIds,
+# 	})
 
-	if value_of(userId) is None:
-		return JSONResponse('Invalid userId provided', 400)
+# 	sourceIds = [source.strip() for source in sourceIds if source.strip() != '']
 
-	exec_in_proc(target=delete_user, args=(vectordb_loader, userId))
+# 	if len(sourceIds) == 0:
+# 		return JSONResponse('No sources provided', 400)
 
-	return JSONResponse('User deleted')
+# 	res = exec_in_proc(target=delete_by_source, args=(vectordb_loader, sourceIds))
+# 	if res is False:
+# 		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
+
+# 	return JSONResponse('All valid sources deleted')
+
+
+# @app.post('/deleteProvider')
+# @enabled_guard(app)
+# def _(providerKey: str = Body(embed=True)):
+# 	logger.debug('Delete sources by provider for all users request', extra={ 'provider_key': providerKey })
+
+# 	if value_of(providerKey) is None:
+# 		return JSONResponse('Invalid provider key provided', 400)
+
+# 	exec_in_proc(target=delete_by_provider, args=(vectordb_loader, providerKey))
+
+# 	return JSONResponse('All valid sources deleted')
+
+
+# @app.post('/deleteUser')
+# @enabled_guard(app)
+# def _(userId: str = Body(embed=True)):
+# 	logger.debug('Remove access list for user, and orphaned sources', extra={ 'user_id': userId })
+
+# 	if value_of(userId) is None:
+# 		return JSONResponse('Invalid userId provided', 400)
+
+# 	exec_in_proc(target=delete_user, args=(vectordb_loader, userId))
+
+# 	return JSONResponse('User deleted')
 
 
 # @app.put('/loadSources')
@@ -503,15 +508,3 @@ def _(query: Query) -> list[SearchResult]:
 		query.scopeType,
 		query.scopeList,
 	))
-
-
-@app.get('/downloadLogs')
-def download_logs() -> FileResponse:
-	with tempfile.NamedTemporaryFile('wb', delete=False) as tmp:
-		with zipfile.ZipFile(tmp, mode='w', compression=zipfile.ZIP_DEFLATED) as zip_file:
-			files = os.listdir(os.path.join(persistent_storage(), 'logs'))
-			for file in files:
-				file_path = os.path.join(persistent_storage(), 'logs', file)
-				if os.path.isfile(file_path): # Might be a folder (just skip it then)
-					zip_file.write(file_path)
-		return FileResponse(tmp.name, media_type='application/zip', filename='docker_logs.zip')
