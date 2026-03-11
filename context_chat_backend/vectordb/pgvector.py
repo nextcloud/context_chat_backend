@@ -17,7 +17,7 @@ from langchain_core.embeddings import Embeddings
 from langchain_postgres.vectorstores import Base, PGVector
 
 from ..chain.types import InDocument, ScopeType
-from ..types import EmbeddingException, IndexingError, RetryableEmbeddingException, SourceItem
+from ..types import EmbeddingException, FatalEmbeddingException, IndexingError, RetryableEmbeddingException, SourceItem
 from ..utils import timed
 from .base import BaseVectorDB
 from .types import DbException, SafeDbException, UpdateAccessOp
@@ -181,7 +181,11 @@ class VectorDB(BaseVectorDB):
 						retryable=True,
 					)
 					continue
-				except RetryableEmbeddingException as e:
+				except FatalEmbeddingException as e:
+					raise EmbeddingException(
+						f'Fatal error while embedding documents for source {indoc.source_id}: {e}'
+					) from e
+				except (RetryableEmbeddingException, EmbeddingException) as e:
 					# temporary error, continue with the next document
 					logger.exception('Error adding documents to vectordb, should be retried later.', exc_info=e, extra={
 						'source_id': indoc.source_id,
@@ -189,15 +193,6 @@ class VectorDB(BaseVectorDB):
 					results[php_db_id] = IndexingError(
 						error=str(e),
 						retryable=True,
-					)
-					continue
-				except EmbeddingException as e:
-					logger.exception('Error adding documents to vectordb', exc_info=e, extra={
-						'source_id': indoc.source_id,
-					})
-					results[php_db_id] = IndexingError(
-						error=str(e),
-						retryable=False,
 					)
 					continue
 				except Exception as e:
