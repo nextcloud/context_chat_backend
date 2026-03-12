@@ -169,6 +169,10 @@ jobs:
           cd ..
           rm -rf documentation
 
+      - name: Run files scan
+        run: |
+          ./occ files:scan --all
+
       - name: Setup python 3.11
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5
         with:
