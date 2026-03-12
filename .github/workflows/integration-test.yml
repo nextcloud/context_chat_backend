@@ -204,9 +204,18 @@ jobs:
           ps -p $(cat pid.txt) -o pid,cmd,%mem,rss --sort=-%mem
           ps -p $(cat pid.txt) -o %mem --no-headers > initial_mem.txt
 
+      - name: Run cron jobs
+        run: |
+          # every 10 seconds indefinitely
+          while true; do
+            php cron.php
+            sleep 10
+          done &
+
       - name: Periodically check context_chat stats for 15 minutes to allow the backend to index the files
         run: |
           success=0
+          echo "::group::Checking stats periodically for 15 minutes to allow the backend to index the files"
           for i in {1..90}; do
             echo "Checking stats, attempt $i..."
 
@@ -276,6 +285,10 @@ jobs:
 
             sleep 10
           done
+
+          echo "::endgroup::"
+
+          ./occ context_chat:stats
 
           if [ $success -ne 1 ]; then
             echo "Max attempts reached"
