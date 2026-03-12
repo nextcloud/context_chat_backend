@@ -210,16 +210,21 @@ jobs:
           for i in {1..90}; do
             echo "Checking stats, attempt $i..."
 
-            mkfifo error_pipe
-            stats=$(timeout 5 ./occ context_chat:stats 2>error_pipe)
+            stats_err=$(mktemp)
+            stats=$(timeout 5 ./occ context_chat:stats 2>"$stats_err")
+            stats_exit=$?
             echo "Stats output:"
             echo "$stats"
+            if [ -s "$stats_err" ]; then
+              echo "Stderr:"
+              cat "$stats_err"
+            fi
             echo "---"
+            rm -f "$stats_err"
 
             # Check for critical errors in output
-            if echo "$stats" | grep -q "Error during request"; then
-              echo "Backend connection error detected, retrying..."
-              rm -f error_pipe
+            if [ $stats_exit -ne 0 ] || echo "$stats" | grep -q "Error during request"; then
+              echo "Backend connection error detected (exit=$stats_exit), retrying..."
               sleep 10
               continue
             fi
@@ -236,7 +241,6 @@ jobs:
               if echo "$stats" | grep -q "Indexed documents:"; then
                 echo "  Indexed documents section found but could not extract count"
               fi
-              rm -f error_pipe
               sleep 10
               continue
             fi
@@ -256,7 +260,6 @@ jobs:
             # Check if difference is within tolerance
             if (( $(echo "$diff <= $threshold" | bc -l) )); then
               echo "Indexing within 2% tolerance (diff=$diff, threshold=$threshold)"
-              rm -f error_pipe
               success=1
               break
             else
@@ -268,11 +271,9 @@ jobs:
             ccb_alive=$(ps -p $(cat pid.txt) -o cmd= | grep -c "main.py" || echo "0")
             if [ "$ccb_alive" -eq 0 ]; then
               echo "Error: Context Chat Backend process is not running. Exiting."
-              rm -f error_pipe
               exit 1
             fi
 
-            rm -f error_pipe
             sleep 10
           done
 
