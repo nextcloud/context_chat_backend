@@ -5,11 +5,10 @@
 import re
 from enum import Enum
 from io import BytesIO
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, Discriminator, computed_field, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, Discriminator, computed_field, field_validator
 
-from .mimetype_list import SUPPORTED_MIMETYPES
 from .vectordb.types import UpdateAccessOp
 
 __all__ = [
@@ -36,6 +35,7 @@ def is_valid_provider_id(provider_id: str) -> bool:
 
 
 def _validate_source_ids(source_ids: list[str]) -> list[str]:
+	# todo: use is_valid_source_id()
 	if (
 		not isinstance(source_ids, list)
 		or not all(isinstance(sid, str) and sid.strip() != '' for sid in source_ids)
@@ -182,12 +182,6 @@ class CommonSourceItem(BaseModel):
 			return float(v)
 		raise ValueError(f'Invalid size value: {v}, must be a non-negative number')
 
-	@model_validator(mode='after')
-	def validate_type(self) -> Self:
-		if self.reference.startswith(FILES_PROVIDER_ID) and self.type not in SUPPORTED_MIMETYPES:
-			raise ValueError(f'Unsupported file type: {self.type} for reference {self.reference}')
-		return self
-
 
 class ReceivedFileItem(CommonSourceItem):
 	content: None
@@ -204,6 +198,11 @@ class SourceItem(CommonSourceItem):
 	and for directly fetched content providers.
 	'''
 	content: str | BytesIO
+
+	@computed_field
+	@property
+	def file_id(self) -> int:
+		return _get_file_id_from_source_ref(self.reference)
 
 	@field_validator('content')
 	@classmethod
@@ -344,3 +343,11 @@ ActionsQueueItem = Annotated[
 
 class ActionsQueueItems(BaseModel):
 	actions: dict[int, ActionsQueueItem]
+
+
+class TaskProcException(Exception):
+	...
+
+
+class TaskProcFatalException(TaskProcException):
+	...

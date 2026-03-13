@@ -242,6 +242,7 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 				sleep(POLLING_COOLDOWN)
 				continue
 
+			LOGGER.debug(f'Fetched {len(q_items.files)} files and {len(q_items.content_providers)} content providers')
 			# populate files content and convert to source items
 			fetched_files = {}
 			source_files = {}
@@ -383,6 +384,7 @@ def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			sleep(POLLING_COOLDOWN)
 			continue
 
+		LOGGER.debug(f'Fetched {len(q_items.actions)} updates')
 		processed_event_ids = []
 		errored_events = {}
 		for i, (db_id, action_item) in enumerate(q_items.actions.items()):
