@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 
+import asyncio
 import logging
 import re
 import tempfile
@@ -18,7 +19,8 @@ from pypdf import PdfReader
 from pypdf.errors import FileNotDecryptedError as PdfFileNotDecryptedError
 from striprtf import striprtf
 
-from ...types import SourceItem
+from ...types import SourceItem, TaskProcException
+from .task_proc import do_ocr, do_transcription
 
 logger = logging.getLogger('ccb.doc_loader')
 
@@ -126,6 +128,22 @@ def decode_source(source: SourceItem) -> str | None:
 
 		mimetype = source.type
 		if mimetype is None:
+			return None
+
+		try:
+			if mimetype.startswith('image/'):
+				return asyncio.run(do_ocr(source.userIds[0], source.file_id))
+			if mimetype.startswith('audio/'):
+				return asyncio.run(do_transcription(source.userIds[0], source.file_id))
+		except TaskProcException as e:
+			# todo: convert this to error obj return
+			# todo: short circuit all other ocr/transcription files when a fatal error arrives
+			# todo:  maybe with a global ttl, with a retryable tag
+			logger.warning(f'OCR task failed for source file ({source.reference}): {e}')
+			return None
+		except ValueError:
+			# should not happen
+			logger.warning(f'Unexpected ValueError for source file ({source.reference})')
 			return None
 
 		if isinstance(source.content, str):

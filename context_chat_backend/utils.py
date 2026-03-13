@@ -9,7 +9,7 @@ import traceback
 from collections.abc import Callable
 from functools import partial, wraps
 from multiprocessing.connection import Connection
-from time import perf_counter_ns
+from time import perf_counter_ns, time
 from typing import Any, TypeGuard, TypeVar
 
 from fastapi.responses import JSONResponse as FastAPIJSONResponse
@@ -145,3 +145,20 @@ def get_app_role() -> AppRole:
 		_logger.warning(f'Invalid app role: {role}, defaulting to all roles')
 		return AppRole.NORMAL
 	return AppRole(role)
+
+
+# does not support caching of kwargs for recall
+def timed_cache_async(ttl: int):
+	def decorator(fn: Callable):
+		cached_store: dict[tuple, tuple[float, Any]] = {}
+		@wraps(fn)
+		async def wrapper(*args, **kwargs):
+			if args in cached_store:
+				cached_time, cached_value = cached_store[args]
+				if (time() - cached_time) < ttl:
+					return cached_value
+			new_val = await fn(*args, **kwargs)
+			cached_store[args] = (time(), new_val)
+			return new_val
+		return wrapper
+	return decorator

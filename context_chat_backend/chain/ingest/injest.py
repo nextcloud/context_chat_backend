@@ -2,20 +2,43 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+import asyncio
 import logging
 import re
 
 from langchain.schema import Document
 
 from ...dyn_loader import VectorDBLoader
-from ...types import IndexingError, SourceItem, TConfig
+from ...mimetype_list import AUDIO_MIMETYPES, IMAGE_MIMETYPES, SUPPORTED_MIMETYPES
+from ...types import FILES_PROVIDER_ID, IndexingError, SourceItem, TConfig
 from ...vectordb.base import BaseVectorDB
 from ...vectordb.types import DbException, SafeDbException, UpdateAccessOp
 from ..types import InDocument
 from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
+from .task_proc import OCR_TASK_TYPE, SPEECH_TO_TEXT_TASK_TYPE, is_task_type_available
 
 logger = logging.getLogger('ccb.injest')
+
+
+def _do_extended_mimetype_validation(source: SourceItem, ocr_available: bool, stt_available: bool) -> None:
+	'''
+	Raises
+	------
+	ValueError
+	'''
+
+	extended_mimetypes = (
+		*SUPPORTED_MIMETYPES,
+		*(([], IMAGE_MIMETYPES)[ocr_available]),
+		*(([], AUDIO_MIMETYPES)[stt_available]),
+	)
+
+	if source.reference.startswith(FILES_PROVIDER_ID) and source.type not in extended_mimetypes:
+		raise ValueError(
+			f'Unsupported file type: {source.type} for reference {source.reference}.'
+			f' OCR available: {ocr_available}, Speech-to-text available: {stt_available}.'
+		)
 
 
 def _filter_sources(
@@ -33,6 +56,7 @@ def _filter_sources(
 	try:
 		existing_source_ids, to_embed_source_ids = vectordb.check_sources(sources)
 	except Exception as e:
+		# todo: maybe handle this and other errors as IndexingErrors
 		raise DbException('Error: Vectordb error while checking existing sources in indexing') from e
 
 	existing_sources = {}
@@ -217,5 +241,24 @@ def embed_sources(
 		'len(source_ids)': len(sources),
 	})
 
+	mime_filtered_sources: dict[int, SourceItem] = {}
+	mime_errored_sources: dict[int, IndexingError] = {}
+
+	ocr_available = asyncio.run(is_task_type_available(OCR_TASK_TYPE))
+	stt_available = asyncio.run(is_task_type_available(SPEECH_TO_TEXT_TASK_TYPE))
+	for db_id, source in sources.items():
+		try:
+			_do_extended_mimetype_validation(source, ocr_available, stt_available)
+			mime_filtered_sources[db_id] = source
+		except ValueError as e:
+			mime_errored_sources[db_id] = IndexingError(
+				error=str(e),
+				retryable=False,
+			)
+			continue
+
 	vectordb = vectordb_loader.load()
-	return _process_sources(vectordb, config, sources)
+	processed_sources = _process_sources(vectordb, config, mime_filtered_sources)
+	processed_sources.update(mime_errored_sources)
+
+	return processed_sources
