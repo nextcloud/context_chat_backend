@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 
-import logging
 import re
 import tempfile
 from collections.abc import Callable
@@ -18,9 +17,8 @@ from pypdf import PdfReader
 from pypdf.errors import FileNotDecryptedError as PdfFileNotDecryptedError
 from striprtf import striprtf
 
-from ...types import SourceItem
+from ...types import IndexingException, SourceItem
 
-logger = logging.getLogger('ccb.doc_loader')
 
 def _temp_file_wrapper(file: BytesIO, loader: Callable, sep: str = '\n') -> str:
 	raw_bytes = file.read()
@@ -75,10 +73,10 @@ def _load_xlsx(file: BytesIO) -> str:
 	return read_excel(file, na_filter=False).to_string(header=False, na_rep='')
 
 
-def _load_email(file: BytesIO, ext: str = 'eml') -> str | None:
+def _load_email(file: BytesIO, ext: str = 'eml') -> str:
 	# NOTE: msg format is not tested
 	if ext not in ['eml', 'msg']:
-		return None
+		raise IndexingException(f'Unsupported email format: {ext}')
 
 	# TODO: implement attachment partitioner using unstructured.partition.partition_{email,msg}
 	# since langchain does not pass through the attachment_partitioner kwarg
@@ -116,34 +114,36 @@ _loader_map = {
 }
 
 
-def decode_source(source: SourceItem) -> str | None:
+def decode_source(source: SourceItem) -> str:
+	'''
+	Raises
+	------
+	IndexingException
+	'''
+
 	io_obj: BytesIO | None = None
 	try:
 		# .pot files are powerpoint templates but also plain text files,
 		# so we skip them to prevent decoding errors
 		if source.title.endswith('.pot'):
-			return None
-
-		mimetype = source.type
-		if mimetype is None:
-			return None
+			raise IndexingException('PowerPoint template files (.pot) are not supported')
 
 		if isinstance(source.content, str):
 			io_obj = BytesIO(source.content.encode('utf-8', 'ignore'))
 		else:
 			io_obj = source.content
 
-		if _loader_map.get(mimetype):
-			result = _loader_map[mimetype](io_obj)
-			return result.encode('utf-8', 'ignore').decode('utf-8', 'ignore')
+		if _loader_map.get(source.type):
+			result = _loader_map[source.type](io_obj)
+			return result.encode('utf-8', 'ignore').decode('utf-8', 'ignore').strip()
 
-		return io_obj.read().decode('utf-8', 'ignore')
-	except PdfFileNotDecryptedError:
-		logger.warning(f'PDF file ({source.reference}) is encrypted and cannot be read')
-		return None
-	except Exception:
-		logger.exception(f'Error decoding source file ({source.reference})', stack_info=True)
-		return None
+		return io_obj.read().decode('utf-8', 'ignore').strip()
+	except IndexingException:
+		raise
+	except PdfFileNotDecryptedError as e:
+		raise IndexingException('PDF file is encrypted and cannot be read') from e
+	except Exception as e:
+		raise IndexingException(f'Error decoding source file: {e}') from e
 	finally:
 		if io_obj is not None:
 			io_obj.close()

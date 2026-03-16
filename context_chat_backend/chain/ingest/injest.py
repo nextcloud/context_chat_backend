@@ -8,7 +8,7 @@ import re
 from langchain.schema import Document
 
 from ...dyn_loader import VectorDBLoader
-from ...types import IndexingError, SourceItem, TConfig
+from ...types import IndexingError, IndexingException, SourceItem, TConfig
 from ...vectordb.base import BaseVectorDB
 from ...vectordb.types import DbException, SafeDbException, UpdateAccessOp
 from ..types import InDocument
@@ -59,9 +59,17 @@ def _sources_to_indocuments(
 
 		# todo: maybe fetch the content of the files here
 		# transform the source to have text data
-		content = decode_source(source)
+		try:
+			content = decode_source(source)
+		except IndexingException as e:
+			logger.error(f'Error decoding source ({source.reference}): {e}', exc_info=e)
+			errored_docs[db_id] = IndexingError(
+				error=str(e),
+				retryable=False,
+			)
+			continue
 
-		if content is None or (content := content.strip()) == '':
+		if content == '':
 			logger.debug('decoded empty source', extra={ 'source_id': source.reference })
 			errored_docs[db_id] = IndexingError(
 				error='Decoded content is empty',
@@ -74,12 +82,12 @@ def _sources_to_indocuments(
 		# NOTE: do not use this with all docs when programming files are added
 		content = re.sub(r'(\s){5,}', r'\g<1>', content)
 		# filter out null bytes
-		content = content.replace('\0', '')
+		content = content.replace('\0', '').strip()
 
-		if content is None or content == '':
+		if content == '':
 			logger.debug('decoded empty source after cleanup', extra={ 'source_id': source.reference })
 			errored_docs[db_id] = IndexingError(
-				error='Decoded content is empty',
+				error='Cleaned up content is empty',
 				retryable=False,
 			)
 			continue
