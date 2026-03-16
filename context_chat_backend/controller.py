@@ -345,7 +345,11 @@ def _(sources: list[UploadFile]):
 
 	for source in sources:
 		if not value_of(source.filename):
-			return JSONResponse(f'Invalid source filename for: {source.headers.get("title")}', 400)
+			logger.warning('Skipping source with invalid source_id', extra={
+				'source_id': source.filename,
+				'title': source.headers.get('title'),
+			})
+			continue
 
 		with index_lock:
 			if source.filename in _indexing:
@@ -364,12 +368,12 @@ def _(sources: list[UploadFile]):
 			and source.headers['modified'].isdigit()
 			and value_of(source.headers.get('provider'))
 		):
-			logger.error('Invalid/missing headers received', extra={
+			logger.warning('Skipping source with invalid/missing headers', extra={
 				'source_id': source.filename,
 				'title': source.headers.get('title'),
 				'headers': source.headers,
 			})
-			return JSONResponse(f'Invaild/missing headers for: {source.filename}', 400)
+			continue
 
 	# wait for 10 minutes before failing the request
 	semres = doc_parse_semaphore.acquire(block=True, timeout=10*60)
