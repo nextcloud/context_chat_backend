@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 import re
+from collections.abc import Mapping
 from enum import Enum
 from io import BytesIO
 from typing import Annotated, Literal, Self
@@ -224,8 +225,8 @@ class SourceItem(CommonSourceItem):
 
 
 class FilesQueueItems(BaseModel):
-	files: dict[int, ReceivedFileItem]  # [db id]: FileItem
-	content_providers: dict[int, SourceItem]  # [db id]: SourceItem
+	files: Mapping[int, ReceivedFileItem]  # [db id]: FileItem
+	content_providers: Mapping[int, SourceItem]  # [db id]: SourceItem
 
 
 class IndexingException(Exception):
@@ -343,4 +344,4 @@ ActionsQueueItem = Annotated[
 
 
 class ActionsQueueItems(BaseModel):
-	actions: dict[int, ActionsQueueItem]
+	actions: Mapping[int, ActionsQueueItem]

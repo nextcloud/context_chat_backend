@@ -4,6 +4,7 @@
 #
 import logging
 import os
+from collections.abc import Mapping
 from datetime import datetime
 
 import psycopg
@@ -17,7 +18,14 @@ from langchain_core.embeddings import Embeddings
 from langchain_postgres.vectorstores import Base, PGVector
 
 from ..chain.types import InDocument, ScopeType
-from ..types import EmbeddingException, FatalEmbeddingException, IndexingError, RetryableEmbeddingException, SourceItem
+from ..types import (
+	EmbeddingException,
+	FatalEmbeddingException,
+	IndexingError,
+	ReceivedFileItem,
+	RetryableEmbeddingException,
+	SourceItem,
+)
 from ..utils import timed
 from .base import BaseVectorDB
 from .types import DbException, SafeDbException, UpdateAccessOp
@@ -129,7 +137,7 @@ class VectorDB(BaseVectorDB):
 			except Exception as e:
 				raise DbException('Error: getting a list of all users from access list') from e
 
-	def add_indocuments(self, indocuments: dict[int, InDocument]) -> dict[int, IndexingError | None]:
+	def add_indocuments(self, indocuments: Mapping[int, InDocument]) -> Mapping[int, IndexingError | None]:
 		"""
 		Raises
 			EmbeddingException: if the embedding request definitively fails
@@ -208,7 +216,7 @@ class VectorDB(BaseVectorDB):
 		return results
 
 	@timed
-	def check_sources(self, sources: dict[int, SourceItem]) -> tuple[list[str], list[str]]:
+	def check_sources(self, sources: Mapping[int, SourceItem | ReceivedFileItem]) -> tuple[list[str], list[str]]:
 		'''
 		returns a tuple of (existing_source_ids, to_embed_source_ids)
 		'''

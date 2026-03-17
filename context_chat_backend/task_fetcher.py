@@ -3,17 +3,16 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 
-import asyncio
 import logging
 import os
+from collections.abc import Mapping
 from contextlib import suppress
 from enum import Enum
-from io import BytesIO
 from threading import Event, Thread
 from time import sleep
 
 import niquests
-from nc_py_api import AsyncNextcloudApp, NextcloudApp
+from nc_py_api import NextcloudApp
 from pydantic import ValidationError
 
 from .chain.ingest.injest import embed_sources
@@ -25,7 +24,6 @@ from .types import (
 	EmbeddingException,
 	FilesQueueItems,
 	IndexingError,
-	IndexingException,
 	LoaderException,
 	ReceivedFileItem,
 	SourceItem,
@@ -46,12 +44,10 @@ APP_ROLE = get_app_role()
 THREADS = {}
 THREAD_STOP_EVENT = Event()
 LOGGER = logging.getLogger('ccb.task_fetcher')
-FILES_INDEXING_BATCH_SIZE = 64  # todo: config?
+FILES_INDEXING_BATCH_SIZE = 16  # theoretical max RAM usage: 16 * 100 MiB, todo: config?
+MIN_FILES_PER_CPU = 4
 # divides the batch into these many chunks
 PARALLEL_FILE_PARSING = max(1, (os.cpu_count() or 2) - 1)  # todo: config?
-# max concurrent fetches to avoid overloading the NC server or hitting rate limits
-CONCURRENT_FILE_FETCHES = 10  # todo: config?
-MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB, todo: config?
 ACTIONS_BATCH_SIZE = 512  # todo: config?
 POLLING_COOLDOWN = 30
 
@@ -62,143 +58,6 @@ class ThreadType(Enum):
 	REQUEST_PROCESSING = 'request_processing'
 
 
-async def __fetch_file_content(
-	semaphore: asyncio.Semaphore,
-	file_id: int,
-	user_id: str,
-	_rlimit = 3,
-) -> BytesIO:
-	'''
-	Raises
-	------
-	IndexingException
-	'''
-
-	async with semaphore:
-		nc = AsyncNextcloudApp()
-		try:
-			# a file pointer for storing the stream in memory until it is consumed
-			fp = BytesIO()
-			await nc._session.download2fp(
-				url_path=f'/ocs/v2.php/apps/context_chat/files/{file_id}',
-				fp=fp,
-				dav=False,
-				params={ 'userId': user_id },
-			)
-			return fp
-		except niquests.exceptions.RequestException as e:
-			# todo: raise IndexingException with retryable=True for rate limit errors,
-			# todo: and handle it in the caller to not delete the source from the queue and retry later through
-			# todo: the normal lock expiry mechanism
-			if e.response is None:
-				raise
-
-			if e.response.status_code == niquests.codes.too_many_requests:  # pyright: ignore[reportAttributeAccessIssue]
-				# todo: implement rate limits in php CC?
-				wait_for = int(e.response.headers.get('Retry-After', '30'))
-				if _rlimit <= 0:
-					raise IndexingException(
-						f'Rate limited when fetching content for file id {file_id}, user id {user_id},'
-						' max retries exceeded',
-						retryable=True,
-					) from e
-				LOGGER.warning(
-					f'Rate limited when fetching content for file id {file_id}, user id {user_id},'
-					f' waiting {wait_for} before retrying',
-					exc_info=e,
-				)
-				await asyncio.sleep(wait_for)
-				return await __fetch_file_content(semaphore, file_id, user_id, _rlimit - 1)
-
-			raise
-		except IndexingException:
-			raise
-		except Exception as e:
-			LOGGER.error(f'Error fetching content for file id {file_id}, user id {user_id}: {e}', exc_info=e)
-			raise IndexingException(f'Error fetching content for file id {file_id}, user id {user_id}: {e}') from e
-
-
-async def __fetch_files_content(
-	files: dict[int, ReceivedFileItem]
-) -> dict[int, SourceItem | IndexingError]:
-	source_items = {}
-	semaphore = asyncio.Semaphore(CONCURRENT_FILE_FETCHES)
-	tasks = []
-
-	for db_id, file in files.items():
-		try:
-			# to detect any validation errors but it should not happen since file.reference is validated
-			file.file_id  # noqa: B018
-		except ValueError as e:
-			LOGGER.error(
-				f'Invalid file reference format for db id {db_id}, file reference {file.reference}: {e}',
-				exc_info=e,
-			)
-			source_items[db_id] = IndexingError(
-				error=f'Invalid file reference format: {file.reference}',
-				retryable=False,
-			)
-			continue
-
-		if file.size > MAX_FILE_SIZE:
-			LOGGER.info(
-				f'Skipping db id {db_id}, file id {file.file_id}, source id {file.reference} due to size'
-				f' {(file.size/(1024*1024)):.2f} MiB exceeding the limit {(MAX_FILE_SIZE/(1024*1024)):.2f} MiB',
-			)
-			source_items[db_id] = IndexingError(
-				error=(
-					f'File size {(file.size/(1024*1024)):.2f} MiB'
-					f' exceeds the limit {(MAX_FILE_SIZE/(1024*1024)):.2f} MiB'
-				),
-				retryable=False,
-			)
-			continue
-		# todo: perform the existing file check before fetching the content to avoid unnecessary fetches
-		# any user id from the list should have read access to the file
-		tasks.append(asyncio.ensure_future(__fetch_file_content(semaphore, file.file_id, file.userIds[0])))
-
-	results = await asyncio.gather(*tasks, return_exceptions=True)
-	for (db_id, file), result in zip(files.items(), results, strict=True):
-		if isinstance(result, IndexingException):
-			LOGGER.error(
-				f'Error fetching content for db id {db_id}, file id {file.file_id}, reference {file.reference}'
-				f': {result}',
-				exc_info=result,
-			)
-			source_items[db_id] = IndexingError(
-				error=str(result),
-				retryable=result.retryable,
-			)
-		elif isinstance(result, str) or isinstance(result, BytesIO):
-			source_items[db_id] = SourceItem(
-				**{
-					**file.model_dump(),
-					'content': result,
-				}
-			)
-		elif isinstance(result, BaseException):
-			LOGGER.error(
-				f'Unexpected error fetching content for db id {db_id}, file id {file.file_id},'
-				f' reference {file.reference}: {result}',
-				exc_info=result,
-			)
-			source_items[db_id] = IndexingError(
-				error=f'Unexpected error: {result}',
-				retryable=True,
-			)
-		else:
-			LOGGER.error(
-				f'Unknown error fetching content for db id {db_id}, file id {file.file_id}, reference {file.reference}'
-				f': {result}',
-				exc_info=True,
-			)
-			source_items[db_id] = IndexingError(
-				error='Unknown error',
-				retryable=True,
-			)
-	return source_items
-
-
 def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 	try:
 		vectordb_loader = VectorDBLoader(app_config)
@@ -206,7 +65,7 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 		LOGGER.error('Error initializing vector DB loader, files indexing thread will not start:', exc_info=e)
 		return
 
-	def _load_sources(source_items: dict[int, SourceItem]) -> dict[int, IndexingError | None]:
+	def _load_sources(source_items: Mapping[int, SourceItem | ReceivedFileItem]) -> Mapping[int, IndexingError | None]:
 		try:
 			return exec_in_proc(
 				target=embed_sources,
@@ -225,7 +84,6 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 
 		try:
 			nc = NextcloudApp()
-			# todo: add the 'size' param to the return of this call.
 			q_items_res = nc.ocs(
 				'GET',
 				'/ocs/v2.php/apps/context_chat/queues/documents',
@@ -242,29 +100,14 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 				sleep(POLLING_COOLDOWN)
 				continue
 
-			# populate files content and convert to source items
-			fetched_files = {}
-			source_files = {}
-			# unified error structure for files and content providers
-			source_errors = {}
-
-			if q_items.files:
-				fetched_files = asyncio.run(__fetch_files_content(q_items.files))
-
-			for db_id, result in fetched_files.items():
-				if isinstance(result, SourceItem):
-					source_files[db_id] = result
-				else:
-					source_errors[db_id] = result
-
 			files_result = {}
 			providers_result = {}
-			chunk_size = FILES_INDEXING_BATCH_SIZE // PARALLEL_FILE_PARSING
+			chunk_size = max(MIN_FILES_PER_CPU, FILES_INDEXING_BATCH_SIZE // PARALLEL_FILE_PARSING)
 
 			# todo: do it in asyncio, it's not truly parallel yet
 			# chunk file parsing for better file operation parallelism
-			for i in range(0, len(source_files), chunk_size):
-				chunk = dict(list(source_files.items())[i:i+chunk_size])
+			for i in range(0, len(q_items.files), chunk_size):
+				chunk = dict(list(q_items.files.items())[i:i+chunk_size])
 				files_result.update(_load_sources(chunk))
 
 			for i in range(0, len(q_items.content_providers), chunk_size):
