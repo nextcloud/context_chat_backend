@@ -4,8 +4,10 @@
 #
 
 import logging
+import math
 import os
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from enum import Enum
 from threading import Event, Thread
@@ -47,7 +49,7 @@ LOGGER = logging.getLogger('ccb.task_fetcher')
 FILES_INDEXING_BATCH_SIZE = 16  # theoretical max RAM usage: 16 * 100 MiB, todo: config?
 MIN_FILES_PER_CPU = 4
 # divides the batch into these many chunks
-PARALLEL_FILE_PARSING = max(1, (os.cpu_count() or 2) - 1)  # todo: config?
+PARALLEL_FILE_PARSING_COUNT = max(1, (os.cpu_count() or 2) - 1)  # todo: config?
 ACTIONS_BATCH_SIZE = 512  # todo: config?
 POLLING_COOLDOWN = 30
 
@@ -71,10 +73,14 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 				target=embed_sources,
 				args=(vectordb_loader, app_config, source_items),
 			)
-		except (DbException, EmbeddingException):
-			raise
 		except Exception as e:
-			raise DbException('Error: failed to load sources') from e
+			err_name = {DbException: "DB", EmbeddingException: "Embedding"}.get(type(e), "Unknown")
+			source_ids = (s.reference for s in source_items.values())
+			err = IndexingError(
+				error=f'{err_name} Error occurred, the sources {source_ids} will be retried: {e}',
+				retryable=True,
+			)
+			return dict.fromkeys(source_items, err)
 
 
 	while True:
@@ -102,17 +108,33 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 
 			files_result = {}
 			providers_result = {}
-			chunk_size = max(MIN_FILES_PER_CPU, FILES_INDEXING_BATCH_SIZE // PARALLEL_FILE_PARSING)
 
-			# todo: do it in asyncio, it's not truly parallel yet
 			# chunk file parsing for better file operation parallelism
-			for i in range(0, len(q_items.files), chunk_size):
-				chunk = dict(list(q_items.files.items())[i:i+chunk_size])
-				files_result.update(_load_sources(chunk))
+			file_chunk_size = max(MIN_FILES_PER_CPU, math.ceil(len(q_items.files) / PARALLEL_FILE_PARSING_COUNT))
+			file_chunks = [
+				dict(list(q_items.files.items())[i:i+file_chunk_size])
+				for i in range(0, len(q_items.files), file_chunk_size)
+			]
+			provider_chunk_size = max(
+				MIN_FILES_PER_CPU,
+				math.ceil(len(q_items.content_providers) / PARALLEL_FILE_PARSING_COUNT),
+			)
+			provider_chunks = [
+				dict(list(q_items.content_providers.items())[i:i+provider_chunk_size])
+				for i in range(0, len(q_items.content_providers), provider_chunk_size)
+			]
 
-			for i in range(0, len(q_items.content_providers), chunk_size):
-				chunk = dict(list(q_items.content_providers.items())[i:i+chunk_size])
-				providers_result.update(_load_sources(chunk))
+			with ThreadPoolExecutor(
+				max_workers=PARALLEL_FILE_PARSING_COUNT,
+				thread_name_prefix='IndexingPool',
+			) as executor:
+				file_futures = [executor.submit(_load_sources, chunk) for chunk in file_chunks]
+				provider_futures = [executor.submit(_load_sources, chunk) for chunk in provider_chunks]
+
+				for future in file_futures:
+					files_result.update(future.result())
+				for future in provider_futures:
+					providers_result.update(future.result())
 
 			if (
 				any(isinstance(res, IndexingError) for res in files_result.values())
