@@ -6,6 +6,7 @@ import logging
 import os
 from datetime import datetime
 
+import psycopg
 import sqlalchemy as sa
 import sqlalchemy.dialects.postgresql as postgresql_dialects
 import sqlalchemy.orm as orm
@@ -155,7 +156,18 @@ class VectorDB(BaseVectorDB):
 						chunks=chunk_ids,
 					)
 					session.add(doc)
-					session.commit()
+					try:
+						session.commit()
+					except sa.exc.IntegrityError as ie:  # pyright: ignore[reportAttributeAccessIssue]
+						if not isinstance(ie.orig, psycopg.errors.UniqueViolation):
+							raise
+
+						# it's already in the db, continue updating the access
+						logger.debug(
+							'Unique violation: document already exists in the database',
+							exc_info=ie,
+							extra={ 'source_id': indoc.source_id },
+						)
 
 					self.decl_update_access(indoc.userIds, indoc.source_id, session)
 					added_sources.append(indoc.source_id)

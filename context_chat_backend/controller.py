@@ -343,9 +343,15 @@ def _(sources: list[UploadFile]):
 	if len(sources) == 0:
 		return JSONResponse('No sources provided', 400)
 
+	filtered_sources = []
+
 	for source in sources:
 		if not value_of(source.filename):
-			return JSONResponse(f'Invalid source filename for: {source.headers.get("title")}', 400)
+			logger.warning('Skipping source with invalid source_id', extra={
+				'source_id': source.filename,
+				'title': source.headers.get('title'),
+			})
+			continue
 
 		with index_lock:
 			if source.filename in _indexing:
@@ -364,12 +370,14 @@ def _(sources: list[UploadFile]):
 			and source.headers['modified'].isdigit()
 			and value_of(source.headers.get('provider'))
 		):
-			logger.error('Invalid/missing headers received', extra={
+			logger.warning('Skipping source with invalid/missing headers', extra={
 				'source_id': source.filename,
 				'title': source.headers.get('title'),
 				'headers': source.headers,
 			})
-			return JSONResponse(f'Invaild/missing headers for: {source.filename}', 400)
+			continue
+
+		filtered_sources.append(source)
 
 	# wait for 10 minutes before failing the request
 	semres = doc_parse_semaphore.acquire(block=True, timeout=10*60)
@@ -381,13 +389,13 @@ def _(sources: list[UploadFile]):
 		)
 
 	with index_lock:
-		for source in sources:
+		for source in filtered_sources:
 			_indexing[source.filename] = source.size
 
 	try:
 		loaded_sources, not_added_sources = exec_in_proc(
 			target=embed_sources,
-			args=(vectordb_loader, app.extra['CONFIG'], sources)
+			args=(vectordb_loader, app.extra['CONFIG'], filtered_sources)
 		)
 	except (DbException, EmbeddingException):
 		raise
@@ -395,13 +403,13 @@ def _(sources: list[UploadFile]):
 		raise DbException('Error: failed to load sources') from e
 	finally:
 		with index_lock:
-			for source in sources:
+			for source in filtered_sources:
 				_indexing.pop(source.filename, None)
 		doc_parse_semaphore.release()
 
-	if len(loaded_sources) != len(sources):
+	if len(loaded_sources) != len(filtered_sources):
 		logger.debug('Some sources were not loaded', extra={
-			'Count of loaded sources': f'{len(loaded_sources)}/{len(sources)}',
+			'Count of loaded sources': f'{len(loaded_sources)}/{len(filtered_sources)}',
 			'source_ids': loaded_sources,
 		})
 
