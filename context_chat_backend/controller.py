@@ -40,7 +40,7 @@ from .dyn_loader import LLMModelLoader, VectorDBLoader
 from .models.types import LlmException
 from nc_py_api.ex_app import AppAPIAuthMiddleware
 from .utils import JSONResponse, exec_in_proc, value_of
-from .task_fetcher import start_bg_threads, wait_for_bg_threads
+from .task_fetcher import start_bg_threads, trigger_handler, wait_for_bg_threads
 from .vectordb.service import count_documents_by_provider
 
 # setup
@@ -83,7 +83,7 @@ def enabled_handler(enabled: bool, _: NextcloudApp | AsyncNextcloudApp) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-	set_handlers(app, enabled_handler, models_to_fetch=models_to_fetch)
+	set_handlers(app, enabled_handler, models_to_fetch=models_to_fetch, trigger_handler=trigger_handler)
 	nc = NextcloudApp()
 	if nc.enabled_state:
 		app_enabled.set()

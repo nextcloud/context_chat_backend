@@ -12,26 +12,25 @@ from contextlib import suppress
 from enum import Enum
 from threading import Event, Thread
 from time import sleep
+from typing import Any
 
 import niquests
-from nc_py_api import NextcloudApp
+from langchain.llms.base import LLM
+from langchain.schema import Document
+from nc_py_api import NextcloudApp, NextcloudException
+from niquests import JSONDecodeError, RequestException
 from pydantic import ValidationError
 
+from .chain.context import get_context_chunks, get_context_docs
 from .chain.ingest.injest import embed_sources
+from .chain.query_proc import get_pruned_query
+from .chain.types import ContextException, LLMOutput, ScopeType
+from .controller import llm_loader
 from .dyn_loader import VectorDBLoader
-from .types import (
-	ActionsQueueItems,
-	ActionType,
-	AppRole,
-	EmbeddingException,
-	FilesQueueItems,
-	IndexingError,
-	LoaderException,
-	ReceivedFileItem,
-	SourceItem,
-	TConfig,
-)
+from .types import ActionType, ActionsQueueItems, AppRole, EmbeddingException, FilesQueueItems, IndexingError, \
+	LoaderException, ReceivedFileItem, SourceItem, TConfig
 from .utils import exec_in_proc, get_app_role
+from .vectordb.base import BaseVectorDB
 from .vectordb.service import (
 	decl_update_access,
 	delete_by_provider,
@@ -52,6 +51,10 @@ MIN_FILES_PER_CPU = 4
 PARALLEL_FILE_PARSING_COUNT = max(1, (os.cpu_count() or 2) - 1)  # todo: config?
 ACTIONS_BATCH_SIZE = 512  # todo: config?
 POLLING_COOLDOWN = 30
+TRIGGER = Event()
+CHECK_INTERVAL = 5
+CHECK_INTERVAL_WITH_TRIGGER = 5 * 60
+CHECK_INTERVAL_ON_ERROR = 15
 
 
 class ThreadType(Enum):
@@ -370,7 +373,78 @@ def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 
 
 def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
-	...
+	logger.info('Starting task fetcher loop')
+
+	try:
+		vectordb_loader = VectorDBLoader(app_config)
+	except LoaderException as e:
+		LOGGER.error('Error initializing vector DB loader, files indexing thread will not start:', exc_info=e)
+		return
+
+	nc = NextcloudApp()
+	llm: LLM = llm_loader.load()
+
+	while True:
+		if THREAD_STOP_EVENT.is_set():
+			LOGGER.info('Updates processing thread is stopping due to stop event being set')
+			return
+
+		try:
+			# Fetch pending task
+			try:
+				response = nc.providers.task_processing.next_task(list(provider_ids), list(task_type_ids))
+				if not response:
+					wait_for_tasks()
+					continue
+			except (NextcloudException, RequestException, JSONDecodeError) as e:
+				LOGGER.error(f"Network error fetching the next task {e}", exc_info=e)
+				wait_for_tasks(CHECK_INTERVAL_ON_ERROR)
+				continue
+
+			# Process task
+			task = response["task"]
+			provider = response["provider"]
+
+			try:
+				logger.debug(f'Processing task {task["id"]}')
+				result = process_task(task, vectordb_loader, llm, app_config)
+
+				# Return result to Nextcloud
+				success = return_result_to_nextcloud(task_id, result)
+
+				if success:
+					LOGGER.info(f'Task {task["id"]} completed successfully')
+				else:
+					LOGGER.error(f'Failed to return result for task {task["id"]}')
+
+			except ContextException as e:
+				LOGGER.warning(f'Context error for task {task["id"]}: {e}')
+			# TODO: Return error to Nextcloud
+			except ValueError as e:
+				LOGGER.warning(f'Validation error for task {task["id"]}: {e}')
+			# TODO: Return error to Nextcloud
+			except Exception as e:
+				LOGGER.exception(f'Unexpected error processing task {task["id"]}', exc_info=e)
+			# TODO: Return error to Nextcloud
+
+		except Exception as e:
+			logger.exception('Error in task fetcher loop', exc_info=e)
+	# TODO: Add appropriate error handling and backoff
+
+def trigger_handler(providerId: str):
+	global TRIGGER
+	print('TRIGGER called')
+	TRIGGER.set()
+
+def wait_for_tasks(interval = None):
+	global TRIGGER
+	global CHECK_INTERVAL
+	global CHECK_INTERVAL_WITH_TRIGGER
+	actual_interval = CHECK_INTERVAL if interval is None else interval
+	if TRIGGER.wait(timeout=actual_interval):
+		CHECK_INTERVAL = CHECK_INTERVAL_WITH_TRIGGER
+	TRIGGER.clear()
+
 
 
 def start_bg_threads(app_config: TConfig, app_enabled: Event):
@@ -430,3 +504,263 @@ def wait_for_bg_threads():
 			THREAD_STOP_EVENT.set()
 			THREADS[ThreadType.REQUEST_PROCESSING].join()
 			THREADS.pop(ThreadType.REQUEST_PROCESSING)
+
+
+# Default LLM template for context-based queries
+_LLM_TEMPLATE = '''Answer based only on this context and do not add any imaginative details. Make sure to use the same language as the question in your answer.
+{context}
+
+{question}
+'''
+
+def query_vector_database(
+	user_id: str,
+	query: str,
+	vectordb: BaseVectorDB,
+	ctx_limit: int,
+	scope_type: ScopeType | None = None,
+	scope_list: list[str] | None = None,
+) -> list[Document]:
+	"""
+	Query the vector database to retrieve relevant documents.
+
+	Args:
+		user_id: User ID for scoping the search
+		query: The search query text
+		vectordb: Vector database instance
+		ctx_limit: Maximum number of documents to return
+		scope_type: Optional scope type (PROVIDER or SOURCE)
+		scope_list: Optional list of scope identifiers
+
+	Returns:
+		List of relevant Document objects
+
+	Raises:
+		ContextException: If scope type is provided without scope list
+	"""
+	context_docs = get_context_docs(user_id, query, vectordb, ctx_limit, scope_type, scope_list)
+	logger.debug('Retrieved context documents', extra={
+		'user_id': user_id,
+		'num_docs': len(context_docs),
+		'ctx_limit': ctx_limit,
+	})
+	return context_docs
+
+
+def prepare_context_chunks(context_docs: list[Document]) -> list[str]:
+	"""
+	Extract and format text chunks from documents for LLM context.
+
+	Args:
+		context_docs: List of Document objects from vector DB
+
+	Returns:
+		List of formatted text chunks including titles and content
+	"""
+	return get_context_chunks(context_docs)
+
+
+def generate_llm_response(
+	llm: LLM,
+	app_config: TConfig,
+	user_id: str,
+	query: str,
+	template: str,
+	context_chunks: list[str],
+	end_separator: str = '',
+) -> str:
+	"""
+	Generate LLM response using the pruned query and context.
+
+	Args:
+		llm: Language model instance
+		app_config: Application configuration
+		user_id: User ID for the request
+		query: The original query text
+		template: Template for formatting the prompt
+		context_chunks: Context chunks to include in the prompt
+		end_separator: Optional separator to stop generation
+
+	Returns:
+		Generated LLM output text
+
+	Raises:
+		ValueError: If context length is too small to fit the query
+	"""
+	pruned_query_text = get_pruned_query(llm, app_config, query, template, context_chunks)
+
+	stop = [end_separator] if end_separator else None
+	output = llm.invoke(
+		pruned_query_text,
+		stop=stop,
+		userid=user_id,
+	).strip()
+
+	logger.debug('Generated LLM response', extra={
+		'user_id': user_id,
+		'output_length': len(output),
+	})
+	return output
+
+
+def extract_unique_sources(context_docs: list[Document]) -> list[str]:
+	"""
+	Extract unique source IDs from context documents.
+
+	Args:
+		context_docs: List of Document objects
+
+	Returns:
+		List of unique source IDs
+	"""
+	unique_sources: list[str] = list({
+		source for d in context_docs if (source := d.metadata.get('source'))
+	})
+	return unique_sources
+
+def execute_context_query(
+	user_id: str,
+	vectordb_loader: VectorDBLoader,
+	llm: LLM,
+	app_config: TConfig,
+	query: str,
+	ctx_limit: int = 20,
+	scope_type: ScopeType | None = None,
+	scope_list: list[str] | None = None,
+	template: str | None = None,
+	end_separator: str = '',
+) -> LLMOutput:
+	"""
+	Execute a RAG query with context retrieval from vector database.
+
+	This is the main function for processing queries that require context
+	from the vector database. It orchestrates the entire RAG pipeline:
+	1. Query vector database for relevant documents
+	2. Extract and format context chunks
+	3. Generate LLM response with context
+	4. Return output with source references
+
+	Args:
+		user_id: User ID for the request
+		vectordb_loader: Vector database loader instance
+		llm: Language model instance
+		app_config: Application configuration
+		query: The query text
+		ctx_limit: Maximum number of context documents (default: 20)
+		scope_type: Optional scope type for filtering
+		scope_list: Optional list of scope identifiers
+		template: Optional custom prompt template
+		end_separator: Optional separator to stop generation
+
+	Returns:
+		LLMOutput with generated text and source references
+
+	Raises:
+		ContextException: If no documents are retrieved
+		ValueError: If context length is too small to fit the query
+	"""
+	logger.info('Executing context query', extra={
+		'user_id': user_id,
+		'query_length': len(query),
+		'ctx_limit': ctx_limit,
+	})
+
+	# Step 1: Load vector database and retrieve relevant documents
+	db = vectordb_loader.load()
+	context_docs = query_vector_database(user_id, query, db, ctx_limit, scope_type, scope_list)
+
+	if len(context_docs) == 0:
+		raise ContextException('No documents retrieved, please index a few documents first')
+
+	# Step 2: Prepare context chunks for LLM
+	context_chunks = prepare_context_chunks(context_docs)
+	logger.debug('Prepared context chunks', extra={
+		'num_docs': len(context_docs),
+		'num_chunks': len(context_chunks),
+	})
+
+	# Step 3: Generate LLM response
+	output = generate_llm_response(
+		llm,
+		app_config,
+		user_id,
+		query,
+		template or _LLM_TEMPLATE,
+		context_chunks,
+		end_separator,
+	)
+
+	# Step 4: Extract unique sources for citation
+	unique_sources = extract_unique_sources(context_docs)
+
+	logger.info('Context query completed', extra={
+		'user_id': user_id,
+		'num_sources': len(unique_sources),
+	})
+
+	return LLMOutput(output=output, sources=unique_sources)
+
+# ============================================================================
+# Task Queue Processing
+# ============================================================================
+
+
+def return_result_to_nextcloud(task_id: str, result: LLMOutput) -> bool:
+	"""
+	Return query result back to Nextcloud.
+
+	STUB: This function should be implemented to send results back
+	to Nextcloud's task queue or API endpoint.
+
+	Args:
+		task_id: Unique task identifier
+		result: The LLMOutput result to return
+
+	Returns:
+		True if successful, False otherwise
+	"""
+	logger.debug('Returning result to Nextcloud (STUB)', extra={
+		'task_id': task_id,
+		'output_length': len(result['output']),
+		'num_sources': len(result['sources']),
+	})
+	# TODO: Implement actual Nextcloud result submission
+	return True
+
+
+def process_task(
+	task: dict[str, Any],
+	vectordb_loader: VectorDBLoader,
+	llm: LLM,
+	app_config: TConfig,
+) -> LLMOutput:
+	"""
+	Process a single query task.
+
+	Args:
+		task: Task dictionary from fetch_query_tasks_from_nextcloud
+		vectordb_loader: Vector database loader instance
+		llm: Language model instance
+		app_config: Application configuration
+
+	Returns:
+		LLMOutput with generated text and sources
+
+	Raises:
+		Various exceptions from query execution
+	"""
+	user_id = task['user_id']
+	query = task['query']
+
+	return execute_context_query(
+		user_id=user_id,
+		vectordb_loader=vectordb_loader,
+		llm=llm,
+		app_config=app_config,
+		query=query,
+		ctx_limit=task.get('ctx_limit', 20),
+		scope_type=task.get('scope_type'),
+		scope_list=task.get('scope_list'),
+		template=task.get('template'), # TODO: Somehow get the real template, tasks don't have it
+		end_separator=task.get('end_separator', ''), # TODO: same here
+	)
