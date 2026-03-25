@@ -20,6 +20,7 @@ _LLM_TEMPLATE = '''Answer based only on this context and do not add any imaginat
 
 logger = logging.getLogger('ccb.chain')
 
+# todo: remove this maybe
 def process_query(
 	user_id: str,
 	llm: LLM,

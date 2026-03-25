@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+from nc_py_api.ex_app.providers.task_processing import TaskProcessingProvider
 
 # isort: off
 from .chain.types import ContextException, LLMOutput, ScopeType, SearchResult
@@ -65,9 +66,23 @@ models_to_fetch = {
 } if __download_models_from_hf else {}
 app_enabled = Event()
 
-def enabled_handler(enabled: bool, _: NextcloudApp | AsyncNextcloudApp) -> str:
+def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
 	try:
 		if enabled:
+			provider = TaskProcessingProvider(
+				id="context_chat-context_chat_search",
+				name="Context Chat",
+				task_type="context_chat:context_chat_search",
+				expected_runtime=30,
+			)
+			nc.providers.task_processing.register(provider)
+			provider = TaskProcessingProvider(
+				id="context_chat-context_chat",
+				name="Context Chat",
+				task_type="context_chat:context_chat",
+				expected_runtime=30,
+			)
+			nc.providers.task_processing.register(provider)
 			app_enabled.set()
 			start_bg_threads(app_config, app_enabled)
 		else:
@@ -383,7 +398,7 @@ def download_logs() -> FileResponse:
 # 				'title': source.headers.get('title'),
 # 				'headers': source.headers,
 # 			})
-# 			return JSONResponse(f'Invaild/missing headers for: {source.filename}', 400)
+# 			return JSONResponse(f'Invaild/missing headers for:provider_ids {source.filename}', 400)
 
 # 	# wait for 10 minutes before failing the request
 # 	semres = doc_parse_semaphore.acquire(block=True, timeout=10*60)

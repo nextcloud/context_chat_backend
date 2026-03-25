@@ -42,3 +42,15 @@ class LLMOutput(TypedDict):
 class SearchResult(TypedDict):
 	source_id: str
 	title: str
+
+class EnrichedSource(BaseModel):
+	id: str
+	label: str
+	icon: str
+	url: str
+
+class EnrichedSourceList(BaseModel):
+	sources: list[EnrichedSource]
+
+class ScopeList(BaseModel):
+	source_ids: list[str]
