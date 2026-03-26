@@ -224,7 +224,7 @@ jobs:
             echo "Checking stats, attempt $i..."
 
             stats_err=$(mktemp)
-            stats=$(timeout 5 ./occ context_chat:stats 2>"$stats_err")
+            stats=$(timeout 5 ./occ context_chat:stats --json 2>"$stats_err")
             stats_exit=$?
             echo "Stats output:"
             echo "$stats"
@@ -243,41 +243,25 @@ jobs:
             fi
 
             # Extract Total eligible files
-            total_files=$(echo "$stats" | grep -oP 'Total eligible files:\s*\K\d+' || echo "")
+            total_files=$(echo "$stats" | jq '.eligible_files_count' || echo "")
 
             # Extract Indexed documents count (files__default)
-            indexed_count=$(echo "$stats" | grep -oP "'files__default'\s*=>\s*\K\d+" || echo "")
-
-            # Validate parsed values
-            if [ -z "$total_files" ] || [ -z "$indexed_count" ]; then
-              echo "Error: Could not parse stats output properly"
-              if echo "$stats" | grep -q "Indexed documents:"; then
-                echo "  Indexed documents section found but could not extract count"
-              fi
-              sleep 10
-              continue
-            fi
+            indexed_count=$(echo "$stats" | jq '.queued_documents_counts.files__default' || echo "")
 
             echo "Total eligible files: $total_files"
             echo "Indexed documents (files__default): $indexed_count"
 
-            # Calculate absolute difference
             diff=$((total_files - indexed_count))
-            if [ $diff -lt 0 ]; then
-              diff=$((-diff))
-            fi
-
-            # Calculate 2% threshold using bc for floating point support
-            threshold=$(echo "scale=4; $total_files * 0.02" | bc)
+            threshold=$((total_files * 2 / 100))
 
             # Check if difference is within tolerance
-            if (( $(echo "$diff <= $threshold" | bc -l) )); then
+            if [ $diff -le $threshold ]; then
               echo "Indexing within 2% tolerance (diff=$diff, threshold=$threshold)"
               success=1
               break
             else
-              pct=$(echo "scale=2; ($diff / $total_files) * 100" | bc)
-              echo "Outside 2% tolerance: diff=$diff (${pct}%), threshold=$threshold"
+              progress=$((diff * 100 / total_files))
+              echo "Outside 2% tolerance: diff=$diff (${progress}%), threshold=$threshold"
             fi
 
             # Check if backend is still alive
@@ -293,6 +277,7 @@ jobs:
           echo "::endgroup::"
 
           ./occ context_chat:stats
+          ./occ context_chat:stats --json
 
           if [ $success -ne 1 ]; then
             echo "Max attempts reached"
