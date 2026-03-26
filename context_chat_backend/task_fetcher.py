@@ -2,7 +2,6 @@
 # SPDX-FileCopyrightText: 2026 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-import json
 import logging
 import math
 import os
@@ -25,12 +24,20 @@ from .chain.context import do_doc_search, get_context_chunks, get_context_docs
 from .chain.ingest.injest import embed_sources
 from .chain.one_shot import process_context_query
 from .chain.query_proc import get_pruned_query
-from .chain.types import ContextException, EnrichedSource, EnrichedSourceList, LLMOutput, ScopeList, ScopeType, \
-	SearchResult
-from .controller import Query, execute_query, llm_loader
-from .dyn_loader import VectorDBLoader
-from .types import ActionType, ActionsQueueItems, AppRole, EmbeddingException, FilesQueueItems, IndexingError, \
-	LoaderException, ReceivedFileItem, SourceItem, TConfig
+from .chain.types import ContextException, EnrichedSourceList, LLMOutput, ScopeList, ScopeType, SearchResult
+from .dyn_loader import LLMModelLoader, VectorDBLoader
+from .types import (
+	ActionsQueueItems,
+	ActionType,
+	AppRole,
+	EmbeddingException,
+	FilesQueueItems,
+	IndexingError,
+	LoaderException,
+	ReceivedFileItem,
+	SourceItem,
+	TConfig,
+)
 from .utils import exec_in_proc, get_app_role
 from .vectordb.base import BaseVectorDB
 from .vectordb.service import (
@@ -387,9 +394,11 @@ def resolve_scope_list(source_ids: list[str], userId: str) -> list[str]:
 	source_ids with only files, no folders (or source_ids in case of non-file provider)
 	"""
 	nc = NextcloudApp()
-	data = nc.ocs('POST', f'/ocs/v2.php/apps/context_chat/resolve_scope_list', json={'source_ids': source_ids, 'userId': userId})
-	sources = ScopeList.model_validate(data).source_ids
-	return sources
+	data = nc.ocs('POST', '/ocs/v2.php/apps/context_chat/resolve_scope_list', json={
+		'source_ids': source_ids,
+		'userId': userId,
+	})
+	return ScopeList.model_validate(data).source_ids
 
 
 def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
@@ -397,6 +406,7 @@ def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 
 	try:
 		vectordb_loader = VectorDBLoader(app_config)
+		llm_loader = LLMModelLoader(app_config)
 	except LoaderException as e:
 		LOGGER.error('Error initializing vector DB loader, files indexing thread will not start:', exc_info=e)
 		return
@@ -412,7 +422,10 @@ def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 		try:
 			# Fetch pending task
 			try:
-				response = nc.providers.task_processing.next_task(['context_chat-context_chat', 'context_chat-context_chat_search'], ['context_chat:context_chat', 'context_chat:context_chat_search'])
+				response = nc.providers.task_processing.next_task(
+					['context_chat-context_chat', 'context_chat-context_chat_search'],
+					['context_chat:context_chat', 'context_chat:context_chat_search'],
+				)
 				if not response:
 					wait_for_tasks()
 					continue
@@ -437,9 +450,9 @@ def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 					# Return result to Nextcloud
 					success = return_normal_result_to_nextcloud(task['id'], userId, result)
 				elif task['type'] == 'context_chat:context_chat_search':
-					result: list[SearchResult] = process_search_task(task, vectordb_loader)
+					search_result: list[SearchResult] = process_search_task(task, vectordb_loader)
 					# Return result to Nextcloud
-					success = return_search_result_to_nextcloud(task['id'], userId, result)
+					success = return_search_result_to_nextcloud(task['id'], userId, search_result)
 				else:
 					LOGGER.error(f'Unknown task type {task["type"]}')
 					success = return_error_to_nextcloud(task['id'], Exception(f'Unknown task type {task["type"]}'))
@@ -480,62 +493,60 @@ def wait_for_tasks(interval = None):
 
 
 def start_bg_threads(app_config: TConfig, app_enabled: Event):
-	match APP_ROLE:
-		case AppRole.INDEXING | AppRole.NORMAL:
-			if (
-				ThreadType.FILES_INDEXING in THREADS
-				or ThreadType.UPDATES_PROCESSING in THREADS
-			):
-				LOGGER.info('Background threads already running, skipping start')
-				return
+	if APP_ROLE == AppRole.INDEXING or APP_ROLE == AppRole.NORMAL:
+		if (
+			ThreadType.FILES_INDEXING in THREADS
+			or ThreadType.UPDATES_PROCESSING in THREADS
+		):
+			LOGGER.info('Background threads already running, skipping start')
+			return
 
-			THREAD_STOP_EVENT.clear()
-			THREADS[ThreadType.FILES_INDEXING] = Thread(
-				target=files_indexing_thread,
-				args=(app_config, app_enabled),
-				name='FilesIndexingThread',
-			)
-			THREADS[ThreadType.UPDATES_PROCESSING] = Thread(
-				target=updates_processing_thread,
-				args=(app_config, app_enabled),
-				name='UpdatesProcessingThread',
-			)
-			THREADS[ThreadType.FILES_INDEXING].start()
-			THREADS[ThreadType.UPDATES_PROCESSING].start()
+		THREAD_STOP_EVENT.clear()
+		THREADS[ThreadType.FILES_INDEXING] = Thread(
+			target=files_indexing_thread,
+			args=(app_config, app_enabled),
+			name='FilesIndexingThread',
+		)
+		THREADS[ThreadType.UPDATES_PROCESSING] = Thread(
+			target=updates_processing_thread,
+			args=(app_config, app_enabled),
+			name='UpdatesProcessingThread',
+		)
+		THREADS[ThreadType.FILES_INDEXING].start()
+		THREADS[ThreadType.UPDATES_PROCESSING].start()
 
-		case AppRole.RP | AppRole.NORMAL:
-			if ThreadType.REQUEST_PROCESSING in THREADS:
-				LOGGER.info('Background threads already running, skipping start')
-				return
+	if APP_ROLE == AppRole.RP or APP_ROLE == AppRole.NORMAL:
+		if ThreadType.REQUEST_PROCESSING in THREADS:
+			LOGGER.info('Background threads already running, skipping start')
+			return
 
-			THREAD_STOP_EVENT.clear()
-			THREADS[ThreadType.REQUEST_PROCESSING] = Thread(
-				target=request_processing_thread,
-				args=(app_config, app_enabled),
-				name='RequestProcessingThread',
-			)
-			THREADS[ThreadType.REQUEST_PROCESSING].start()
+		THREAD_STOP_EVENT.clear()
+		THREADS[ThreadType.REQUEST_PROCESSING] = Thread(
+			target=request_processing_thread,
+			args=(app_config, app_enabled),
+			name='RequestProcessingThread',
+		)
+		THREADS[ThreadType.REQUEST_PROCESSING].start()
 
 
 def wait_for_bg_threads():
-	match APP_ROLE:
-		case AppRole.INDEXING | AppRole.NORMAL:
-			if (ThreadType.FILES_INDEXING not in THREADS or ThreadType.UPDATES_PROCESSING not in THREADS):
-				return
+	if APP_ROLE == AppRole.INDEXING or APP_ROLE == AppRole.NORMAL:
+		if (ThreadType.FILES_INDEXING not in THREADS or ThreadType.UPDATES_PROCESSING not in THREADS):
+			return
 
-			THREAD_STOP_EVENT.set()
-			THREADS[ThreadType.FILES_INDEXING].join()
-			THREADS[ThreadType.UPDATES_PROCESSING].join()
-			THREADS.pop(ThreadType.FILES_INDEXING)
-			THREADS.pop(ThreadType.UPDATES_PROCESSING)
+		THREAD_STOP_EVENT.set()
+		THREADS[ThreadType.FILES_INDEXING].join()
+		THREADS[ThreadType.UPDATES_PROCESSING].join()
+		THREADS.pop(ThreadType.FILES_INDEXING)
+		THREADS.pop(ThreadType.UPDATES_PROCESSING)
 
-		case AppRole.RP | AppRole.NORMAL:
-			if (ThreadType.REQUEST_PROCESSING not in THREADS):
-				return
+	if APP_ROLE == AppRole.RP or APP_ROLE == AppRole.NORMAL:
+		if (ThreadType.REQUEST_PROCESSING not in THREADS):
+			return
 
-			THREAD_STOP_EVENT.set()
-			THREADS[ThreadType.REQUEST_PROCESSING].join()
-			THREADS.pop(ThreadType.REQUEST_PROCESSING)
+		THREAD_STOP_EVENT.set()
+		THREADS[ThreadType.REQUEST_PROCESSING].join()
+		THREADS.pop(ThreadType.REQUEST_PROCESSING)
 
 
 def query_vector_database(
@@ -673,18 +684,12 @@ def return_normal_result_to_nextcloud(task_id: int, userId: str, result: LLMOutp
 
 	return True
 
-def enrich_sources(results: list[str], userId: str) -> list[EnrichedSource]:
-	nc = NextcloudApp()
-	# todo: refactor to include title here
-	data = nc.ocs('POST', f'/ocs/v2.php/apps/context_chat/enrich_sources', json={'sources': [{'source_id': id} for id in results], 'userId': userId})
-	sources = EnrichedSourceList.model_validate(data).sources
-	return sources
 
-def enrich_search_sources(results: list[SearchResult], userId: str) -> list[EnrichedSource]:
+def enrich_sources(results: list[SearchResult], userId: str) -> list[str]:
 	nc = NextcloudApp()
-	data = nc.ocs('POST', f'/ocs/v2.php/apps/context_chat/enrich_sources', json={'sources': results, 'userId': userId})
+	data = nc.ocs('POST', '/ocs/v2.php/apps/context_chat/enrich_sources', json={'sources': results, 'userId': userId})
 	sources = EnrichedSourceList.model_validate(data).sources
-	return sources
+	return [s.model_dump_json() for s in sources]
 
 
 def return_search_result_to_nextcloud(task_id: int, userId: str, result: list[SearchResult]) -> bool:
@@ -706,10 +711,8 @@ def return_search_result_to_nextcloud(task_id: int, userId: str, result: list[Se
 	nc = NextcloudApp()
 
 	try:
-		sources = [json.dumps(source) for source in enrich_search_sources(result, userId)]
-
 		nc.providers.task_processing.report_result(task_id, {
-			'sources': sources,
+			'sources': enrich_sources(result, userId),
 		})
 	except (NextcloudException, RequestException, JSONDecodeError) as e:
 		LOGGER.error(f"Network error reporting search task result {e}", exc_info=e)
@@ -769,8 +772,10 @@ def process_normal_task(
 	Raises:
 		Various exceptions from query execution
 	"""
-	user_id = task['user_id']
+	user_id = task['userId']
 	task_input = task['input']
+	if task_input.get('scopeType') == 'none':
+		task_input['scopeType'] = None
 
 	return exec_in_proc(target=process_context_query,
 		args=(
@@ -802,8 +807,11 @@ def process_search_task(
 	Raises:
 		Various exceptions from query execution
 	"""
-	user_id = task['user_id']
+	user_id = task['userId']
 	task_input = task['input']
+	if task_input.get('scopeType') == 'none':
+		task_input['scopeType'] = None
+
 	return exec_in_proc(target=do_doc_search,
 		args=(
 			user_id,

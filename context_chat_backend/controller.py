@@ -5,7 +5,7 @@
 from nc_py_api.ex_app.providers.task_processing import TaskProcessingProvider
 
 # isort: off
-from .chain.types import ContextException, LLMOutput, ScopeType, SearchResult
+from .chain.types import ContextException
 from .types import LoaderException, EmbeddingException
 from .vectordb.types import DbException, SafeDbException
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
@@ -25,22 +25,17 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 from functools import wraps
 from threading import Event, Thread
-from typing import Any
 
 from fastapi import FastAPI, Request
-from langchain.llms.base import LLM
 from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import persistent_storage, set_handlers
-from pydantic import BaseModel, ValidationInfo, field_validator
 from starlette.responses import FileResponse
 
-from .chain.context import do_doc_search
-from .chain.one_shot import process_context_query, process_query
 from .config_parser import get_config
-from .dyn_loader import LLMModelLoader, VectorDBLoader
+from .dyn_loader import VectorDBLoader
 from .models.types import LlmException
 from nc_py_api.ex_app import AppAPIAuthMiddleware
-from .utils import JSONResponse, exec_in_proc, value_of
+from .utils import JSONResponse, exec_in_proc
 from .task_fetcher import start_bg_threads, trigger_handler, wait_for_bg_threads
 from .vectordb.service import count_documents_by_provider
 
@@ -108,7 +103,6 @@ async def lifespan(app: FastAPI):
 	t.start()
 	yield
 	vectordb_loader.offload()
-	llm_loader.offload()
 	wait_for_bg_threads()
 
 
@@ -120,7 +114,6 @@ app.extra['CONFIG'] = app_config
 # loaders
 
 vectordb_loader = VectorDBLoader(app_config)
-llm_loader = LLMModelLoader(app, app_config)
 
 
 # locks and semaphores
@@ -438,90 +431,90 @@ def download_logs() -> FileResponse:
 # 	return JSONResponse({'loaded_sources': loaded_sources, 'sources_to_retry': not_added_sources})
 
 
-class Query(BaseModel):
-	userId: str
-	query: str
-	useContext: bool = True
-	scopeType: ScopeType | None = None
-	scopeList: list[str] | None = None
-	ctxLimit: int = 20
+# class Query(BaseModel):
+# 	userId: str
+# 	query: str
+# 	useContext: bool = True
+# 	scopeType: ScopeType | None = None
+# 	scopeList: list[str] | None = None
+# 	ctxLimit: int = 20
 
-	@field_validator('userId', 'query', 'ctxLimit')
-	@classmethod
-	def check_empty_values(cls, value: Any, info: ValidationInfo):
-		if value_of(value) is None:
-			raise ValueError('Empty value for field', info.field_name)
+# 	@field_validator('userId', 'query', 'ctxLimit')
+# 	@classmethod
+# 	def check_empty_values(cls, value: Any, info: ValidationInfo):
+# 		if value_of(value) is None:
+# 			raise ValueError('Empty value for field', info.field_name)
 
-		return value
+# 		return value
 
-	@field_validator('ctxLimit')
-	@classmethod
-	def at_least_one_context(cls, value: int):
-		if value < 1:
-			raise ValueError('Invalid context chunk limit')
+# 	@field_validator('ctxLimit')
+# 	@classmethod
+# 	def at_least_one_context(cls, value: int):
+# 		if value < 1:
+# 			raise ValueError('Invalid context chunk limit')
 
-		return value
-
-
-def execute_query(query: Query, in_proc: bool = True) -> LLMOutput:
-	llm: LLM = llm_loader.load()
-	template = app.extra.get('LLM_TEMPLATE')
-	no_ctx_template = app.extra['LLM_NO_CTX_TEMPLATE']
-	# todo: array
-	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
-
-	if query.useContext:
-		target = process_context_query
-		args=(
-			query.userId,
-			vectordb_loader,
-			llm,
-			app_config,
-			query.query,
-			query.ctxLimit,
-			query.scopeType,
-			query.scopeList,
-			template,
-			end_separator,
-		)
-	else:
-		target=process_query
-		args=(
-			query.userId,
-			llm,
-			app_config,
-			query.query,
-			no_ctx_template,
-			end_separator,
-		)
-
-	if in_proc:
-		return exec_in_proc(target=target, args=args)
-
-	return target(*args)  # pyright: ignore
+# 		return value
 
 
-@app.post('/query')
-@enabled_guard(app)
-def _(query: Query) -> LLMOutput:
-	logger.debug('received query request', extra={ 'query': query.dict() })
+# def execute_query(query: Query, in_proc: bool = True) -> LLMOutput:
+# 	llm: LLM = llm_loader.load()
+# 	template = app.extra.get('LLM_TEMPLATE')
+# 	no_ctx_template = app.extra['LLM_NO_CTX_TEMPLATE']
+# 	# todo: array
+# 	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
 
-	if app_config.llm[0] == 'nc_texttotext':
-		return execute_query(query)
+# 	if query.useContext:
+# 		target = process_context_query
+# 		args=(
+# 			query.userId,
+# 			vectordb_loader,
+# 			llm,
+# 			app_config,
+# 			query.query,
+# 			query.ctxLimit,
+# 			query.scopeType,
+# 			query.scopeList,
+# 			template,
+# 			end_separator,
+# 		)
+# 	else:
+# 		target=process_query
+# 		args=(
+# 			query.userId,
+# 			llm,
+# 			app_config,
+# 			query.query,
+# 			no_ctx_template,
+# 			end_separator,
+# 		)
 
-	with llm_lock:
-		return execute_query(query, in_proc=False)
+# 	if in_proc:
+# 		return exec_in_proc(target=target, args=args)
+
+# 	return target(*args)  # pyright: ignore
 
 
-@app.post('/docSearch')
-@enabled_guard(app)
-def _(query: Query) -> list[SearchResult]:
-	# useContext from Query is not used here
-	return exec_in_proc(target=do_doc_search, args=(
-		query.userId,
-		query.query,
-		vectordb_loader,
-		query.ctxLimit,
-		query.scopeType,
-		query.scopeList,
-	))
+# @app.post('/query')
+# @enabled_guard(app)
+# def _(query: Query) -> LLMOutput:
+# 	logger.debug('received query request', extra={ 'query': query.dict() })
+
+# 	if app_config.llm[0] == 'nc_texttotext':
+# 		return execute_query(query)
+
+# 	with llm_lock:
+# 		return execute_query(query, in_proc=False)
+
+
+# @app.post('/docSearch')
+# @enabled_guard(app)
+# def _(query: Query) -> list[SearchResult]:
+# 	# useContext from Query is not used here
+# 	return exec_in_proc(target=do_doc_search, args=(
+# 		query.userId,
+# 		query.query,
+# 		vectordb_loader,
+# 		query.ctxLimit,
+# 		query.scopeType,
+# 		query.scopeList,
+# 	))

@@ -33,15 +33,15 @@ class ContextException(Exception):
 	...
 
 
-class LLMOutput(TypedDict):
-	output: str
-	sources: list[str]
-	# todo: add "titles" field
-
-
 class SearchResult(TypedDict):
 	source_id: str
 	title: str
+
+
+class LLMOutput(TypedDict):
+	output: str
+	sources: list[SearchResult]
+
 
 class EnrichedSource(BaseModel):
 	id: str

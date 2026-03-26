@@ -7,11 +7,9 @@
 import gc
 import logging
 from abc import ABC, abstractmethod
-from time import time
 from typing import Any
 
 import torch
-from fastapi import FastAPI
 from langchain.llms.base import LLM
 
 from .models.loader import init_model
@@ -54,19 +52,11 @@ class VectorDBLoader(Loader):
 
 
 class LLMModelLoader(Loader):
-	def __init__(self, app: FastAPI, config: TConfig) -> None:
+	def __init__(self, config: TConfig) -> None:
 		self.config = config
-		self.app = app
 
 	def load(self) -> LLM:
-		if self.app.extra.get('LLM_MODEL') is not None:
-			self.app.extra['LLM_LAST_ACCESSED'] = time()
-			return self.app.extra['LLM_MODEL']
-
 		llm_name, llm_config = self.config.llm
-		self.app.extra['LLM_TEMPLATE'] = llm_config.pop('template', '')
-		self.app.extra['LLM_NO_CTX_TEMPLATE'] = llm_config.pop('no_ctx_template', '')
-		self.app.extra['LLM_END_SEPARATOR'] = llm_config.pop('end_separator', '')
 
 		try:
 			model = init_model('llm', (llm_name, llm_config))
@@ -75,13 +65,9 @@ class LLMModelLoader(Loader):
 		if not isinstance(model, LLM):
 			raise LoaderException(f'Error: {model} does not implement "llm" type or has returned an invalid object')
 
-		self.app.extra['LLM_MODEL'] = model
-		self.app.extra['LLM_LAST_ACCESSED'] = time()
 		return model
 
 	def offload(self) -> None:
-		if self.app.extra.get('LLM_MODEL') is not None:
-			del self.app.extra['LLM_MODEL']
 		clear_cache()
 
 

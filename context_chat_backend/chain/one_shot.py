@@ -10,7 +10,7 @@ from ..dyn_loader import VectorDBLoader
 from ..types import TConfig
 from .context import get_context_chunks, get_context_docs
 from .query_proc import get_pruned_query
-from .types import ContextException, LLMOutput, ScopeType
+from .types import ContextException, LLMOutput, ScopeType, SearchResult
 
 _LLM_TEMPLATE = '''Answer based only on this context and do not add any imaginative details. Make sure to use the same language as the question in your answer.
 {context}
@@ -79,6 +79,9 @@ def process_context_query(
 		stop=[end_separator],
 		userid=user_id,
 	).strip()
-	unique_sources: list[str] = list({source for d in context_docs if (source := d.metadata.get('source'))})
+	unique_sources = [SearchResult(
+		source_id=source,
+		title=d.metadata.get('title', ''),
+	) for d in context_docs if (source := d.metadata.get('source'))]
 
 	return LLMOutput(output=output, sources=unique_sources)
