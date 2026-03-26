@@ -201,7 +201,7 @@ jobs:
           timeout 10 ./occ app_api:daemon:register --net host manual_install "Manual Install" manual-install http localhost http://localhost:8080
           timeout 120 ./occ app_api:app:register context_chat_backend manual_install --json-info "{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"${{ fromJson(steps.appinfo.outputs.result).version }}\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system_app\":0}" --force-scopes --wait-finish
           ls -la context_chat_backend/persistent_storage/*
-          sleep 30 # Wait for the em server to get ready
+          sleep 60 # Wait for the em server to get ready
 
       - name: Initial memory usage check
         run: |
@@ -242,13 +242,13 @@ jobs:
               continue
             fi
 
-            # Extract Total eligible files
-            total_files=$(echo "$stats" | jq '.eligible_files_count' || echo "")
+            # Extract total queued files
+            total_files=$(echo "$stats" | jq '.queued_documents_counts.files__default' || echo "")
 
-            # Extract Indexed documents count (files__default)
-            indexed_count=$(echo "$stats" | jq '.queued_documents_counts.files__default' || echo "")
+            # Extract indexed documents count (files__default)
+            indexed_count=$(echo "$stats" | jq '.vectordb_document_counts.files__default' || echo "")
 
-            echo "Total eligible files: $total_files"
+            echo "Total queued files: $total_files"
             echo "Indexed documents (files__default): $indexed_count"
 
             diff=$((total_files - indexed_count))
