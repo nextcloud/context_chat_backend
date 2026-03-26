@@ -50,6 +50,7 @@ async def __fetch_file_content(
 				dav=False,
 				params={ 'userId': user_id },
 			)
+			fp.seek(0)
 			return fp
 		except niquests.exceptions.RequestException as e:
 			if e.response is None:
