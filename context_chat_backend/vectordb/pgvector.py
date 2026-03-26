@@ -271,20 +271,22 @@ class VectorDB(BaseVectorDB):
 				.filter(AccessListStore.source_id == source_id)
 			)
 			session.execute(stmt)
-			session.commit()
 
-			stmt = (
-				postgresql_dialects.insert(AccessListStore)
-				.values([
-					{
-						'uid': user_id,
-						'source_id': source_id,
-					}
-					for user_id in user_ids
-				])
-				.on_conflict_do_nothing(index_elements=['uid', 'source_id'])
-			)
-			session.execute(stmt)
+			for i in range(0, len(user_ids), PG_BATCH_SIZE):
+				batched_uids = user_ids[i:i+PG_BATCH_SIZE]
+				stmt = (
+					postgresql_dialects.insert(AccessListStore)
+					.values([
+						{
+							'uid': user_id,
+							'source_id': source_id,
+						}
+						for user_id in batched_uids
+					])
+					.on_conflict_do_nothing(index_elements=['uid', 'source_id'])
+				)
+				session.execute(stmt)
+
 			session.commit()
 		except SafeDbException as e:
 			session.rollback()
@@ -324,27 +326,31 @@ class VectorDB(BaseVectorDB):
 
 			match op:
 				case UpdateAccessOp.allow:
-					stmt = (
-						postgresql_dialects.insert(AccessListStore)
-						.values([
-							{
-								'uid': user_id,
-								'source_id': source_id,
-							}
-							for user_id in user_ids
-						])
-						.on_conflict_do_nothing(index_elements=['uid', 'source_id'])
-					)
-					session.execute(stmt)
+					for i in range(0, len(user_ids), PG_BATCH_SIZE):
+						batched_uids = user_ids[i:i+PG_BATCH_SIZE]
+						stmt = (
+							postgresql_dialects.insert(AccessListStore)
+							.values([
+								{
+									'uid': user_id,
+									'source_id': source_id,
+								}
+								for user_id in batched_uids
+							])
+							.on_conflict_do_nothing(index_elements=['uid', 'source_id'])
+						)
+						session.execute(stmt)
 					session.commit()
 
 				case UpdateAccessOp.deny:
-					stmt = (
-						sa.delete(AccessListStore)
-						.filter(AccessListStore.uid.in_(user_ids))
-						.filter(AccessListStore.source_id == source_id)
-					)
-					session.execute(stmt)
+					for i in range(0, len(user_ids), PG_BATCH_SIZE):
+						batched_uids = user_ids[i:i+PG_BATCH_SIZE]
+						stmt = (
+							sa.delete(AccessListStore)
+							.filter(AccessListStore.uid.in_(batched_uids))
+							.filter(AccessListStore.source_id == source_id)
+						)
+						session.execute(stmt)
 					session.commit()
 
 					# check if all entries related to the source were deleted
@@ -356,6 +362,8 @@ class VectorDB(BaseVectorDB):
 			logger.info('Error: updating access list', exc_info=e, extra={
 				'source_id': source_id,
 			})
+		except DbException:
+			raise
 		except Exception as e:
 			session.rollback()
 			raise DbException('Error: updating access list') from e
@@ -388,33 +396,35 @@ class VectorDB(BaseVectorDB):
 		if len(source_ids) == 0:
 			return
 
-		filter_ = [
-			AccessListStore.source_id.in_(source_ids) if len(source_ids) > 1
-			else AccessListStore.source_id == source_ids[0]
-		]
-
 		session = session_ or self.session_maker()
 
 		try:
-			stmt = (
-				sa.select(AccessListStore.source_id)
-				.filter(*filter_)
-				.distinct()
-			)
-			result = session.execute(stmt).fetchall()
+			# find orphaned source_ids (no AccessListStore entry) in batches
+			orphaned_ids = []
+			for i in range(0, len(source_ids), PG_BATCH_SIZE):
+				batched_ids = source_ids[i:i+PG_BATCH_SIZE]
+				stmt = (
+					sa.select(DocumentsStore.source_id)
+					.filter(DocumentsStore.source_id.in_(batched_ids))
+					.filter(
+						~sa.exists(  # NOT EXISTS
+							sa.select(sa.literal(1))
+							.where(AccessListStore.source_id == DocumentsStore.source_id)
+						)
+					)
+				)
+				result = session.execute(stmt).fetchall()
+				orphaned_ids.extend(str(r.source_id) for r in result)
+
+			if len(orphaned_ids) > 0:
+				self.delete_source_ids(orphaned_ids, session)
+		except DbException:
+			raise
 		except Exception as e:
+			raise DbException('Error: cleaning up orphaned source ids') from e
+		finally:
 			if session_ is None:
 				session.close()
-			raise DbException('Error: getting source ids from access list') from e
-
-		existing_links = [str(r.source_id) for r in result]
-		to_delete = [source_id for source_id in source_ids if source_id not in existing_links]
-
-		if len(to_delete) > 0:
-			self.delete_source_ids(to_delete, session_)
-
-		if session_ is None:
-			session.close()
 
 	def delete_source_ids(self, source_ids: list[str], session_: orm.Session | None = None):
 		session = session_ or self.session_maker()
@@ -423,35 +433,32 @@ class VectorDB(BaseVectorDB):
 			collection = self.client.get_collection(session)
 
 			# entry from "AccessListStore" is deleted automatically due to the foreign key constraint
-			stmt_doc = (
-				sa.delete(DocumentsStore)
-				.filter(DocumentsStore.source_id.in_(source_ids))
-				.returning(DocumentsStore.chunks)
-			)
+      # batch the deletion to avoid hitting the query parameter limit
+			chunks_to_delete = []
+			for i in range(0, len(source_ids), PG_BATCH_SIZE):
+				batched_ids = source_ids[i:i+PG_BATCH_SIZE]
+				stmt_doc = (
+					sa.delete(DocumentsStore)
+					.filter(DocumentsStore.source_id.in_(batched_ids))
+					.returning(DocumentsStore.chunks)
+				)
+				doc_result = session.execute(stmt_doc)
+				chunks_to_delete.extend(str(c) for res in doc_result for c in res.chunks)
 
-			doc_result = session.execute(stmt_doc)
-			chunks_to_delete = [str(c) for res in doc_result for c in res.chunks]
-		except Exception as e:
-			session.rollback()
-			if session_ is None:
-				session.close()
-			raise DbException('Error: deleting source ids from docs store') from e
+			for i in range(0, len(chunks_to_delete), PG_BATCH_SIZE):
+				batched_chunks = chunks_to_delete[i:i+PG_BATCH_SIZE]
+				stmt_chunks = (
+					sa.delete(self.client.EmbeddingStore)
+					.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
+					.filter(self.client.EmbeddingStore.id.in_(batched_chunks))
+				)
+				session.execute(stmt_chunks)
 
-		try:
-			stmt_chunks = (
-				sa.delete(self.client.EmbeddingStore)
-				.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
-				.filter(self.client.EmbeddingStore.id.in_(chunks_to_delete))
-			)
-
-			session.execute(stmt_chunks)
 			session.commit()
 		except Exception as e:
-			logger.error('Error deleting chunks, rolling back documents store deletion for source ids')
+			logger.error('Error deleting source ids, rolling back changes.')
 			session.rollback()
-			raise DbException(
-				'Error: deleting chunks, rolling back documents store deletion for source ids'
-			) from e
+			raise DbException('Error: deleting source ids, rolling back changes.') from e
 		finally:
 			if session_ is None:
 				session.close()
@@ -469,23 +476,20 @@ class VectorDB(BaseVectorDB):
 
 				doc_result = session.execute(stmt)
 				chunks_to_delete = [str(c) for res in doc_result for c in res.chunks]
-			except Exception as e:
-				session.rollback()
-				raise DbException('Error: deleting provider from docs store') from e
 
-			try:
-				stmt = (
-					sa.delete(self.client.EmbeddingStore)
-					.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
-					.filter(self.client.EmbeddingStore.id.in_(chunks_to_delete))
-				)
-				session.execute(stmt)
+				for i in range(0, len(chunks_to_delete), PG_BATCH_SIZE):
+					batched_chunks = chunks_to_delete[i:i+PG_BATCH_SIZE]
+					stmt = (
+						sa.delete(self.client.EmbeddingStore)
+						.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
+						.filter(self.client.EmbeddingStore.id.in_(batched_chunks))
+					)
+					session.execute(stmt)
+
 				session.commit()
 			except Exception as e:
 				session.rollback()
-				raise DbException(
-					'Error: deleting chunks, rolling back documents store deletion for provider'
-				) from e
+				raise DbException('Error: deleting chunks, rolling back changes') from e
 
 	def delete_user(self, user_id: str):
 		with self.session_maker() as session:
