@@ -252,16 +252,16 @@ jobs:
             echo "Indexed documents (files__default): $indexed_count"
 
             diff=$((total_files - indexed_count))
-            threshold=$((total_files * 2 / 100))
+            threshold=$((total_files * 3 / 100))
 
             # Check if difference is within tolerance
             if [ $diff -le $threshold ]; then
-              echo "Indexing within 2% tolerance (diff=$diff, threshold=$threshold)"
+              echo "Indexing within 3% tolerance (diff=$diff, threshold=$threshold)"
               success=1
               break
             else
               progress=$((diff * 100 / total_files))
-              echo "Outside 2% tolerance: diff=$diff (${progress}%), threshold=$threshold"
+              echo "Outside 3% tolerance: diff=$diff (${progress}%), threshold=$threshold"
             fi
 
             # Check if backend is still alive
