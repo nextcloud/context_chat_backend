@@ -8,7 +8,6 @@ from typing import Literal, TypedDict
 
 import niquests
 from langchain_core.embeddings import Embeddings
-from pydantic import BaseModel
 
 from .types import (
 	EmbeddingException,
@@ -41,8 +40,17 @@ class CreateEmbeddingResponse(TypedDict):
 	usage: EmbeddingUsage
 
 
-class NetworkEmbeddings(Embeddings, BaseModel):
-	app_config: TConfig
+class NetworkEmbeddings(Embeddings):
+	def __init__(self, app_config: TConfig):
+		self.app_config = app_config
+
+	def check_connection(self) -> bool:
+		try:
+			self.embed_query('hello')
+			return True
+		except EmbeddingException as e:
+			logger.warning('Embedding server connection failed', exc_info=e)
+			return False
 
 	def _get_embedding(self, input_: str | list[str], try_: int = 3) -> list[float] | list[list[float]]:
 		emconf = self.app_config.embedding

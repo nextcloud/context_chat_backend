@@ -26,6 +26,7 @@ from .chain.one_shot import process_context_query
 from .chain.query_proc import get_pruned_query
 from .chain.types import ContextException, EnrichedSourceList, LLMOutput, ScopeList, ScopeType, SearchResult
 from .dyn_loader import LLMModelLoader, VectorDBLoader
+from .network_em import NetworkEmbeddings
 from .types import (
 	ActionsQueueItems,
 	ActionType,
@@ -102,6 +103,10 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			return
 
 		try:
+			if not __check_em_server(app_config):
+				sleep(POLLING_COOLDOWN)
+				continue
+
 			nc = NextcloudApp()
 			q_items_res = nc.ocs(
 				'GET',
@@ -415,6 +420,10 @@ def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 	llm: LLM = llm_loader.load()
 
 	while True:
+		if not __check_em_server(app_config):
+			sleep(POLLING_COOLDOWN)
+			continue
+
 		if THREAD_STOP_EVENT.is_set():
 			LOGGER.info('Updates processing thread is stopping due to stop event being set')
 			return
@@ -822,3 +831,8 @@ def process_search_task(
 			task_input.get('scopeList'),
 		)
 	)
+
+
+def __check_em_server(app_config: TConfig) -> bool:
+	embedding_model = NetworkEmbeddings(app_config=app_config)
+	return embedding_model.check_connection()
