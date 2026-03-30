@@ -79,6 +79,7 @@ class AccessListStore(Base):
 			f'{DOCUMENTS_TABLE_NAME}.source_id',
 			ondelete='CASCADE',
 		),
+		index=True,
 	)
 
 	__table_args__ = (

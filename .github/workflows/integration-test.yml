@@ -92,6 +92,37 @@ jobs:
         options: --health-cmd pg_isready --health-interval 5s --health-timeout 2s --health-retries 5
 
     steps:
+      - name: Enable PostgreSQL slow query logging and auto_explain
+        run: |
+          PG_CONTAINER=$(docker ps -q --filter "ancestor=pgvector/pgvector:pg17")
+          docker exec $PG_CONTAINER bash -c "\
+            cat >> /var/lib/postgresql/data/postgresql.conf <<EOF
+
+          # slow query logging
+          log_min_duration_statement = 10
+
+          # auto_explain for slow queries
+          session_preload_libraries = 'auto_explain'
+          auto_explain.log_min_duration = '10ms'
+          auto_explain.log_analyze = on
+          auto_explain.log_buffers = on
+          auto_explain.log_nested_statements = on
+          auto_explain.log_verbose = on
+
+          # file-based logging
+          logging_collector = on
+          log_directory = '/var/log/pg_log'
+          log_filename = 'postgresql.log'
+          log_file_mode = 0644
+          EOF"
+
+          docker exec $PG_CONTAINER psql -U root -d nextcloud -c "SELECT pg_reload_conf();"
+          sleep 2
+
+          # verify the config has been loaded
+          docker exec $PG_CONTAINER psql -U root -d nextcloud -c "SHOW log_min_duration_statement;"
+          docker exec $PG_CONTAINER psql -U root -d nextcloud -c "SHOW session_preload_libraries;"
+
       - name: Checkout server
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
@@ -297,6 +328,12 @@ jobs:
         if: always()
         run: |
           tail -v -n +1 context_chat_backend/persistent_storage/logs/em_server.log* || echo "No logs in logs directory"
+
+      - name: Show PostgreSQL slow query logs
+        if: always()
+        run: |
+          PG_CONTAINER=$(docker ps -q --filter "ancestor=pgvector/pgvector:pg17")
+          docker exec $PG_CONTAINER cat /var/log/pg_log/postgresql.log
 
   summary:
     permissions:
