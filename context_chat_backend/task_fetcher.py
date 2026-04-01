@@ -82,17 +82,32 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 		return
 
 	def _load_sources(source_items: Mapping[int, SourceItem | ReceivedFileItem]) -> Mapping[int, IndexingError | None]:
+		source_refs = [s.reference for s in source_items.values()]
+		LOGGER.info('Starting embed_sources subprocess for %d source(s): %s', len(source_items), source_refs)
 		try:
-			return exec_in_proc(
+			result = exec_in_proc(
 				target=embed_sources,
 				args=(vectordb_loader, app_config, source_items),
 			)
+			errors = {k: v for k, v in result.items() if isinstance(v, IndexingError)}
+			LOGGER.info(
+				'embed_sources subprocess finished for %d source(s): %d succeeded, %d errored',
+				len(source_items),
+				len(result) - len(errors),
+				len(errors),
+				extra={'errors': errors} if errors else {},
+			)
+			return result
 		except Exception as e:
 			err_name = {DbException: "DB", EmbeddingException: "Embedding"}.get(type(e), "Unknown")
 			source_ids = (s.reference for s in source_items.values())
 			err = IndexingError(
 				error=f'{err_name} Error occurred, the sources {source_ids} will be retried: {e}',
 				retryable=True,
+			)
+			LOGGER.error(
+				'embed_sources subprocess raised a %s error for sources %s, marking all as retryable',
+				err_name, source_refs, exc_info=e,
 			)
 			return dict.fromkeys(source_items, err)
 
@@ -146,13 +161,21 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 				max_workers=PARALLEL_FILE_PARSING_COUNT,
 				thread_name_prefix='IndexingPool',
 			) as executor:
+				LOGGER.info(
+					'Dispatching %d file chunk(s) and %d provider chunk(s) to %d IndexingPool worker(s)',
+					len(file_chunks), len(provider_chunks), PARALLEL_FILE_PARSING_COUNT,
+				)
 				file_futures = [executor.submit(_load_sources, chunk) for chunk in file_chunks]
 				provider_futures = [executor.submit(_load_sources, chunk) for chunk in provider_chunks]
 
-				for future in file_futures:
+				for i, future in enumerate(file_futures):
+					LOGGER.debug('Waiting for file chunk %d/%d future to complete', i + 1, len(file_futures))
 					files_result.update(future.result())
-				for future in provider_futures:
+					LOGGER.debug('File chunk %d/%d future completed', i + 1, len(file_futures))
+				for i, future in enumerate(provider_futures):
+					LOGGER.debug('Waiting for provider chunk %d/%d future to complete', i + 1, len(provider_futures))
 					providers_result.update(future.result())
+					LOGGER.debug('Provider chunk %d/%d future completed', i + 1, len(provider_futures))
 
 			if (
 				any(isinstance(res, IndexingError) for res in files_result.values())

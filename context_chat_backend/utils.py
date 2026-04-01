@@ -90,8 +90,20 @@ def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daem
 		kwargs=kwargs,
 		daemon=daemon,
 	)
+	target_name = getattr(target, '__name__', str(target))
+	_logger.debug('Starting subprocess for %s', target_name)
+	start = perf_counter_ns()
 	p.start()
+	_logger.debug('Subprocess PID %d started for %s, waiting for it to finish (no timeout)', p.pid, target_name)
 	p.join()
+	elapsed_ms = (perf_counter_ns() - start) / 1e6
+	_logger.debug('Subprocess PID %d for %s finished in %.2f ms (exit code: %s)', p.pid, target_name, elapsed_ms, p.exitcode)
+	if p.exitcode != 0:
+		_logger.warning(
+			'Subprocess PID %d for %s exited with non-zero exit code %d after %.2f ms'
+			' — possible OOM kill or unhandled signal',
+			p.pid, target_name, p.exitcode, elapsed_ms,
+		)
 
 	result = pconn.recv()
 	if result['error'] is not None:

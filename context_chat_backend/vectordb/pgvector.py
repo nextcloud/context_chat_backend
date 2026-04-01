@@ -6,6 +6,7 @@ import logging
 import os
 from collections.abc import Mapping
 from datetime import datetime
+from time import perf_counter_ns
 
 import psycopg
 import sqlalchemy as sa
@@ -152,8 +153,25 @@ class VectorDB(BaseVectorDB):
 					# so we chunk the documents into (5 values * 10k) chunks
 					# change the chunk size when there are more inserted values per document
 					chunk_ids = []
-					for i in range(0, len(indoc.documents), batch_size):
+					total_chunks = len(indoc.documents)
+					num_batches = max(1, -(-total_chunks // batch_size))  # ceiling division
+					logger.debug(
+						'Embedding source %s: %d chunk(s) in %d batch(es) — blocks on embedding model',
+						indoc.source_id, total_chunks, num_batches,
+					)
+					for i in range(0, total_chunks, batch_size):
+						batch_num = i // batch_size + 1
+						logger.debug(
+							'Sending embedding batch %d/%d (%d chunk(s)) for source %s',
+							batch_num, num_batches, len(indoc.documents[i:i+batch_size]), indoc.source_id,
+						)
+						t0 = perf_counter_ns()
 						chunk_ids.extend(self.client.add_documents(indoc.documents[i:i+batch_size]))
+						elapsed_ms = (perf_counter_ns() - t0) / 1e6
+						logger.debug(
+							'Embedding batch %d/%d for source %s completed in %.2f ms',
+							batch_num, num_batches, indoc.source_id, elapsed_ms,
+						)
 
 					doc = DocumentsStore(
 						source_id=indoc.source_id,
