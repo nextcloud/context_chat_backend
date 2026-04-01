@@ -39,7 +39,7 @@ from .types import (
 	SourceItem,
 	TConfig,
 )
-from .utils import exec_in_proc, get_app_role
+from .utils import SubprocessKilledError, exec_in_proc, get_app_role
 from .vectordb.base import BaseVectorDB
 from .vectordb.service import (
 	decl_update_access,
@@ -89,6 +89,29 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 		LOGGER.error('Error initializing vector DB loader, files indexing thread will not start:', exc_info=e)
 		return
 
+	def _embed_one(db_id: int, item: SourceItem | ReceivedFileItem) -> tuple[int, IndexingError | None]:
+		"""Run embed_sources for a single item in its own subprocess. Returns (db_id, error_or_None)."""
+		try:
+			result = exec_in_proc(
+				target=embed_sources,
+				args=(vectordb_loader, app_config, {db_id: item}),
+			)
+			return db_id, result.get(db_id)
+		except SubprocessKilledError as e:
+			LOGGER.error(
+				'embed_sources subprocess killed for individual source %s — marking as non-retryable'
+				' to prevent infinite OOM retry loop',
+				item.reference, exc_info=e,
+			)
+			return db_id, IndexingError(error=f'Subprocess killed (OOM?): {e}', retryable=False)
+		except Exception as e:
+			err_name = {DbException: 'DB', EmbeddingException: 'Embedding'}.get(type(e), 'Unknown')
+			LOGGER.error(
+				'embed_sources raised a %s error for individual source %s, marking as retryable',
+				err_name, item.reference, exc_info=e,
+			)
+			return db_id, IndexingError(error=str(e), retryable=True)
+
 	def _load_sources(source_items: Mapping[int, SourceItem | ReceivedFileItem]) -> Mapping[int, IndexingError | None]:
 		source_refs = [s.reference for s in source_items.values()]
 		LOGGER.info('Starting embed_sources subprocess for %d source(s): %s', len(source_items), source_refs)
@@ -106,11 +129,31 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 				extra={'errors': errors} if errors else {},
 			)
 			return result
+		except SubprocessKilledError as e:
+			LOGGER.error(
+				'embed_sources subprocess was killed (likely OOM) for %d source(s): %s',
+				len(source_items), source_refs, exc_info=e,
+			)
+			if len(source_items) == 1:
+				# Single-item subprocess was killed — mark non-retryable to break infinite OOM loop.
+				LOGGER.error(
+					'Single-item subprocess killed for %s — marking as non-retryable',
+					source_refs,
+				)
+				return {db_id: IndexingError(error=f'Subprocess killed (OOM?): {e}', retryable=False)
+					for db_id in source_items}
+
+			# Multi-item batch: fall back to one subprocess per source to pinpoint the problematic file.
+			LOGGER.warning(
+				'Falling back to individual processing for %d sources to isolate any OOM-causing file(s)',
+				len(source_items),
+			)
+			return dict(_embed_one(db_id, item) for db_id, item in source_items.items())
+
 		except Exception as e:
-			err_name = {DbException: "DB", EmbeddingException: "Embedding"}.get(type(e), "Unknown")
-			source_ids = (s.reference for s in source_items.values())
+			err_name = {DbException: 'DB', EmbeddingException: 'Embedding'}.get(type(e), 'Unknown')
 			err = IndexingError(
-				error=f'{err_name} Error occurred, the sources {source_ids} will be retried: {e}',
+				error=f'{err_name} Error: {e}',
 				retryable=True,
 			)
 			LOGGER.error(

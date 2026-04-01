@@ -69,6 +69,17 @@ def JSONResponse(
 	return FastAPIJSONResponse(content, status_code, **kwargs)
 
 
+class SubprocessKilledError(RuntimeError):
+	"""Raised when a subprocess exits with a non-zero exit code (likely OOM kill or unhandled signal)."""
+
+	def __init__(self, pid: int, target_name: str, exitcode: int):
+		super().__init__(
+			f'Subprocess PID {pid} for {target_name} exited with non-zero exit code {exitcode}'
+			' — possible OOM kill or unhandled signal'
+		)
+		self.exitcode = exitcode
+
+
 def exception_wrap(fun: Callable | None, *args, resconn: Connection, **kwargs):
 	try:
 		if fun is None:
@@ -104,7 +115,7 @@ def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daem
 			' — possible OOM kill or unhandled signal',
 			p.pid, target_name, p.exitcode, elapsed_ms,
 		)
-		raise RuntimeError(f'Subprocess PID {p.pid} for {target_name} exited with non-zero exit code {p.exitcode}')
+		raise SubprocessKilledError(p.pid, target_name, p.exitcode)
 
 	result = pconn.recv()
 	if result['error'] is not None:
