@@ -59,6 +59,10 @@ FILES_INDEXING_BATCH_SIZE = 16  # theoretical max RAM usage: 16 * 100 MiB, todo:
 MIN_FILES_PER_CPU = 4
 # divides the batch into these many chunks
 PARALLEL_FILE_PARSING_COUNT = max(1, (os.cpu_count() or 2) - 1)  # todo: config?
+if os.getenv('GITHUB_ACTIONS'):
+	# Keep CI memory usage predictable and avoid OOM-killed workers.
+	PARALLEL_FILE_PARSING_COUNT = max(1, min(PARALLEL_FILE_PARSING_COUNT, 2))
+LOGGER.info(f'Using {PARALLEL_FILE_PARSING_COUNT} parallel file parsing workers')
 ACTIONS_BATCH_SIZE = 512  # todo: config?
 POLLING_COOLDOWN = 30
 TRIGGER = Event()
