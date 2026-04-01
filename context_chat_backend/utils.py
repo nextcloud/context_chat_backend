@@ -104,6 +104,7 @@ def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daem
 			' — possible OOM kill or unhandled signal',
 			p.pid, target_name, p.exitcode, elapsed_ms,
 		)
+		raise RuntimeError(f'Subprocess PID {p.pid} for {target_name} exited with non-zero exit code {p.exitcode}')
 
 	result = pconn.recv()
 	if result['error'] is not None:
