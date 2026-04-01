@@ -218,8 +218,8 @@ jobs:
       - name: Periodically check context_chat stats for 15 minutes to allow the backend to index the files
         run: |
           success=0
-          echo "::group::Checking stats periodically for 15 minutes to allow the backend to index the files"
-          for i in {1..90}; do
+          echo "::group::Checking stats periodically for 30 minutes to allow the backend to index the files"
+          for i in {1..180}; do
             echo "Checking stats, attempt $i..."
 
             stats_err=$(mktemp)
