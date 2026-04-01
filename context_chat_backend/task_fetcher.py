@@ -56,7 +56,11 @@ THREADS = {}
 THREAD_STOP_EVENT = Event()
 LOGGER = logging.getLogger('ccb.task_fetcher')
 FILES_INDEXING_BATCH_SIZE = 16  # theoretical max RAM usage: 16 * 100 MiB, todo: config?
+if os.getenv('GITHUB_ACTIONS'):
+	FILES_INDEXING_BATCH_SIZE = 4
 MIN_FILES_PER_CPU = 4
+if os.getenv('GITHUB_ACTIONS'):
+	MIN_FILES_PER_CPU = 2
 # divides the batch into these many chunks
 PARALLEL_FILE_PARSING_COUNT = max(1, (os.cpu_count() or 2) - 1)  # todo: config?
 if os.getenv('GITHUB_ACTIONS'):
