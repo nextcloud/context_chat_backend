@@ -2,9 +2,11 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+import io
 import logging
 import multiprocessing as mp
 import os
+import sys
 import traceback
 from collections.abc import Callable
 from functools import partial, wraps
@@ -80,7 +82,12 @@ class SubprocessKilledError(RuntimeError):
 		self.exitcode = exitcode
 
 
-def exception_wrap(fun: Callable | None, *args, resconn: Connection, **kwargs):
+def exception_wrap(fun: Callable | None, *args, resconn: Connection, stdconn: Connection, **kwargs):
+	stdout_capture = io.StringIO()
+	stderr_capture = io.StringIO()
+	sys.stdout = stdout_capture
+	sys.stderr = stderr_capture
+
 	try:
 		if fun is None:
 			return resconn.send({ 'value': None, 'error': None })
@@ -88,11 +95,15 @@ def exception_wrap(fun: Callable | None, *args, resconn: Connection, **kwargs):
 	except Exception as e:
 		tb = traceback.format_exc()
 		resconn.send({ 'value': None, 'error': e, 'traceback': tb })
+	finally:
+		stdconn.send({'stdout': stdout_capture.getvalue(), 'stderr': stderr_capture.getvalue()})
 
 
 def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daemon=None):  # noqa: B006
 	pconn, cconn = mp.Pipe()
+	std_pconn, std_cconn = mp.Pipe()
 	kwargs['resconn'] = cconn
+	kwargs['stdconn'] = std_cconn
 	p = mp.Process(
 		group=group,
 		target=partial(exception_wrap, target),
@@ -108,20 +119,28 @@ def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daem
 	_logger.debug('Subprocess PID %d started for %s, waiting for it to finish (no timeout)', p.pid, target_name)
 	p.join()
 	elapsed_ms = (perf_counter_ns() - start) / 1e6
-	_logger.debug('Subprocess PID %d for %s finished in %.2f ms (exit code: %s)', p.pid, target_name, elapsed_ms, p.exitcode)
+	_logger.debug(
+		'Subprocess PID %d for %s finished in %.2f ms (exit code: %s)',
+		p.pid, target_name, elapsed_ms, p.exitcode,
+	)
 	if p.exitcode != 0:
 		_logger.warning(
 			'Subprocess PID %d for %s exited with non-zero exit code %d after %.2f ms'
 			' — possible OOM kill or unhandled signal',
 			p.pid, target_name, p.exitcode, elapsed_ms,
 		)
-		raise SubprocessKilledError(p.pid, target_name, p.exitcode)
+		raise SubprocessKilledError(p.pid or 0, target_name, p.exitcode or -1)
 
 	result = pconn.recv()
 	if result['error'] is not None:
 		_logger.error('original traceback: %s', result['traceback'])
 		raise result['error']
 
+	stdobj = std_pconn.recv()
+	_logger.info(f'std info for {target_name}', extra={
+		'stdout': stdobj['stdout'],
+		'stderr': stdobj['stderr'],
+	})
 	return result['value']
 
 
