@@ -123,6 +123,17 @@ def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daem
 		'Subprocess PID %d for %s finished in %.2f ms (exit code: %s)',
 		p.pid, target_name, elapsed_ms, p.exitcode,
 	)
+	stdobj = std_pconn.recv()
+	_logger.info(f'std info for {target_name}', extra={
+		'stdout': stdobj['stdout'],
+		'stderr': stdobj['stderr'],
+	})
+
+	result = pconn.recv()
+	if result['error'] is not None:
+		_logger.error('original traceback: %s', result['traceback'])
+		raise result['error']
+
 	if p.exitcode != 0:
 		_logger.warning(
 			'Subprocess PID %d for %s exited with non-zero exit code %d after %.2f ms'
@@ -131,16 +142,6 @@ def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daem
 		)
 		raise SubprocessKilledError(p.pid or 0, target_name, p.exitcode or -1)
 
-	result = pconn.recv()
-	if result['error'] is not None:
-		_logger.error('original traceback: %s', result['traceback'])
-		raise result['error']
-
-	stdobj = std_pconn.recv()
-	_logger.info(f'std info for {target_name}', extra={
-		'stdout': stdobj['stdout'],
-		'stderr': stdobj['stderr'],
-	})
 	return result['value']
 
 
