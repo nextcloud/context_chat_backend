@@ -122,6 +122,7 @@ async def __fetch_files_content(
 	files: dict[int, ReceivedFileItem]
 ) -> dict[int, SourceItem | IndexingError]:
 	source_items = {}
+	task_sources = {}
 	semaphore = asyncio.Semaphore(CONCURRENT_FILE_FETCHES)
 	tasks = []
 
@@ -156,9 +157,10 @@ async def __fetch_files_content(
 		# todo: perform the existing file check before fetching the content to avoid unnecessary fetches
 		# any user id from the list should have read access to the file
 		tasks.append(asyncio.ensure_future(__fetch_file_content(semaphore, file.file_id, file.userIds[0])))
+		task_sources[db_id] = file
 
 	results = await asyncio.gather(*tasks, return_exceptions=True)
-	for (db_id, file), result in zip(files.items(), results, strict=True):
+	for (db_id, file), result in zip(task_sources.items(), results, strict=True):
 		if isinstance(result, IndexingException):
 			LOGGER.error(
 				f'Error fetching content for db id {db_id}, file id {file.file_id}, reference {file.reference}'

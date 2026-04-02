@@ -9,6 +9,7 @@ import re
 import tempfile
 from collections.abc import Callable
 from io import BytesIO
+from sys import getsizeof
 
 import docx2txt
 from epub2txt import epub2txt
@@ -19,10 +20,24 @@ from pypdf import PdfReader
 from pypdf.errors import FileNotDecryptedError as PdfFileNotDecryptedError
 from striprtf import striprtf
 
-from ...types import SourceItem, TaskProcException
-from .task_proc import do_ocr, do_transcription
+from ...types import SourceItem, TaskProcException, TaskProcFatalException
+from .task_proc import (
+	OCR_TASK_TYPE,
+	SPEECH_TO_TEXT_TASK_TYPE,
+	RetryableException,
+	delete_temp_files,
+	do_ocr,
+	do_transcription,
+	is_task_type_available,
+	upload_temp_files,
+)
 
 logger = logging.getLogger('ccb.doc_loader')
+PDF_IMAGES_BATCH_SIZE = 25
+PDF_IMAGES_MAX_SIZE = 100 * 1024 * 1024  # 100 MiB in bytes
+# todo: reduce the frequency of this check?
+IS_OCR_AVAILABLE = is_task_type_available(OCR_TASK_TYPE)
+IS_STT_AVAILABLE = is_task_type_available(SPEECH_TO_TEXT_TASK_TYPE)
 
 def _temp_file_wrapper(file: BytesIO, loader: Callable, sep: str = '\n') -> str:
 	raw_bytes = file.read()
@@ -38,46 +53,98 @@ def _temp_file_wrapper(file: BytesIO, loader: Callable, sep: str = '\n') -> str:
 
 # -- LOADERS -- #
 
-def _load_pdf(file: BytesIO) -> str:
+def _load_pdf(file: BytesIO, source: SourceItem) -> str:
+	global IS_OCR_AVAILABLE
 	pdf_reader = PdfReader(file)
-	return '\n\n'.join([page.extract_text().strip() for page in pdf_reader.pages])
+	output = []
+
+	for page in pdf_reader.pages:
+		text = page.extract_text().strip()
+		ocr_outputs = []
+
+		if IS_OCR_AVAILABLE:
+			for i in range(0, len(page.images), PDF_IMAGES_BATCH_SIZE):
+				image_files = {}
+				for img in page.images[i:i+PDF_IMAGES_BATCH_SIZE]:
+					if getsizeof(img.data) > PDF_IMAGES_MAX_SIZE:
+						logger.info(
+							f'An image {img.name} embedded in a PDF {source.reference}'
+							f' exceeds max allowed size of {PDF_IMAGES_MAX_SIZE} bytes'
+						)
+					image_files[img.name] = img.data
+
+				try:
+					file_ids_map = asyncio.run(upload_temp_files(image_files))
+				except RetryableException:
+					raise
+				except Exception as e:
+					logger.warning(
+						f'Error during uploading an embedded PDF image from {source.reference}: {e}',
+						exc_info=e,
+					)
+					continue
+
+				try:
+					ocr_tp_outputs = asyncio.run(do_ocr(source.userIds[0], file_ids_map.values()))  # pyright: ignore[reportArgumentType]
+					asyncio.run(delete_temp_files(file_ids_map.values()))  # pyright: ignore[reportArgumentType]
+				except TaskProcFatalException:
+					# task type is not present anymore, flip the task type indicator manually
+					# for this complete batched injest process
+					logger.warning(
+						'The OCR provider disappeared mid-operation, disabling OCR for this batch of'
+						f' documents including {source.reference}'
+					)
+					IS_OCR_AVAILABLE = False
+					break
+				except TaskProcException as e:
+					logger.warning(f'OCR for embedded images in PDF {source.reference} failed: {e}', exc_info=e)
+					continue
+
+				# for each image batch
+				ocr_outputs += ocr_tp_outputs
+
+		# for each page
+		output.append(text)
+		output += ocr_outputs
+
+	return '\n\n'.join(output)
 
 
-def _load_csv(file: BytesIO) -> str:
+def _load_csv(file: BytesIO, _: SourceItem) -> str:
 	return read_csv(file).to_string(header=False, na_rep='')
 
 
-def _load_epub(file: BytesIO) -> str:
+def _load_epub(file: BytesIO, _: SourceItem) -> str:
 	return _temp_file_wrapper(file, epub2txt).strip()
 
 
-def _load_docx(file: BytesIO) -> str:
+def _load_docx(file: BytesIO, _: SourceItem) -> str:
 	return docx2txt.process(file).strip()
 
 
-def _load_odt(file: BytesIO) -> str:
+def _load_odt(file: BytesIO, _: SourceItem) -> str:
 	return _temp_file_wrapper(file, lambda fp: Document(fp).get_formatted_text()).strip()
 
 
-def _load_ppt_x(file: BytesIO) -> str:
+def _load_ppt_x(file: BytesIO, _: SourceItem) -> str:
 	return _temp_file_wrapper(file, lambda fp: UnstructuredLoader(fp).load()).strip()
 
 
-def _load_rtf(file: BytesIO) -> str:
+def _load_rtf(file: BytesIO, _: SourceItem) -> str:
 	return striprtf.rtf_to_text(file.read().decode('utf-8', 'ignore')).strip()
 
 
-def _load_xml(file: BytesIO) -> str:
+def _load_xml(file: BytesIO, _: SourceItem) -> str:
 	data = file.read().decode('utf-8', 'ignore')
 	data = re.sub(r'</.+>', '', data)
 	return data.strip()
 
 
-def _load_xlsx(file: BytesIO) -> str:
+def _load_xlsx(file: BytesIO, _: SourceItem) -> str:
 	return read_excel(file, na_filter=False).to_string(header=False, na_rep='')
 
 
-def _load_email(file: BytesIO, ext: str = 'eml') -> str | None:
+def _load_email(file: BytesIO, _: SourceItem, ext: str = 'eml') -> str | None:
 	# NOTE: msg format is not tested
 	if ext not in ['eml', 'msg']:
 		return None
@@ -131,9 +198,9 @@ def decode_source(source: SourceItem) -> str | None:
 			return None
 
 		try:
-			if mimetype.startswith('image/'):
-				return asyncio.run(do_ocr(source.userIds[0], source.file_id))
-			if mimetype.startswith('audio/'):
+			if IS_OCR_AVAILABLE and mimetype.startswith('image/'):
+				return asyncio.run(do_ocr(source.userIds[0], [source.file_id]))[0]
+			if IS_STT_AVAILABLE and mimetype.startswith('audio/'):
 				return asyncio.run(do_transcription(source.userIds[0], source.file_id))
 		except TaskProcException as e:
 			# todo: convert this to error obj return
@@ -152,7 +219,7 @@ def decode_source(source: SourceItem) -> str | None:
 			io_obj = source.content
 
 		if _loader_map.get(mimetype):
-			result = _loader_map[mimetype](io_obj)
+			result = _loader_map[mimetype](io_obj, source)
 			return result.encode('utf-8', 'ignore').decode('utf-8', 'ignore')
 
 		return io_obj.read().decode('utf-8', 'ignore')

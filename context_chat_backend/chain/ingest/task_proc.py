@@ -7,13 +7,13 @@ import asyncio
 import json
 import logging
 import os
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import niquests
 from nc_py_api import AsyncNextcloudApp, NextcloudException
-from pydantic import BaseModel, ValidationError
+from pydantic import AfterValidator, BaseModel, ValidationError
 
-from ...types import TaskProcException, TaskProcFatalException
+from ...types import TaskProcClientException, TaskProcException, TaskProcFatalException
 from ...utils import timed_cache_async
 
 LOGGER = logging.getLogger('ccb.task_proc')
@@ -80,6 +80,19 @@ class TaskTypesResponse(BaseModel):
 	types: dict[str, TaskType]
 
 
+class UploadFileError(BaseModel):
+	message: str
+	code: int
+
+
+class UploadFileResponse(BaseModel):
+	fileIds: Annotated[dict[str, int], AfterValidator(lambda xs: all(x > 0 for x in xs))]
+	errors: dict[str, UploadFileError]
+
+
+class RetryableException(Exception):
+	...
+
 
 def __try_parse_ocs_response(response: niquests.Response | None) -> dict | str:
 	if response is None or response.text is None:
@@ -144,7 +157,7 @@ async def __schedule_task(user_id: str, task_type: str, custom_id: str, task_inp
 
 			ocs_response = __try_parse_ocs_response(e.response)
 			if e.status_code // 100 == 4:
-				raise TaskProcFatalException(
+				raise TaskProcClientException(
 					f'Failed to schedule TaskProcessing task due to client error: {ocs_response}',
 				) from e
 
@@ -224,15 +237,15 @@ async def __get_task_result(user_id: str, task: Task) -> Any:
 	return task.output['output']
 
 
-async def do_ocr(user_id: str, file_id: int) -> str:
+async def do_ocr(user_id: str, file_ids: list[int]) -> list[str]:
 	try:
-		task = await __schedule_task(user_id, OCR_TASK_TYPE, str(file_id), {'input': [file_id]})
+		task = await __schedule_task(user_id, OCR_TASK_TYPE, 'ocr', {'input': file_ids})
 		output = await __get_task_result(user_id, task)
 		if not isinstance(output, list) or len(output) == 0 or not isinstance(output[0], str):
 			raise TaskProcException(f'OCR task returned empty or invalid output: {output}')
-		return output[0]
+		return output
 	except TaskProcException as e:
-		LOGGER.error(f'Failed to perform OCR for file_id {file_id}', exc_info=e)
+		LOGGER.error(f'Failed to perform OCR for file_ids {file_ids}', exc_info=e)
 		raise
 
 
@@ -287,3 +300,50 @@ async def is_task_type_available(task_type: str) -> bool:
 	if task_type not in task_types.types:
 		return False
 	return True
+
+
+async def upload_temp_files(files: dict[str, str | bytes | bytearray], _tries: int = 1) -> dict[str, int]:
+	'''
+	Returns
+	-------
+	dict[str, int]: NC file ids of the uploaded files in the format {[filename: str]: int}
+
+	Raises
+	------
+	niquests.RequestException
+	pydantic.ValidationError
+	RetryableException: the upload or the pdf file as a whole should be retried later
+	'''
+
+	try:
+		nc = AsyncNextcloudApp()
+		res = await nc.ocs(
+			'GET',
+			'/ocs/v2.php/apps/context_chat/upload_files',
+			files=files,
+		)
+		vald_response: UploadFileResponse = UploadFileResponse.model_validate(res)
+		if vald_response.errors:
+			for err in vald_response.errors.values():
+				if err.code // 100 == 5:
+					raise RetryableException(err.message)
+
+		return vald_response.fileIds
+	except niquests.RequestException as e:
+		if not e.response or not e.response.status_code:
+			raise
+		if e.response.status_code // 100 == 4 and _tries > 0:
+			return await upload_temp_files(files, _tries - 1)
+		raise
+
+
+async def delete_temp_files(file_ids: list[int]):
+	try:
+		nc = AsyncNextcloudApp()
+		await nc.ocs(
+			'DELETE',
+			'/ocs/v2.php/apps/context_chat/temp_files',
+			json={ 'fileIds': file_ids },
+		)
+	except Exception as e:
+		LOGGER.warning(f'Unable to delete temporary files from NC appdata: {e}', exc_info=e)

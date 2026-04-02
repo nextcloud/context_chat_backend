@@ -351,3 +351,7 @@ class TaskProcException(Exception):
 
 class TaskProcFatalException(TaskProcException):
 	...
+
+
+class TaskProcClientException(TaskProcException):
+	...
