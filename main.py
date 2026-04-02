@@ -4,8 +4,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 import logging
-from os import getenv
+from os import cpu_count, getenv
 
+import psutil
 import uvicorn
 from nc_py_api.ex_app import run_app
 
@@ -48,6 +49,7 @@ if __name__ == '__main__':
 	app_config: TConfig = app.extra['CONFIG']
 	_setup_log_levels(app_config.debug)
 
+	print(f'CPU count: {cpu_count()}, Memory: {psutil.virtual_memory()}')
 	print('App config:\n' + redact_config(app_config).model_dump_json(indent=2), flush=True)
 
 	uv_log_config = uvicorn.config.LOGGING_CONFIG  # pyright: ignore[reportAttributeAccessIssue]
