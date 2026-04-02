@@ -92,7 +92,7 @@ def exception_wrap(fun: Callable | None, *args, resconn: Connection, stdconn: Co
 		if fun is None:
 			return resconn.send({ 'value': None, 'error': None })
 		resconn.send({ 'value': fun(*args, **kwargs), 'error': None })
-	except Exception as e:
+	except BaseException as e:
 		tb = traceback.format_exc()
 		resconn.send({ 'value': None, 'error': e, 'traceback': tb })
 	finally:
