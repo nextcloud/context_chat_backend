@@ -241,17 +241,17 @@ jobs:
               continue
             fi
 
-            # Extract total queued files
-            total_files=$(echo "$stats" | jq '.queued_documents_counts.files__default' || echo "")
+            # Extract total eligible files
+            total_eligible_files=$(echo "$stats" | jq '.eligible_files_count' || echo "")
 
             # Extract indexed documents count (files__default)
             indexed_count=$(echo "$stats" | jq '.vectordb_document_counts.files__default' || echo "")
 
-            echo "Total queued files: $total_files"
+            echo "Total eligible files: $total_eligible_files"
             echo "Indexed documents (files__default): $indexed_count"
 
-            diff=$((total_files - indexed_count))
-            threshold=$((total_files * 3 / 100))
+            diff=$((total_eligible_files - indexed_count))
+            threshold=$((total_eligible_files * 3 / 100))
 
             # Check if difference is within tolerance
             if [ $diff -le $threshold ]; then
@@ -259,7 +259,7 @@ jobs:
               success=1
               break
             else
-              progress=$((diff * 100 / total_files))
+              progress=$((diff * 100 / total_eligible_files))
               echo "Outside 3% tolerance: diff=$diff (${progress}%), threshold=$threshold"
             fi
 
