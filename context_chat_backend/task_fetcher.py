@@ -15,16 +15,14 @@ from typing import Any
 
 import niquests
 from langchain.llms.base import LLM
-from langchain.schema import Document
 from nc_py_api import NextcloudApp, NextcloudException
 from niquests import JSONDecodeError, RequestException
 from pydantic import ValidationError
 
-from .chain.context import do_doc_search, get_context_chunks, get_context_docs
+from .chain.context import do_doc_search
 from .chain.ingest.injest import embed_sources
 from .chain.one_shot import process_context_query
-from .chain.query_proc import get_pruned_query
-from .chain.types import ContextException, EnrichedSourceList, LLMOutput, ScopeList, ScopeType, SearchResult
+from .chain.types import ContextException, EnrichedSourceList, LLMOutput, ScopeList, SearchResult
 from .dyn_loader import LLMModelLoader, VectorDBLoader
 from .network_em import NetworkEmbeddings
 from .types import (
@@ -39,7 +37,6 @@ from .types import (
 	TConfig,
 )
 from .utils import SubprocessKilledError, exec_in_proc, get_app_role
-from .vectordb.base import BaseVectorDB
 from .vectordb.service import (
 	decl_update_access,
 	delete_by_provider,
@@ -498,11 +495,16 @@ def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 				if task['type'] == 'context_chat:context_chat':
 					result: LLMOutput = process_normal_task(task, vectordb_loader, llm, app_config)
 					# Return result to Nextcloud
-					success = return_normal_result_to_nextcloud(task['id'], userId, result)
+					success = return_result_to_nextcloud(task['id'], userId, {
+						'output': result['output'],
+						'sources': enrich_sources(result['sources'], userId),
+					})
 				elif task['type'] == 'context_chat:context_chat_search':
 					search_result: list[SearchResult] = process_search_task(task, vectordb_loader)
 					# Return result to Nextcloud
-					success = return_search_result_to_nextcloud(task['id'], userId, search_result)
+					success = return_result_to_nextcloud(task['id'], userId, {
+						'sources': enrich_sources(search_result, userId),
+					})
 				else:
 					LOGGER.error(f'Unknown task type {task["type"]}')
 					success = return_error_to_nextcloud(task['id'], Exception(f'Unknown task type {task["type"]}'))
@@ -541,200 +543,6 @@ def wait_for_tasks(interval = None):
 	TRIGGER.clear()
 
 
-
-def start_bg_threads(app_config: TConfig, app_enabled: Event):
-	if APP_ROLE == AppRole.INDEXING or APP_ROLE == AppRole.NORMAL:
-		if (
-			ThreadType.FILES_INDEXING in THREADS
-			or ThreadType.UPDATES_PROCESSING in THREADS
-		):
-			LOGGER.info('Background threads already running, skipping start')
-			return
-
-		THREAD_STOP_EVENT.clear()
-		THREADS[ThreadType.FILES_INDEXING] = Thread(
-			target=files_indexing_thread,
-			args=(app_config, app_enabled),
-			name='FilesIndexingThread',
-		)
-		THREADS[ThreadType.UPDATES_PROCESSING] = Thread(
-			target=updates_processing_thread,
-			args=(app_config, app_enabled),
-			name='UpdatesProcessingThread',
-		)
-		THREADS[ThreadType.FILES_INDEXING].start()
-		THREADS[ThreadType.UPDATES_PROCESSING].start()
-
-	if APP_ROLE == AppRole.RP or APP_ROLE == AppRole.NORMAL:
-		if ThreadType.REQUEST_PROCESSING in THREADS:
-			LOGGER.info('Background threads already running, skipping start')
-			return
-
-		THREAD_STOP_EVENT.clear()
-		THREADS[ThreadType.REQUEST_PROCESSING] = Thread(
-			target=request_processing_thread,
-			args=(app_config, app_enabled),
-			name='RequestProcessingThread',
-		)
-		THREADS[ThreadType.REQUEST_PROCESSING].start()
-
-
-def wait_for_bg_threads():
-	if APP_ROLE == AppRole.INDEXING or APP_ROLE == AppRole.NORMAL:
-		if (ThreadType.FILES_INDEXING not in THREADS or ThreadType.UPDATES_PROCESSING not in THREADS):
-			return
-
-		THREAD_STOP_EVENT.set()
-		THREADS[ThreadType.FILES_INDEXING].join()
-		THREADS[ThreadType.UPDATES_PROCESSING].join()
-		THREADS.pop(ThreadType.FILES_INDEXING)
-		THREADS.pop(ThreadType.UPDATES_PROCESSING)
-
-	if APP_ROLE == AppRole.RP or APP_ROLE == AppRole.NORMAL:
-		if (ThreadType.REQUEST_PROCESSING not in THREADS):
-			return
-
-		THREAD_STOP_EVENT.set()
-		THREADS[ThreadType.REQUEST_PROCESSING].join()
-		THREADS.pop(ThreadType.REQUEST_PROCESSING)
-
-
-def query_vector_database(
-	user_id: str,
-	query: str,
-	vectordb: BaseVectorDB,
-	ctx_limit: int,
-	scope_type: ScopeType | None = None,
-	scope_list: list[str] | None = None,
-) -> list[Document]:
-	"""
-	Query the vector database to retrieve relevant documents.
-
-	Args:
-		user_id: User ID for scoping the search
-		query: The search query text
-		vectordb: Vector database instance
-		ctx_limit: Maximum number of documents to return
-		scope_type: Optional scope type (PROVIDER or SOURCE)
-		scope_list: Optional list of scope identifiers
-
-	Returns:
-		List of relevant Document objects
-
-	Raises:
-		ContextException: If scope type is provided without scope list
-	"""
-	context_docs = get_context_docs(user_id, query, vectordb, ctx_limit, scope_type, scope_list)
-	LOGGER.debug('Retrieved context documents', extra={
-		'user_id': user_id,
-		'num_docs': len(context_docs),
-		'ctx_limit': ctx_limit,
-	})
-	return context_docs
-
-
-def prepare_context_chunks(context_docs: list[Document]) -> list[str]:
-	"""
-	Extract and format text chunks from documents for LLM context.
-
-	Args:
-		context_docs: List of Document objects from vector DB
-
-	Returns:
-		List of formatted text chunks including titles and content
-	"""
-	return get_context_chunks(context_docs)
-
-
-def generate_llm_response(
-	llm: LLM,
-	app_config: TConfig,
-	user_id: str,
-	query: str,
-	template: str,
-	context_chunks: list[str],
-	end_separator: str = '',
-) -> str:
-	"""
-	Generate LLM response using the pruned query and context.
-
-	Args:
-		llm: Language model instance
-		app_config: Application configuration
-		user_id: User ID for the request
-		query: The original query text
-		template: Template for formatting the prompt
-		context_chunks: Context chunks to include in the prompt
-		end_separator: Optional separator to stop generation
-
-	Returns:
-		Generated LLM output text
-
-	Raises:
-		ValueError: If context length is too small to fit the query
-	"""
-	pruned_query_text = get_pruned_query(llm, app_config, query, template, context_chunks)
-
-	stop = [end_separator] if end_separator else None
-	output = llm.invoke(
-		pruned_query_text,
-		stop=stop,
-		userid=user_id,
-	).strip()
-
-	LOGGER.debug('Generated LLM response', extra={
-		'user_id': user_id,
-		'output_length': len(output),
-	})
-	return output
-
-
-def extract_unique_sources(context_docs: list[Document]) -> list[str]:
-	"""
-	Extract unique source IDs from context documents.
-
-	Args:
-		context_docs: List of Document objects
-
-	Returns:
-		List of unique source IDs
-	"""
-	unique_sources: list[str] = list({
-		source for d in context_docs if (source := d.metadata.get('source'))
-	})
-	return unique_sources
-
-def return_normal_result_to_nextcloud(task_id: int, userId: str, result: LLMOutput) -> bool:
-	"""
-	Return query result back to Nextcloud.
-
-	Args:
-		task_id: Unique task identifier
-		result: The LLMOutput result to return
-
-	Returns:
-		True if successful, False otherwise
-	"""
-	LOGGER.debug('Returning result to Nextcloud', extra={
-		'task_id': task_id,
-		'output_length': len(result['output']),
-		'num_sources': len(result['sources']),
-	})
-
-	nc = NextcloudApp()
-
-	try:
-		nc.providers.task_processing.report_result(task_id, {
-			'output': result['output'],
-			'sources': enrich_sources(result['sources'], userId),
-		})
-	except (NextcloudException, RequestException, JSONDecodeError) as e:
-		LOGGER.error(f"Network error reporting task result {e}", exc_info=e)
-		return False
-
-	return True
-
-
 def enrich_sources(results: list[SearchResult], userId: str) -> list[str]:
 	nc = NextcloudApp()
 	data = nc.ocs('POST', '/ocs/v2.php/apps/context_chat/enrich_sources', json={'sources': results, 'userId': userId})
@@ -742,33 +550,31 @@ def enrich_sources(results: list[SearchResult], userId: str) -> list[str]:
 	return [s.model_dump_json() for s in sources]
 
 
-def return_search_result_to_nextcloud(task_id: int, userId: str, result: list[SearchResult]) -> bool:
+def return_result_to_nextcloud(task_id: int, userId: str, result: dict[str, Any]) -> bool:
 	"""
-	Return search result back to Nextcloud.
+	Return query result back to Nextcloud.
 
 	Args:
-		task_id: Unique task identifier
-		result: The list of search results to return
+		result: dict[str, Any]
 
 	Returns:
 		True if successful, False otherwise
 	"""
-	LOGGER.debug('Returning search result to Nextcloud', extra={
+	LOGGER.debug('Returning result to Nextcloud', extra={
 		'task_id': task_id,
-		'num_sources': len(result),
+		'result': result,
 	})
 
 	nc = NextcloudApp()
 
 	try:
-		nc.providers.task_processing.report_result(task_id, {
-			'sources': enrich_sources(result, userId),
-		})
+		nc.providers.task_processing.report_result(task_id, result)
 	except (NextcloudException, RequestException, JSONDecodeError) as e:
-		LOGGER.error(f"Network error reporting search task result {e}", exc_info=e)
+		LOGGER.error(f"Network error reporting task result {e}", exc_info=e)
 		return False
 
 	return True
+
 
 def return_error_to_nextcloud(task_id: int, e: Exception) -> bool:
 	"""
@@ -827,6 +633,7 @@ def process_normal_task(
 	if task_input.get('scopeType') == 'none':
 		task_input['scopeType'] = None
 
+	# todo: document no template support
 	return exec_in_proc(target=process_context_query,
 		args=(
 			user_id,
@@ -872,3 +679,60 @@ def process_search_task(
 			task_input.get('scopeList'),
 		)
 	)
+
+
+def start_bg_threads(app_config: TConfig, app_enabled: Event):
+	if APP_ROLE == AppRole.INDEXING or APP_ROLE == AppRole.NORMAL:
+		if (
+			ThreadType.FILES_INDEXING in THREADS
+			or ThreadType.UPDATES_PROCESSING in THREADS
+		):
+			LOGGER.info('Background threads already running, skipping start')
+			return
+
+		THREAD_STOP_EVENT.clear()
+		THREADS[ThreadType.FILES_INDEXING] = Thread(
+			target=files_indexing_thread,
+			args=(app_config, app_enabled),
+			name='FilesIndexingThread',
+		)
+		THREADS[ThreadType.UPDATES_PROCESSING] = Thread(
+			target=updates_processing_thread,
+			args=(app_config, app_enabled),
+			name='UpdatesProcessingThread',
+		)
+		THREADS[ThreadType.FILES_INDEXING].start()
+		THREADS[ThreadType.UPDATES_PROCESSING].start()
+
+	if APP_ROLE == AppRole.RP or APP_ROLE == AppRole.NORMAL:
+		if ThreadType.REQUEST_PROCESSING in THREADS:
+			LOGGER.info('Background threads already running, skipping start')
+			return
+
+		THREAD_STOP_EVENT.clear()
+		THREADS[ThreadType.REQUEST_PROCESSING] = Thread(
+			target=request_processing_thread,
+			args=(app_config, app_enabled),
+			name='RequestProcessingThread',
+		)
+		THREADS[ThreadType.REQUEST_PROCESSING].start()
+
+
+def wait_for_bg_threads():
+	if APP_ROLE == AppRole.INDEXING or APP_ROLE == AppRole.NORMAL:
+		if (ThreadType.FILES_INDEXING not in THREADS or ThreadType.UPDATES_PROCESSING not in THREADS):
+			return
+
+		THREAD_STOP_EVENT.set()
+		THREADS[ThreadType.FILES_INDEXING].join()
+		THREADS[ThreadType.UPDATES_PROCESSING].join()
+		THREADS.pop(ThreadType.FILES_INDEXING)
+		THREADS.pop(ThreadType.UPDATES_PROCESSING)
+
+	if APP_ROLE == AppRole.RP or APP_ROLE == AppRole.NORMAL:
+		if (ThreadType.REQUEST_PROCESSING not in THREADS):
+			return
+
+		THREAD_STOP_EVENT.set()
+		THREADS[ThreadType.REQUEST_PROCESSING].join()
+		THREADS.pop(ThreadType.REQUEST_PROCESSING)
