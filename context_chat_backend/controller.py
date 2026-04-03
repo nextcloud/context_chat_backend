@@ -16,6 +16,7 @@ setup_env_vars()
 # ruff: noqa: E402
 
 import logging
+import multiprocessing as mp
 import os
 import tempfile
 import threading
@@ -39,8 +40,11 @@ from .vectordb.service import count_documents_by_provider
 
 # setup
 
-repair_run()
-ensure_config_file()
+# only run once
+if mp.current_process().name == 'MainProcess':
+	repair_run()
+	ensure_config_file()
+
 logger = logging.getLogger('ccb.controller')
 app_config = get_config(os.environ['CC_CONFIG_PATH'])
 __download_models_from_hf = os.environ.get('CC_DOWNLOAD_MODELS_FROM_HF', 'true').lower() in ('1', 'true', 'yes')

@@ -5,6 +5,7 @@
 #
 
 import logging
+import multiprocessing as mp
 from os import cpu_count, getenv
 
 import psutil
@@ -45,8 +46,6 @@ def _setup_log_levels(debug: bool):
 
 
 if __name__ == '__main__':
-	import multiprocessing as mp
-
 	logging_config = get_logging_config(LOGGER_CONFIG_NAME)
 	setup_logging(logging_config)
 	app_config: TConfig = app.extra['CONFIG']
