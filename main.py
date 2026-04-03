@@ -47,20 +47,21 @@ def _setup_log_levels(debug: bool):
 if __name__ == '__main__':
 	import multiprocessing as mp
 
-	# do forks from a clean process that doesn't have any threads or locks
-	mp.set_start_method('forkserver')
-	mp.set_forkserver_preload([
-		'langchain',
-		'sqlalchemy',
-		'numpy',
-		'context_chat_backend.chain.ingest.injest',
-		'context_chat_backend.vectordb.pgvector',
-	])
-
 	logging_config = get_logging_config(LOGGER_CONFIG_NAME)
 	setup_logging(logging_config)
 	app_config: TConfig = app.extra['CONFIG']
 	_setup_log_levels(app_config.debug)
+
+	# do forks from a clean process that doesn't have any threads or locks
+	mp.set_start_method('forkserver')
+	mp.set_forkserver_preload([
+		'context_chat_backend.chain.ingest.injest',
+		'context_chat_backend.vectordb.pgvector',
+		'langchain',
+		'logging',
+		'numpy',
+		'sqlalchemy',
+	])
 
 	print(f'CPU count: {cpu_count()}, Memory: {psutil.virtual_memory()}')
 	print('App config:\n' + redact_config(app_config).model_dump_json(indent=2), flush=True)

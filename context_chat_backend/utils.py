@@ -86,10 +86,10 @@ class SubprocessKilledError(RuntimeError):
 
 
 class SubprocessExecutionError(RuntimeError):
-	"""Raised when a subprocess exits non-zero without a recoverable Python exception payload."""
+	"""Raised when a subprocess exits without a recoverable Python exception payload."""
 
 	def __init__(self, pid: int, target_name: str, exitcode: int, details: str = ''):
-		msg = f'Subprocess PID {pid} for {target_name} exited with non-zero exit code {exitcode}'
+		msg = f'Subprocess PID {pid} for {target_name} exited with exit code {exitcode}'
 		if details:
 			msg = f'{msg}: {details}'
 		super().__init__(msg)
@@ -199,7 +199,11 @@ def exception_wrap(fun: Callable | None, *args, resconn: Connection, stdconn: Co
 			os.close(_diag_fd)
 
 
-def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daemon=None):  # noqa: B006
+def exec_in_proc(group=None, target=None, name=None, args=(), kwargs=None, *, daemon=None):
+	if not kwargs:
+		kwargs = {}
+
+	# parent, child
 	pconn, cconn = mp.Pipe()
 	std_pconn, std_cconn = mp.Pipe()
 	kwargs['resconn'] = cconn
@@ -318,7 +322,7 @@ def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daem
 		p.pid or 0,
 		target_name,
 		0,
-		'Subprocess exited successfully but returned no result payload',
+		f'Subprocess exited successfully but returned no result payload: {result}',
 	)
 
 
