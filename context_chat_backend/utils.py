@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+import atexit
+import faulthandler
 import io
 import logging
 import multiprocessing as mp
@@ -114,6 +116,28 @@ def _truncate_capture(text: str) -> tuple[str, bool]:
 
 
 def exception_wrap(fun: Callable | None, *args, resconn: Connection, stdconn: Connection, **kwargs):
+	# --- diagnostic probes: write directly to the real stderr FD so they survive
+	# Python's stdout/stderr redirection below and even os._exit() won't hide them
+	# from the parent process's stderr stream.
+	_diag_fd = os.dup(2)  # dup before we capture sys.stderr
+
+	def _raw_diag(msg: str) -> None:
+		with suppress(Exception):
+			os.write(_diag_fd, (msg + '\n').encode())
+
+	# Enable faulthandler on the real FD so crash tracebacks (SIGSEGV etc.) appear.
+	with suppress(Exception):
+		faulthandler.enable(file=os.fdopen(os.dup(_diag_fd), 'w', closefd=True), all_threads=True)
+
+	# Atexit probe: if this message NEVER appears, it means os._exit() (C-level)
+	# was called with Python's cleanup phase entirely skipped.
+	_fun_name = getattr(fun, '__name__', str(fun))
+	atexit.register(
+		_raw_diag,
+		f'[exception_wrap/atexit] pid={os.getpid()} target={_fun_name}'
+		': Python atexit reached (normal Python exit)',
+	)
+
 	stdout_capture = io.StringIO()
 	stderr_capture = io.StringIO()
 	orig_stdout = sys.stdout
@@ -124,10 +148,18 @@ def exception_wrap(fun: Callable | None, *args, resconn: Connection, stdconn: Co
 	try:
 		if fun is None:
 			resconn.send({ 'value': None, 'error': None })
+			_raw_diag(f'[exception_wrap/probe] pid={os.getpid()} target={_fun_name}: result sent (fun=None)')
 		else:
-			resconn.send({ 'value': fun(*args, **kwargs), 'error': None })
+			result_value = fun(*args, **kwargs)
+			_raw_diag(f'[exception_wrap/probe] pid={os.getpid()} target={_fun_name}: fun() returned, sending result')
+			resconn.send({ 'value': result_value, 'error': None })
+			_raw_diag(f'[exception_wrap/probe] pid={os.getpid()} target={_fun_name}: result pipe send complete')
 	except BaseException as e:
 		tb = traceback.format_exc()
+		_raw_diag(
+			f'[exception_wrap/probe] pid={os.getpid()} target={_fun_name}'
+			f': caught {type(e).__name__}: {e}'
+		)
 		payload = {
 			'value': None,
 			'error': e,
@@ -162,6 +194,9 @@ def exception_wrap(fun: Callable | None, *args, resconn: Connection, stdconn: Co
 				'stdout_truncated': stdout_truncated,
 				'stderr_truncated': stderr_truncated,
 			})
+		_raw_diag(f'[exception_wrap/probe] pid={os.getpid()} target={_fun_name}: finally block complete')
+		with suppress(Exception):
+			os.close(_diag_fd)
 
 
 def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daemon=None):  # noqa: B006
