@@ -282,6 +282,23 @@ def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daem
 			_logger.error('remote traceback: %s', result['traceback'])
 		raise SubprocessExecutionError(p.pid or 0, target_name, p.exitcode or 1, details)
 
+	# If we received a valid result payload, return it even if the exit
+	# code is non-zero.  The non-zero code typically comes from
+	# multiprocessing/C-extension cleanup (e.g. util._exit_function or
+	# a native atexit handler) that runs *after* exception_wrap has
+	# already sent the result over the pipe.
+	if result is not None and 'value' in result:
+		if p.exitcode not in (None, 0):
+			_logger.warning(
+				'Subprocess PID %d for %s exited with code %s after %.2f ms'
+				' but returned a valid result — accepting the result.'
+				' The non-zero exit likely originates from process'
+				' cleanup (multiprocessing finalizers, C-extension'
+				' atexit, etc.).',
+				p.pid, target_name, p.exitcode, elapsed_ms,
+			)
+		return result['value']
+
 	if p.exitcode and p.exitcode < 0:
 		_logger.warning(
 			'Subprocess PID %d for %s exited due to signal %d after %.2f ms',
@@ -297,15 +314,12 @@ def exec_in_proc(group=None, target=None, name=None, args=(), kwargs={}, *, daem
 			'No structured exception payload received from child process',
 		)
 
-	if result is None:
-		raise SubprocessExecutionError(
-			p.pid or 0,
-			target_name,
-			0,
-			'Subprocess exited successfully but returned no result payload',
-		)
-
-	return result['value']
+	raise SubprocessExecutionError(
+		p.pid or 0,
+		target_name,
+		0,
+		'Subprocess exited successfully but returned no result payload',
+	)
 
 
 def timed(func: Callable):
