@@ -3,8 +3,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 import logging
+import socket
 from time import sleep
 from typing import Literal, TypedDict
+from urllib.parse import urlparse
 
 import niquests
 from langchain_core.embeddings import Embeddings
@@ -19,6 +21,7 @@ from .types import (
 )
 
 logger = logging.getLogger('ccb.nextwork_em')
+TCP_CONNECT_TIMEOUT = 2.0  # seconds
 
 # Copied from llama_cpp/llama_types.py
 
@@ -44,12 +47,30 @@ class NetworkEmbeddings(Embeddings):
 	def __init__(self, app_config: TConfig):
 		self.app_config = app_config
 
-	def check_connection(self) -> bool:
+	def _get_host_and_port(self) -> tuple[str, int]:
+		parsed = urlparse(self.app_config.embedding.base_url)
+		host = parsed.hostname
+
+		if not host:
+			raise ValueError("Invalid URL: Missing hostname")
+
+		if parsed.port:
+			port = parsed.port
+		else:
+			port = 443 if parsed.scheme == "https" else 80
+
+		return host, port
+
+	def check_connection(self, check_origin: str) -> bool:
 		try:
-			self.embed_query('hello')
+			host, port = self._get_host_and_port()
+			sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			sock.settimeout(TCP_CONNECT_TIMEOUT)
+			sock.connect((host, port))
+			sock.close()
 			return True
-		except EmbeddingException as e:
-			logger.warning('Embedding server connection failed', exc_info=e)
+		except (ValueError, TimeoutError, ConnectionRefusedError, socket.gaierror) as e:
+			logger.warning(f'[{check_origin}] Embedding server is not reachable, retrying after some time: {e}')
 			return False
 
 	def _get_embedding(self, input_: str | list[str], try_: int = 3) -> list[float] | list[list[float]]:

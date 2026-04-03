@@ -83,6 +83,7 @@ class ThreadType(Enum):
 
 def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 	try:
+		network_em = NetworkEmbeddings(app_config)
 		vectordb_loader = VectorDBLoader(app_config)
 	except LoaderException as e:
 		LOGGER.error('Error initializing vector DB loader, files indexing thread will not start:', exc_info=e)
@@ -141,7 +142,7 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			return
 
 		try:
-			if not __check_em_server(app_config):
+			if not network_em.check_connection(ThreadType.FILES_INDEXING.value):
 				sleep(POLLING_COOLDOWN)
 				continue
 
@@ -456,6 +457,7 @@ def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 	LOGGER.info('Starting task fetcher loop')
 
 	try:
+		network_em = NetworkEmbeddings(app_config)
 		vectordb_loader = VectorDBLoader(app_config)
 		llm_loader = LLMModelLoader(app_config)
 	except LoaderException as e:
@@ -466,13 +468,13 @@ def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 	llm: LLM = llm_loader.load()
 
 	while True:
-		if not __check_em_server(app_config):
-			sleep(POLLING_COOLDOWN)
-			continue
-
 		if THREAD_STOP_EVENT.is_set():
 			LOGGER.info('Updates processing thread is stopping due to stop event being set')
 			return
+
+		if not network_em.check_connection(ThreadType.REQUEST_PROCESSING.value):
+			sleep(POLLING_COOLDOWN)
+			continue
 
 		try:
 			# Fetch pending task
@@ -877,8 +879,3 @@ def process_search_task(
 			task_input.get('scopeList'),
 		)
 	)
-
-
-def __check_em_server(app_config: TConfig) -> bool:
-	embedding_model = NetworkEmbeddings(app_config=app_config)
-	return embedding_model.check_connection()
