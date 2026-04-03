@@ -31,7 +31,6 @@ from .types import (
 	ActionsQueueItems,
 	ActionType,
 	AppRole,
-	EmbeddingException,
 	FilesQueueItems,
 	IndexingError,
 	LoaderException,
@@ -89,29 +88,6 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 		LOGGER.error('Error initializing vector DB loader, files indexing thread will not start:', exc_info=e)
 		return
 
-	def _embed_one(db_id: int, item: SourceItem | ReceivedFileItem) -> tuple[int, IndexingError | None]:
-		"""Run embed_sources for a single item in its own subprocess. Returns (db_id, error_or_None)."""
-		try:
-			result = exec_in_proc(
-				target=embed_sources,
-				args=(vectordb_loader, app_config, {db_id: item}),
-			)
-			return db_id, result.get(db_id)
-		except SubprocessKilledError as e:
-			LOGGER.error(
-				'embed_sources subprocess killed for individual source %s — marking as non-retryable'
-				' to prevent infinite OOM retry loop',
-				item.reference, exc_info=e,
-			)
-			return db_id, IndexingError(error=f'Subprocess killed (OOM?): {e}', retryable=False)
-		except Exception as e:
-			err_name = {DbException: 'DB', EmbeddingException: 'Embedding'}.get(type(e), 'Unknown')
-			LOGGER.error(
-				'embed_sources raised a %s error for individual source %s, marking as retryable',
-				err_name, item.reference, exc_info=e,
-			)
-			return db_id, IndexingError(error=str(e), retryable=True)
-
 	def _load_sources(source_items: Mapping[int, SourceItem | ReceivedFileItem]) -> Mapping[int, IndexingError | None]:
 		source_refs = [s.reference for s in source_items.values()]
 		LOGGER.info('Starting embed_sources subprocess for %d source(s): %s', len(source_items), source_refs)
@@ -122,43 +98,39 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			)
 			errors = {k: v for k, v in result.items() if isinstance(v, IndexingError)}
 			LOGGER.info(
-				'embed_sources subprocess finished for %d source(s): %d succeeded, %d errored',
-				len(source_items),
-				len(result) - len(errors),
-				len(errors),
-				extra={'errors': errors} if errors else {},
+				'embed_sources finished for %d source(s): %d succeeded, %d errored',
+				len(source_items), len(result) - len(errors), len(errors),
+				extra={'errors': errors},
 			)
 			return result
 		except SubprocessKilledError as e:
 			LOGGER.error(
-				'embed_sources subprocess was killed (likely OOM) for %d source(s): %s',
-				len(source_items), source_refs, exc_info=e,
+				'embed_sources subprocess was killed for %d source(s) with exitcode %s: %s',
+				len(source_items), e.exitcode, source_refs, exc_info=e,
 			)
 			if len(source_items) == 1:
-				# Single-item subprocess was killed — mark non-retryable to break infinite OOM loop.
-				LOGGER.error(
-					'Single-item subprocess killed for %s — marking as non-retryable',
-					source_refs,
+				return dict.fromkeys(
+					source_items,
+					IndexingError(error=f'Subprocess killed with exitcode {e.exitcode}: {e}', retryable=False),
 				)
-				return {db_id: IndexingError(error=f'Subprocess killed (OOM?): {e}', retryable=False)
-					for db_id in source_items}
 
-			# Multi-item batch: fall back to one subprocess per source to pinpoint the problematic file.
+			# Fall back to one-by-one to isolate the problematic file.
 			LOGGER.warning(
-				'Falling back to individual processing for %d sources to isolate any OOM-causing file(s)',
+				'Falling back to individual processing for %d sources',
 				len(source_items),
 			)
-			return dict(_embed_one(db_id, item) for db_id, item in source_items.items())
-
+			fallback: dict[int, IndexingError | None] = {}
+			for db_id, item in source_items.items():
+				fallback.update(_load_sources({db_id: item}))
+			return fallback
 		except Exception as e:
-			err_name = {DbException: 'DB', EmbeddingException: 'Embedding'}.get(type(e), 'Unknown')
 			err = IndexingError(
-				error=f'{err_name} Error: {e}',
+				error=f'{e.__class__.__name__}: {e}',
 				retryable=True,
 			)
 			LOGGER.error(
 				'embed_sources subprocess raised a %s error for sources %s, marking all as retryable',
-				err_name, source_refs, exc_info=e,
+				e.__class__.__name__, source_refs, exc_info=e,
 			)
 			return dict.fromkeys(source_items, err)
 

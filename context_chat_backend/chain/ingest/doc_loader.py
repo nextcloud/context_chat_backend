@@ -7,8 +7,6 @@ import re
 import tempfile
 from collections.abc import Callable
 from io import BytesIO
-import logging
-from time import perf_counter_ns
 
 import docx2txt
 from epub2txt import epub2txt
@@ -20,8 +18,6 @@ from pypdf.errors import FileNotDecryptedError as PdfFileNotDecryptedError
 from striprtf import striprtf
 
 from ...types import IndexingException, SourceItem
-
-logger = logging.getLogger('ccb.doc_loader')
 
 
 def _temp_file_wrapper(file: BytesIO, loader: Callable, sep: str = '\n') -> str:
@@ -137,22 +133,10 @@ def decode_source(source: SourceItem) -> str:
 		else:
 			io_obj = source.content
 
-		loader_fn = _loader_map.get(source.type)
-		if loader_fn:
-			logger.debug(
-				'Decoding source %r with loader %s (mime: %s) — may be slow or block',
-				source.title, loader_fn.__name__, source.type,
-			)
-			t0 = perf_counter_ns()
-			result = loader_fn(io_obj)
-			elapsed_ms = (perf_counter_ns() - t0) / 1e6
-			logger.debug(
-				'Loader %s for %r finished in %.2f ms (%d chars)',
-				loader_fn.__name__, source.title, elapsed_ms, len(result),
-			)
+		if _loader_map.get(source.type):
+			result = _loader_map[source.type](io_obj)
 			return result.encode('utf-8', 'ignore').decode('utf-8', 'ignore').strip()
 
-		logger.debug('No specific loader for mime type %s, reading as plain text for %r', source.type, source.title)
 		return io_obj.read().decode('utf-8', 'ignore').strip()
 	except IndexingException:
 		raise

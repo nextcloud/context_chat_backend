@@ -43,8 +43,6 @@ async def __fetch_file_content(
 	async with semaphore:
 		nc = AsyncNextcloudApp()
 		try:
-			logger.debug('Downloading file id %d for user %s', file_id, user_id)
-			t0 = perf_counter_ns()
 			# a file pointer for storing the stream in memory until it is consumed
 			fp = BytesIO()
 			await nc._session.download2fp(
@@ -54,8 +52,6 @@ async def __fetch_file_content(
 				params={ 'userId': user_id },
 			)
 			fp.seek(0)
-			elapsed_ms = (perf_counter_ns() - t0) / 1e6
-			logger.debug('Downloaded file id %d for user %s in %.2f ms (%d bytes)', file_id, user_id, elapsed_ms, fp.getbuffer().nbytes)
 			return fp
 		except niquests.exceptions.RequestException as e:
 			if e.response is None:
@@ -131,11 +127,7 @@ async def __fetch_files_content(
 		# any user id from the list should have read access to the file
 		tasks.append(asyncio.ensure_future(__fetch_file_content(semaphore, file.file_id, file.userIds[0])))
 
-	logger.debug('Gathering %d file download task(s) — this blocks until all downloads complete or fail', len(tasks))
-	t0 = perf_counter_ns()
 	results = await asyncio.gather(*tasks, return_exceptions=True)
-	elapsed_ms = (perf_counter_ns() - t0) / 1e6
-	logger.debug('All %d file download task(s) completed in %.2f ms', len(tasks), elapsed_ms)
 	for (db_id, file), result in zip(sources.items(), results, strict=True):
 		if isinstance(file, SourceItem):
 			continue
@@ -227,10 +219,7 @@ def _sources_to_indocuments(
 
 		# transform the source to have text data
 		try:
-			logger.debug(
-				'Decoding source %s (type: %s, title: %r) — may be slow for complex file types',
-				source.reference, source.type, source.title,
-			)
+			logger.debug('Decoding source %s (type: %s)', source.reference, source.type)
 			t0 = perf_counter_ns()
 			content = decode_source(source)
 			elapsed_ms = (perf_counter_ns() - t0) / 1e6
@@ -353,7 +342,7 @@ def _process_sources(
 	source_proc_results = _increase_access_for_existing_sources(vectordb, existing_sources)
 
 	logger.debug(
-		'Fetching file contents for %d source(s) — this blocks on network I/O to Nextcloud',
+		'Fetching file contents for %d source(s) from Nextcloud',
 		len(to_embed_sources),
 	)
 	t0 = perf_counter_ns()

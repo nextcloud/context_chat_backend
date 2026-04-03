@@ -156,7 +156,7 @@ class VectorDB(BaseVectorDB):
 					total_chunks = len(indoc.documents)
 					num_batches = max(1, -(-total_chunks // batch_size))  # ceiling division
 					logger.debug(
-						'Embedding source %s: %d chunk(s) in %d batch(es) — blocks on embedding model',
+						'Embedding source %s: %d chunk(s) in %d batch(es)',
 						indoc.source_id, total_chunks, num_batches,
 					)
 					for i in range(0, total_chunks, batch_size):
