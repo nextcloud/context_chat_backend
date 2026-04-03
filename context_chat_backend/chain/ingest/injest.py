@@ -89,6 +89,7 @@ async def __fetch_files_content(
 	error_items = {}
 	semaphore = asyncio.Semaphore(CONCURRENT_FILE_FETCHES)
 	tasks = []
+	task_sources = {}
 
 	file_count = sum(1 for s in sources.values() if isinstance(s, ReceivedFileItem))
 	logger.debug('Fetching content for %d file(s) (max %d concurrent)', file_count, CONCURRENT_FILE_FETCHES)
@@ -126,13 +127,18 @@ async def __fetch_files_content(
 			continue
 		# any user id from the list should have read access to the file
 		tasks.append(asyncio.ensure_future(__fetch_file_content(semaphore, file.file_id, file.userIds[0])))
+		task_sources[db_id] = file
 
 	results = await asyncio.gather(*tasks, return_exceptions=True)
-	for (db_id, file), result in zip(sources.items(), results, strict=True):
-		if isinstance(file, SourceItem):
-			continue
-
-		if isinstance(result, IndexingException):
+	for (db_id, file), result in zip(task_sources.items(), results, strict=True):
+		if isinstance(result, str) or isinstance(result, BytesIO):
+			source_items[db_id] = SourceItem(
+				**{
+					**file.model_dump(),
+					'content': result,
+				}
+			)
+		elif isinstance(result, IndexingException):
 			logger.error(
 				f'Error fetching content for db id {db_id}, file id {file.file_id}, reference {file.reference}'
 				f': {result}',
@@ -141,13 +147,6 @@ async def __fetch_files_content(
 			error_items[db_id] = IndexingError(
 				error=str(result),
 				retryable=result.retryable,
-			)
-		elif isinstance(result, str) or isinstance(result, BytesIO):
-			source_items[db_id] = SourceItem(
-				**{
-					**file.model_dump(),
-					'content': result,
-				}
 			)
 		elif isinstance(result, BaseException):
 			logger.error(
