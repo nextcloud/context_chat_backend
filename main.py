@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+
 import logging
 from os import cpu_count, getenv
 
@@ -44,6 +45,18 @@ def _setup_log_levels(debug: bool):
 
 
 if __name__ == '__main__':
+	import multiprocessing as mp
+
+	# do forks from a clean process that doesn't have any threads or locks
+	mp.set_start_method('forkserver')
+	mp.set_forkserver_preload([
+		'langchain',
+		'sqlalchemy',
+		'numpy',
+		'context_chat_backend.chain.ingest.injest',
+		'context_chat_backend.vectordb.pgvector',
+	])
+
 	logging_config = get_logging_config(LOGGER_CONFIG_NAME)
 	setup_logging(logging_config)
 	app_config: TConfig = app.extra['CONFIG']

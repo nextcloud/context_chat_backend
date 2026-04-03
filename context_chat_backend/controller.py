@@ -16,7 +16,6 @@ setup_env_vars()
 # ruff: noqa: E402
 
 import logging
-import multiprocessing as mp
 import os
 import tempfile
 import threading
@@ -121,9 +120,6 @@ llm_lock = threading.Lock()
 # lock to update the sources dict currently being processed
 index_lock = threading.Lock()
 _indexing = {}
-
-# limit the number of concurrent document parsing
-doc_parse_semaphore = mp.Semaphore(app_config.doc_parser_worker_limit)
 
 
 # middlewares
