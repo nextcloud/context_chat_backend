@@ -89,7 +89,7 @@ jobs:
           POSTGRES_USER: root
           POSTGRES_PASSWORD: rootpassword
           POSTGRES_DB: nextcloud
-        options: --health-cmd pg_isready --health-interval 5s --health-timeout 2s --health-retries 5
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 2s --health-retries 5 --name postgres --hostname postgres
 
     steps:
       - name: Checkout server
@@ -214,6 +214,13 @@ jobs:
             php cron.php
             sleep 10
           done &
+          sleep 30
+          # list all the bg jobs
+          ./occ background-job:list
+
+      - name: Initial dump of DB with context_chat_queue populated
+        run: |
+          docker exec postgres pg_dump nextcloud > /tmp/0_pgdump_nextcloud
 
       - name: Periodically check context_chat stats for 15 minutes to allow the backend to index the files
         run: |
@@ -315,6 +322,10 @@ jobs:
             echo "Memory usage during scan is stable. No memory leak detected."
           fi
 
+      - name: Final dump of DB with vectordb populated
+        run: |
+          docker exec postgres pg_dump nextcloud > /tmp/1_pgdump_nextcloud
+
       - name: Show server logs
         if: always()
         run: |
@@ -349,6 +360,14 @@ jobs:
         if: always()
         run: |
           tail -v -n +1 context_chat_backend/persistent_storage/logs/em_server.log* || echo "No logs in logs directory"
+
+      - name: Upload database dumps
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-dumps
+          path: |
+            /tmp/0_pgdump_nextcloud
+            /tmp/1_pgdump_nextcloud
 
   summary:
     permissions:
