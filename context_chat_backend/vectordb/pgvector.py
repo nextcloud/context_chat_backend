@@ -120,7 +120,15 @@ class VectorDB(BaseVectorDB):
 			kwargs['connection'] = os.environ['CCB_DB_URL']
 
 		# setup langchain db + our access list table
-		self.client = PGVector(embedding, collection_name=COLLECTION_NAME, **kwargs)
+		try:
+			self.client = PGVector(embedding, collection_name=COLLECTION_NAME, **kwargs)
+		except sa.exc.IntegrityError as ie:  # pyright: ignore[reportAttributeAccessIssue]
+			if not isinstance(ie.orig, psycopg.errors.UniqueViolation):
+				raise
+
+			# tried to create the tables but it was already created in another process
+			# init the client again to detect it already exists, and continue from there
+			self.client = PGVector(embedding, collection_name=COLLECTION_NAME, **kwargs)
 
 	def get_instance(self) -> VectorStore:
 		return self.client
