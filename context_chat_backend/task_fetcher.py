@@ -81,7 +81,9 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 
 	def _load_sources(source_items: Mapping[int, SourceItem | ReceivedFileItem]) -> Mapping[int, IndexingError | None]:
 		source_refs = [s.reference for s in source_items.values()]
-		LOGGER.info('Starting embed_sources subprocess for %d source(s): %s', len(source_items), source_refs)
+		LOGGER.info('Starting embed_sources subprocess for %d source(s)', len(source_items), extra={
+			'source_ids': source_refs,
+		})
 		try:
 			result = exec_in_proc(
 				target=embed_sources,
@@ -96,8 +98,10 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			return result
 		except SubprocessKilledError as e:
 			LOGGER.error(
-				'embed_sources subprocess was killed for %d source(s) with exitcode %s: %s',
-				len(source_items), e.exitcode, source_refs, exc_info=e,
+				'embed_sources subprocess was killed for %d source(s) with exitcode %s',
+				len(source_items), e.exitcode, exc_info=e, extra={
+					'source_ids': source_refs,
+				},
 			)
 			if len(source_items) == 1:
 				return dict.fromkeys(
@@ -120,8 +124,10 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 				retryable=True,
 			)
 			LOGGER.error(
-				'embed_sources subprocess raised a %s error for sources %s, marking all as retryable',
-				e.__class__.__name__, source_refs, exc_info=e,
+				'embed_sources subprocess raised a %s error for %d sources, marking all as retryable',
+				e.__class__.__name__, len(source_refs), exc_info=e, extra={
+					'source_ids': source_refs,
+				}
 			)
 			return dict.fromkeys(source_items, err)
 
