@@ -364,7 +364,7 @@ jobs:
       - name: Upload database dumps
         uses: actions/upload-artifact@v4
         with:
-          name: database-dumps
+          name: database-dumps-${{ matrix.server-versions }}-php@${{ matrix.php-versions }}
           path: |
             /tmp/0_pgdump_nextcloud
             /tmp/1_pgdump_nextcloud
