@@ -282,9 +282,6 @@ jobs:
 
           echo "::endgroup::"
 
-          ./occ context_chat:stats
-          ./occ context_chat:stats --json
-
           if [ $success -ne 1 ]; then
             echo "Max attempts reached"
             exit 1
@@ -368,6 +365,11 @@ jobs:
           path: |
             /tmp/0_pgdump_nextcloud
             /tmp/1_pgdump_nextcloud
+
+      - name: Final stats log
+        run: |
+          ./occ context_chat:stats
+          ./occ context_chat:stats --json
 
   summary:
     permissions:
