@@ -7,7 +7,10 @@ verify_ssl: true
 use_colors: true
 uvicorn_workers: 1
 embedding_chunk_size: 2000
-doc_parser_worker_limit: 10
+doc_indexing_batch_size: 32  # theoretical max RAM usage: 32 * 100 MiB
+actions_batch_size: 512
+file_parsing_cpu_count: -1  # divides the batch into these many chunks, -1 = auto
+concurrent_file_fetches: 10  # maximum number of files to fetch concurrently to not overload the NC server
 
 
 vectordb:

@@ -23,9 +23,7 @@ from .doc_splitter import get_splitter_for
 
 logger = logging.getLogger('ccb.injest')
 
-# max concurrent fetches to avoid overloading the NC server or hitting rate limits
-CONCURRENT_FILE_FETCHES = 10  # todo: config?
-MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB, all loaded in RAM at once, todo: config?
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB, all loaded in RAM at once
 
 
 async def __fetch_file_content(
@@ -83,16 +81,17 @@ async def __fetch_file_content(
 
 
 async def __fetch_files_content(
-	sources: Mapping[int, SourceItem | ReceivedFileItem]
+	sources: Mapping[int, SourceItem | ReceivedFileItem],
+	concurrent_file_fetches: int,
 ) -> tuple[Mapping[int, SourceItem], Mapping[int, IndexingError]]:
 	source_items = {}
 	error_items = {}
-	semaphore = asyncio.Semaphore(CONCURRENT_FILE_FETCHES)
 	tasks = []
 	task_sources = {}
+	semaphore = asyncio.Semaphore(concurrent_file_fetches)
 
 	file_count = sum(1 for s in sources.values() if isinstance(s, ReceivedFileItem))
-	logger.debug('Fetching content for %d file(s) (max %d concurrent)', file_count, CONCURRENT_FILE_FETCHES)
+	logger.debug('Fetching content for %d file(s) (max %d concurrent)', file_count, concurrent_file_fetches)
 
 	for db_id, file in sources.items():
 		if isinstance(file, SourceItem):
@@ -345,7 +344,9 @@ def _process_sources(
 		len(to_embed_sources),
 	)
 	t0 = perf_counter_ns()
-	populated_to_embed_sources, errored_sources = asyncio.run(__fetch_files_content(to_embed_sources))
+	populated_to_embed_sources, errored_sources = asyncio.run(
+		__fetch_files_content(to_embed_sources, config.concurrent_file_fetches)
+	)
 	elapsed_ms = (perf_counter_ns() - t0) / 1e6
 	logger.debug(
 		'File content fetch complete in %.2f ms: %d fetched, %d errored',

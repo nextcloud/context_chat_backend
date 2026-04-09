@@ -112,8 +112,10 @@ class TConfig(BaseModel):
 	use_colors: bool = True
 	uvicorn_workers: int = 1
 	embedding_chunk_size: int = 2000
-	# todo: unused now
-	doc_parser_worker_limit: int = 10
+	doc_indexing_batch_size: int = 32
+	actions_batch_size: int = 512
+	file_parsing_cpu_count: int = -1
+	concurrent_file_fetches: int = 10
 
 	vectordb: tuple[str, dict]
 	embedding: TEmbeddingConfig

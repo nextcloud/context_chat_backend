@@ -52,17 +52,14 @@ APP_ROLE = get_app_role()
 THREADS = {}
 THREAD_STOP_EVENT = Event()
 LOGGER = logging.getLogger('ccb.task_fetcher')
-FILES_INDEXING_BATCH_SIZE = 16  # theoretical max RAM usage: 16 * 100 MiB, todo: config?
 MIN_FILES_PER_CPU = 4
-# divides the batch into these many chunks
-PARALLEL_FILE_PARSING_COUNT = max(1, (os.cpu_count() or 2) - 1)  # todo: config?
-LOGGER.info(f'Using {PARALLEL_FILE_PARSING_COUNT} parallel file parsing workers')
-ACTIONS_BATCH_SIZE = 512  # todo: config?
 POLLING_COOLDOWN = 30
-TRIGGER = Event()
-CHECK_INTERVAL = 5
-CHECK_INTERVAL_WITH_TRIGGER = 5 * 60
-CHECK_INTERVAL_ON_ERROR = 15
+
+# task processing or request processing
+TP_TRIGGER = Event()
+TP_CHECK_INTERVAL = 5
+TP_CHECK_INTERVAL_WITH_TRIGGER = 5 * 60
+TP_CHECK_INTERVAL_ON_ERROR = 15
 CONTEXT_LIMIT=20
 
 
@@ -133,6 +130,13 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			return dict.fromkeys(source_items, err)
 
 
+	# divides the batch into these many chunks
+	file_parsing_cpu_count = (
+		app_config.file_parsing_cpu_count,  # when set to a positive value
+		max(1, (os.cpu_count() or 2) - 1),  # when set to auto (-1)
+	)[app_config.file_parsing_cpu_count == -1]
+	LOGGER.info(f'Using {file_parsing_cpu_count} parallel file parsing workers')
+
 	while True:
 		if THREAD_STOP_EVENT.is_set():
 			LOGGER.info('Files indexing thread is stopping due to stop event being set')
@@ -147,7 +151,7 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			q_items_res = nc.ocs(
 				'GET',
 				'/ocs/v2.php/apps/context_chat/queues/documents',
-				params={ 'n': FILES_INDEXING_BATCH_SIZE }
+				params={ 'n': app_config.doc_indexing_batch_size }
 			)
 
 			try:
@@ -164,14 +168,14 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			providers_result = {}
 
 			# chunk file parsing for better file operation parallelism
-			file_chunk_size = max(MIN_FILES_PER_CPU, math.ceil(len(q_items.files) / PARALLEL_FILE_PARSING_COUNT))
+			file_chunk_size = max(MIN_FILES_PER_CPU, math.ceil(len(q_items.files) / file_parsing_cpu_count))
 			file_chunks = [
 				dict(list(q_items.files.items())[i:i+file_chunk_size])
 				for i in range(0, len(q_items.files), file_chunk_size)
 			]
 			provider_chunk_size = max(
 				MIN_FILES_PER_CPU,
-				math.ceil(len(q_items.content_providers) / PARALLEL_FILE_PARSING_COUNT),
+				math.ceil(len(q_items.content_providers) / file_parsing_cpu_count),
 			)
 			provider_chunks = [
 				dict(list(q_items.content_providers.items())[i:i+provider_chunk_size])
@@ -179,12 +183,12 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			]
 
 			with ThreadPoolExecutor(
-				max_workers=PARALLEL_FILE_PARSING_COUNT,
+				max_workers=file_parsing_cpu_count,
 				thread_name_prefix='IndexingPool',
 			) as executor:
 				LOGGER.info(
-					'Dispatching %d file chunk(s) and %d provider chunk(s) to %d IndexingPool worker(s)',
-					len(file_chunks), len(provider_chunks), PARALLEL_FILE_PARSING_COUNT,
+					'Dispatching %d file chunk(s) and %d provider chunk(s)',
+					len(file_chunks), len(provider_chunks),
 				)
 				file_futures = [executor.submit(_load_sources, chunk) for chunk in file_chunks]
 				provider_futures = [executor.submit(_load_sources, chunk) for chunk in provider_chunks]
@@ -286,7 +290,7 @@ def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			q_items_res = nc.ocs(
 				'GET',
 				'/ocs/v2.php/apps/context_chat/queues/actions',
-				params={ 'n': ACTIONS_BATCH_SIZE }
+				params={ 'n': app_config.actions_batch_size }
 			)
 
 			try:
@@ -451,7 +455,7 @@ def resolve_scope_list(source_ids: list[str], userId: str) -> list[str]:
 
 
 def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
-	LOGGER.info('Starting task fetcher loop')
+	LOGGER.info('Starting request processing thread')
 
 	try:
 		network_em = NetworkEmbeddings(app_config)
@@ -466,7 +470,7 @@ def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 
 	while True:
 		if THREAD_STOP_EVENT.is_set():
-			LOGGER.info('Updates processing thread is stopping due to stop event being set')
+			LOGGER.info('Request processing thread is stopping due to stop event being set')
 			return
 
 		if not network_em.check_connection(ThreadType.REQUEST_PROCESSING.value):
@@ -485,7 +489,7 @@ def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 					continue
 			except (NextcloudException, RequestException, JSONDecodeError) as e:
 				LOGGER.error(f"Network error fetching the next task {e}", exc_info=e)
-				wait_for_tasks(CHECK_INTERVAL_ON_ERROR)
+				wait_for_tasks(TP_CHECK_INTERVAL_ON_ERROR)
 				continue
 
 			# Process task
@@ -536,21 +540,21 @@ def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 
 		except Exception as e:
 			LOGGER.exception('Error in task fetcher loop', exc_info=e)
-			wait_for_tasks(CHECK_INTERVAL_ON_ERROR)
+			wait_for_tasks(TP_CHECK_INTERVAL_ON_ERROR)
 
-def trigger_handler(providerId: str):
-	global TRIGGER
-	print('TRIGGER called')
-	TRIGGER.set()
+def trigger_handler(provider_id: str):
+	global TP_TRIGGER
+	LOGGER.debug('Task processing trigger received', extra={'provider_id': provider_id})
+	TP_TRIGGER.set()
 
 def wait_for_tasks(interval = None):
-	global TRIGGER
-	global CHECK_INTERVAL
-	global CHECK_INTERVAL_WITH_TRIGGER
-	actual_interval = CHECK_INTERVAL if interval is None else interval
-	if TRIGGER.wait(timeout=actual_interval):
-		CHECK_INTERVAL = CHECK_INTERVAL_WITH_TRIGGER
-	TRIGGER.clear()
+	global TP_TRIGGER
+	global TP_CHECK_INTERVAL
+	global TP_CHECK_INTERVAL_WITH_TRIGGER
+	actual_interval = TP_CHECK_INTERVAL if interval is None else interval
+	if TP_TRIGGER.wait(timeout=actual_interval):
+		TP_CHECK_INTERVAL = TP_CHECK_INTERVAL_WITH_TRIGGER
+	TP_TRIGGER.clear()
 
 
 def enrich_sources(results: list[SearchResult], userId: str) -> list[str]:
