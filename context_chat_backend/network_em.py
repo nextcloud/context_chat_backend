@@ -12,6 +12,7 @@ import niquests
 from langchain_core.embeddings import Embeddings
 
 from .types import (
+	DocErrorEmbeddingException,
 	EmbeddingException,
 	FatalEmbeddingException,
 	RetryableEmbeddingException,
@@ -105,14 +106,27 @@ class NetworkEmbeddings(Embeddings):
 			if response.status_code is None:
 				raise EmbeddingException('Error: no response from embedding service')
 			if response.status_code // 100 == 4:
-				raise FatalEmbeddingException(response.text)
+				raise FatalEmbeddingException(
+					response.text or f'Error: embedding request returned non-2xx status code {response.status_code}',
+				)
 			if response.status_code // 100 != 2:
-				raise EmbeddingException(response.text)
-		# todo: rework exception handling and their downstream interpretation
+				raise EmbeddingException(
+					response.text or f'Error: embedding request returned non-2xx status code {response.status_code}',
+					response,
+				)
 		except FatalEmbeddingException as e:
 			logger.error('Fatal error while getting embeddings: %s', str(e), exc_info=e)
 			raise e
 		except EmbeddingException as e:
+			try:
+				if e.response:
+					err_msg = e.response.json().get('error', {}).get('message', '')
+					if err_msg == 'llama_decode returned -1':
+						# the document coult not be processed
+						raise DocErrorEmbeddingException(f'Failed to embed the document: {err_msg}') from e
+			except niquests.exceptions.JSONDecodeError:
+				...
+
 			if try_ > 0:
 				logger.debug('Retrying embedding request in 5 secs', extra={'try': try_})
 				sleep(5)

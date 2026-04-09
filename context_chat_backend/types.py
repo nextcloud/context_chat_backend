@@ -8,6 +8,7 @@ from enum import Enum
 from io import BytesIO
 from typing import Annotated, Literal, Self
 
+import niquests
 from pydantic import AfterValidator, BaseModel, Discriminator, computed_field, field_validator, model_validator
 
 from .mimetype_list import SUPPORTED_MIMETYPES
@@ -123,7 +124,9 @@ class LoaderException(Exception):
 
 
 class EmbeddingException(Exception):
-	...
+	def __init__(self, msg: str, response: niquests.Response | None = None):
+		super().__init__(msg)
+		self.response = response
 
 class RetryableEmbeddingException(EmbeddingException):
 	"""
@@ -138,6 +141,11 @@ class FatalEmbeddingException(EmbeddingException):
 	Exception that indicates a fatal error in the embedding request.
 
 	Either malformed request, authentication error, or other non-retryable error.
+	"""
+
+class DocErrorEmbeddingException(EmbeddingException):
+	"""
+	Exception that indicates a fatal error for the document, this document should not be retried.
 	"""
 
 

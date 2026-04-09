@@ -20,6 +20,7 @@ from langchain_postgres.vectorstores import Base, PGVector
 
 from ..chain.types import InDocument, ScopeType
 from ..types import (
+	DocErrorEmbeddingException,
 	EmbeddingException,
 	FatalEmbeddingException,
 	IndexingError,
@@ -215,13 +216,24 @@ class VectorDB(BaseVectorDB):
 						retryable=True,
 					)
 					continue
+				except DocErrorEmbeddingException as e:
+					logger.warning(
+						'Error adding documents to vectordb, server failed to index it, it will not be retried',
+						exc_info=e,
+						extra={ 'source_id': indoc.source_id },
+					)
+					results[php_db_id] = IndexingError(
+						error=str(e),
+						retryable=False,
+					)
+					continue
 				except FatalEmbeddingException as e:
 					raise EmbeddingException(
 						f'Fatal error while embedding documents for source {indoc.source_id}: {e}'
 					) from e
 				except (RetryableEmbeddingException, EmbeddingException) as e:
 					# temporary error, continue with the next document
-					logger.exception('Error adding documents to vectordb, should be retried later.', exc_info=e, extra={
+					logger.warning('Error adding documents to vectordb, should be retried later.', exc_info=e, extra={
 						'source_id': indoc.source_id,
 					})
 					results[php_db_id] = IndexingError(
@@ -615,6 +627,8 @@ class VectorDB(BaseVectorDB):
 
 				# get embeddings
 				return self._similarity_search(session, query, chunk_ids, k)
+		except EmbeddingException:
+			raise
 		except Exception as e:
 			raise DbException('Error: performing doc search in vectordb') from e
 

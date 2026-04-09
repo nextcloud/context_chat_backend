@@ -29,6 +29,7 @@ from .types import (
 	ActionsQueueItems,
 	ActionType,
 	AppRole,
+	EmbeddingException,
 	FilesQueueItems,
 	IndexingError,
 	LoaderException,
@@ -520,6 +521,9 @@ def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 				else:
 					LOGGER.error(f'Failed to return result for task {task["id"]}')
 
+			except EmbeddingException as e:
+				LOGGER.warning(f'Embedding server error for task {task["id"]}: {e}')
+				return_error_to_nextcloud(task['id'], e)
 			except ContextException as e:
 				LOGGER.warning(f'Context error for task {task["id"]}: {e}')
 				return_error_to_nextcloud(task['id'], e)
