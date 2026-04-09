@@ -7,6 +7,7 @@ import io
 import logging
 import multiprocessing as mp
 import os
+import signal
 import sys
 import traceback
 from collections.abc import Callable
@@ -112,6 +113,12 @@ def _truncate_capture(text: str) -> str:
 
 
 def exception_wrap(fun: Callable | None, *args, resconn: Connection, stdconn: Connection, **kwargs):
+	# ignore SIGINT and SIGTERM in child processes these signals don't immediately stop these processes
+	# the handling is done in the fastapi lifetime to do a graceful shutdown
+	# SIGKILL is not ignored
+	signal.signal(signal.SIGINT, signal.SIG_IGN)
+	signal.signal(signal.SIGTERM, signal.SIG_IGN)
+
 	# Preserve real stderr FD for faulthandler before we redirect sys.stderr.
 	_faulthandler_fd = os.dup(2)
 	with suppress(Exception):
@@ -128,10 +135,11 @@ def exception_wrap(fun: Callable | None, *args, resconn: Connection, stdconn: Co
 	sys.stderr = stderr_capture
 
 	try:
-		if fun is None:
-			resconn.send({ 'value': None, 'error': None })
-		else:
-			resconn.send({ 'value': fun(*args, **kwargs), 'error': None })
+		value = None if fun is None else fun(*args, **kwargs)
+		try:
+			resconn.send({ 'value': value, 'error': None })
+		except (BrokenPipeError, OSError, EOFError):
+			...  # parent closed the pipe during shutdown, exit cleanly
 	except BaseException as e:
 		tb = traceback.format_exc()
 		payload = {
