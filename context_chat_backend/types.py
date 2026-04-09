@@ -105,14 +105,15 @@ class TEmbeddingConfig(BaseModel):
 
 
 class TConfig(BaseModel):
-	debug: bool
-	uvicorn_log_level: str
-	disable_aaa: bool
-	verify_ssl: bool
-	use_colors: bool
-	uvicorn_workers: int
-	embedding_chunk_size: int
-	doc_parser_worker_limit: int
+	debug: bool = False
+	uvicorn_log_level: str = 'info'
+	disable_aaa: bool = False
+	verify_ssl: bool = True
+	use_colors: bool = True
+	uvicorn_workers: int = 1
+	embedding_chunk_size: int = 2000
+	# todo: unused now
+	doc_parser_worker_limit: int = 10
 
 	vectordb: tuple[str, dict]
 	embedding: TEmbeddingConfig
