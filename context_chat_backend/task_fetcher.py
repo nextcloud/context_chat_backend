@@ -647,7 +647,6 @@ def process_normal_task(
 	if task_input.get('scopeType') == 'none':
 		task_input['scopeType'] = None
 
-	# todo: document no template support
 	return exec_in_proc(target=process_context_query,
 		args=(
 			user_id,
@@ -658,6 +657,7 @@ def process_normal_task(
 			CONTEXT_LIMIT,
 			task_input.get('scopeType'),
 			task_input.get('scopeList'),
+			app_config.llm[1].get('template'),
 		)
 	)
 

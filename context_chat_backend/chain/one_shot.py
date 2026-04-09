@@ -12,38 +12,25 @@ from .context import get_context_chunks, get_context_docs
 from .query_proc import get_pruned_query
 from .types import ContextException, LLMOutput, ScopeType, SearchResult
 
-_LLM_TEMPLATE = '''Answer based only on this context and do not add any imaginative details. Make sure to use the same language as the question in your answer.
+_LLM_TEMPLATE = '''You're an AI assistant named Nextcloud Assistant, good at finding relevant context from documents to answer questions provided by the user.
+Use the following documents as context to answer the question at the end. REMEMBER to excersice source critisicm as the documents are returned by a search provider that can return unrelated documents.
+
+START OF CONTEXT:
 {context}
 
-{question}
+END OF CONTEXT!
+
+If you don't know the answer or are unsure, just say that you don't know, don't try to make up an answer.
+Don't mention the context in your answer but rather just answer the question directly.
+Detect the language of the question and make sure to use the same language that was used in the question to answer the question.
+Don't mention which language was used, but just answer the question directly in the same langauge.
+
+Question: {question}
+
+Let's think this step-by-step.
 ''' # noqa: E501
 
 logger = logging.getLogger('ccb.chain')
-
-# todo: remove this maybe
-def process_query(
-	user_id: str,
-	llm: LLM,
-	app_config: TConfig,
-	query: str,
-	no_ctx_template: str | None = None,
-	end_separator: str = '',
-):
-	"""
-	Raises
-	------
-	ValueError
-		If the context length is too small to fit the query
-	"""
-	stop = [end_separator] if end_separator else None
-	output = llm.invoke(
-		(query, get_pruned_query(llm, app_config, query, no_ctx_template, []))[no_ctx_template is not None],  # pyright: ignore[reportArgumentType]
-		stop=stop,
-		userid=user_id,
-	).strip()
-
-	return LLMOutput(output=output, sources=[])
-
 
 def process_context_query(
 	user_id: str,
@@ -55,7 +42,6 @@ def process_context_query(
 	scope_type: ScopeType | None = None,
 	scope_list: list[str] | None = None,
 	template: str | None = None,
-	end_separator: str = '',
 ):
 	"""
 	Raises
@@ -76,7 +62,6 @@ def process_context_query(
 
 	output = llm.invoke(
 		get_pruned_query(llm, app_config, query, template or _LLM_TEMPLATE, context_chunks),
-		stop=[end_separator],
 		userid=user_id,
 	).strip()
 	unique_sources = [SearchResult(
