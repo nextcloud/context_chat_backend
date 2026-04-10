@@ -119,7 +119,7 @@ class NetworkEmbeddings(Embeddings):
 			raise e
 		except EmbeddingException as e:
 			try:
-				if e.response:
+				if e.response is not None:
 					err_msg = e.response.json().get('error', {}).get('message', '')
 					if err_msg == 'llama_decode returned -1':
 						# the document coult not be processed
