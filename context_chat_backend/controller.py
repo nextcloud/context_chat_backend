@@ -67,16 +67,19 @@ def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
 	try:
 		if enabled:
 			provider = TaskProcessingProvider(
-				id="context_chat-context_chat_search",
-				name="Context Chat",
-				task_type="context_chat:context_chat_search",
+				id='context_chat-context_chat_search',
+				name='Context Chat',
+				task_type='context_chat:context_chat_search',
 				expected_runtime=30,
+				input_shape_defaults={
+					'limit': 10,
+				},
 			)
 			nc.providers.task_processing.register(provider)
 			provider = TaskProcessingProvider(
-				id="context_chat-context_chat",
-				name="Context Chat",
-				task_type="context_chat:context_chat",
+				id='context_chat-context_chat',
+				name='Context Chat',
+				task_type='context_chat:context_chat',
 				expected_runtime=30,
 			)
 			nc.providers.task_processing.register(provider)
