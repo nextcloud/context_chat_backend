@@ -9,6 +9,7 @@ import multiprocessing as mp
 import os
 import signal
 import sys
+import time
 import traceback
 from collections.abc import Callable
 from contextlib import suppress
@@ -18,7 +19,6 @@ from time import perf_counter_ns
 from typing import Any, TypeGuard, TypeVar
 
 from fastapi.responses import JSONResponse as FastAPIJSONResponse
-
 from .types import AppRole, TConfig, TEmbeddingAuthApiKey, TEmbeddingAuthBasic, TEmbeddingConfig
 
 T = TypeVar('T')

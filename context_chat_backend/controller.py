@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+import time
+
 from nc_py_api.ex_app.providers.task_processing import TaskProcessingProvider
 
 # isort: off
@@ -61,7 +63,20 @@ models_to_fetch = {
 		'revision': '607a30d783dfa663caf39e06633721c8d4cfcd7e',
 	}
 } if __download_models_from_hf else {}
+
+
 app_enabled = threading.Event()
+last_enabled_check: int|None = None
+def get_enabled_state() -> bool:
+	global last_enabled_check
+	if last_enabled_check is None or time.time() - last_enabled_check > 30:
+		nc = NextcloudApp()
+		if nc.enabled_state:
+			app_enabled.set()
+		else:
+			app_enabled.clear()
+		last_enabled_check = time.time()
+	return app_enabled.is_set()
 
 def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
 	try:
@@ -87,7 +102,7 @@ def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
 			if THREAD_STOP_EVENT.is_set():
 				# If the threads were previously stopped, we start them again
 				# otherwise the lifecycle handler has already started them
-				start_bg_threads(app_config)
+				start_bg_threads(app_config, get_enabled_state)
 				THREAD_STOP_EVENT.clear()
 		else:
 			app_enabled.clear()
@@ -103,9 +118,8 @@ def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 	set_handlers(app, enabled_handler, models_to_fetch=models_to_fetch, trigger_handler=trigger_handler)
-	start_bg_threads(app_config)
-	nc = NextcloudApp()
-	logger.info(f'App enable state at startup: {nc.enabled_state}')
+	start_bg_threads(app_config, get_enabled_state)
+	logger.info(f'App enable state at startup: {get_enabled_state()}')
 	yield
 	vectordb_loader.offload()
 	wait_for_bg_threads()
@@ -192,7 +206,7 @@ def enabled_guard(app: FastAPI):
 		@wraps(func)
 		def wrapper(*args, **kwargs):
 			disable_aaa = app.extra['CONFIG'].disable_aaa
-			if not disable_aaa and not app_enabled.is_set():
+			if not disable_aaa and not get_enabled_state():
 				return JSONResponse('Context Chat is disabled, enable it from AppAPI to use it.', 503)
 
 			return func(*args, **kwargs)
@@ -213,7 +227,7 @@ def _(request: Request):
 
 @app.get('/enabled')
 def _():
-	return JSONResponse(content={'enabled': app_enabled.is_set()}, status_code=200)
+	return JSONResponse(content={'enabled': get_enabled_state()}, status_code=200)
 
 
 @app.post('/countIndexedDocuments')

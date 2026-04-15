@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from enum import Enum
 from threading import Event, Thread
-from time import sleep, time
+from time import sleep
 from typing import Any
 
 import niquests
@@ -69,7 +69,7 @@ class ThreadType(Enum):
 	REQUEST_PROCESSING = 'request_processing'
 
 
-def files_indexing_thread(app_config: TConfig) -> None:
+def files_indexing_thread(app_config: TConfig, get_enabled_state) -> None:
 	try:
 		network_em = NetworkEmbeddings(app_config)
 		vectordb_loader = VectorDBLoader(app_config)
@@ -138,18 +138,12 @@ def files_indexing_thread(app_config: TConfig) -> None:
 	LOGGER.info(f'Using {file_parsing_cpu_count} parallel file parsing workers')
 
 	nc = NextcloudApp()
-	last_enabled_check = time()
-	enabled_state = nc.enabled_state
 	while True:
 		if THREAD_STOP_EVENT.is_set():
 			LOGGER.info('Files indexing thread is stopping due to stop event being set')
 			return
 
-		if time() - last_enabled_check > 30:  # check enabled state every 30 seconds
-			enabled_state = nc.enabled_state
-			last_enabled_check = time()
-
-		if not enabled_state:
+		if not get_enabled_state():
 			LOGGER.info('App is disabled, files indexing thread will sleep until next enabled state check')
 			sleep(POLLING_COOLDOWN)
 			continue
@@ -284,7 +278,7 @@ def files_indexing_thread(app_config: TConfig) -> None:
 
 
 
-def updates_processing_thread(app_config: TConfig) -> None:
+def updates_processing_thread(app_config: TConfig, get_enabled_state) -> None:
 	try:
 		vectordb_loader = VectorDBLoader(app_config)
 	except LoaderException as e:
@@ -292,18 +286,12 @@ def updates_processing_thread(app_config: TConfig) -> None:
 		return
 
 	nc = NextcloudApp()
-	enabled_state = nc.enabled_state
-	last_enabled_check = time()
 	while True:
 		if THREAD_STOP_EVENT.is_set():
 			LOGGER.info('Updates processing thread is stopping due to stop event being set')
 			return
 
-		if time() - last_enabled_check > 30:  # check enabled state every 30 seconds
-			enabled_state = nc.enabled_state
-			last_enabled_check = time()
-
-		if not enabled_state:
+		if not get_enabled_state():
 			sleep(POLLING_COOLDOWN)
 			continue
 
@@ -475,7 +463,7 @@ def resolve_scope_list(source_ids: list[str], userId: str) -> list[str]:
 	return ScopeList.model_validate(data).source_ids
 
 
-def request_processing_thread(app_config: TConfig) -> None:
+def request_processing_thread(app_config: TConfig, get_enabled_state) -> None:
 	LOGGER.info('Starting request processing thread')
 
 	try:
@@ -487,8 +475,6 @@ def request_processing_thread(app_config: TConfig) -> None:
 		return
 
 	nc = NextcloudApp()
-	enabled_state = nc.enabled_state
-	last_enabled_check = time()
 	llm: LLM = llm_loader.load()
 
 	while True:
@@ -500,11 +486,7 @@ def request_processing_thread(app_config: TConfig) -> None:
 			sleep(POLLING_COOLDOWN)
 			continue
 
-		if time() - last_enabled_check > 30:  # check enabled state every 30 seconds
-			enabled_state = nc.enabled_state
-			last_enabled_check = time()
-
-		if not enabled_state:
+		if not get_enabled_state():
 			sleep(POLLING_COOLDOWN)
 			continue
 
@@ -726,7 +708,7 @@ def process_search_task(
 	)
 
 
-def start_bg_threads(app_config: TConfig):
+def start_bg_threads(app_config: TConfig, get_enabled_state):
 	if APP_ROLE == AppRole.INDEXING or APP_ROLE == AppRole.NORMAL:
 		if (
 			ThreadType.FILES_INDEXING in THREADS
@@ -738,12 +720,12 @@ def start_bg_threads(app_config: TConfig):
 		THREAD_STOP_EVENT.clear()
 		THREADS[ThreadType.FILES_INDEXING] = Thread(
 			target=files_indexing_thread,
-			args=(app_config,),
+			args=(app_config,get_enabled_state),
 			name='FilesIndexingThread',
 		)
 		THREADS[ThreadType.UPDATES_PROCESSING] = Thread(
 			target=updates_processing_thread,
-			args=(app_config,),
+			args=(app_config,get_enabled_state),
 			name='UpdatesProcessingThread',
 		)
 		THREADS[ThreadType.FILES_INDEXING].start()
@@ -757,7 +739,7 @@ def start_bg_threads(app_config: TConfig):
 		THREAD_STOP_EVENT.clear()
 		THREADS[ThreadType.REQUEST_PROCESSING] = Thread(
 			target=request_processing_thread,
-			args=(app_config,),
+			args=(app_config,get_enabled_state),
 			name='RequestProcessingThread',
 		)
 		THREADS[ThreadType.REQUEST_PROCESSING].start()
