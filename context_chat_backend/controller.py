@@ -35,7 +35,7 @@ from .dyn_loader import VectorDBLoader
 from .models.types import LlmException
 from nc_py_api.ex_app import AppAPIAuthMiddleware
 from .utils import JSONResponse, exec_in_proc
-from .task_fetcher import start_bg_threads, trigger_handler, wait_for_bg_threads
+from .task_fetcher import THREAD_STOP_EVENT, start_bg_threads, trigger_handler, wait_for_bg_threads
 from .vectordb.service import count_documents_by_provider
 
 # setup
@@ -84,7 +84,11 @@ def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
 			)
 			nc.providers.task_processing.register(provider)
 			app_enabled.set()
-			start_bg_threads(app_config, app_enabled)
+			if THREAD_STOP_EVENT.is_set():
+				# If the threads were previously stopped, we start them again
+				# otherwise the lifecycle handler has already started them
+				start_bg_threads(app_config)
+				THREAD_STOP_EVENT.clear()
 		else:
 			app_enabled.clear()
 			wait_for_bg_threads()
@@ -99,11 +103,9 @@ def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 	set_handlers(app, enabled_handler, models_to_fetch=models_to_fetch, trigger_handler=trigger_handler)
+	start_bg_threads(app_config)
 	nc = NextcloudApp()
-	if nc.enabled_state:
-		app_enabled.set()
-		start_bg_threads(app_config, app_enabled)
-	logger.info(f'App enable state at startup: {app_enabled.is_set()}')
+	logger.info(f'App enable state at startup: {nc.enabled_state}')
 	yield
 	vectordb_loader.offload()
 	wait_for_bg_threads()

@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from enum import Enum
 from threading import Event, Thread
-from time import sleep
+from time import sleep, time
 from typing import Any
 
 import niquests
@@ -69,7 +69,7 @@ class ThreadType(Enum):
 	REQUEST_PROCESSING = 'request_processing'
 
 
-def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
+def files_indexing_thread(app_config: TConfig) -> None:
 	try:
 		network_em = NetworkEmbeddings(app_config)
 		vectordb_loader = VectorDBLoader(app_config)
@@ -137,17 +137,28 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 	)[app_config.file_parsing_cpu_count == -1]
 	LOGGER.info(f'Using {file_parsing_cpu_count} parallel file parsing workers')
 
+	nc = NextcloudApp()
+	last_enabled_check = time()
+	enabled_state = nc.enabled_state
 	while True:
 		if THREAD_STOP_EVENT.is_set():
 			LOGGER.info('Files indexing thread is stopping due to stop event being set')
 			return
+
+		if time() - last_enabled_check > 30:  # check enabled state every 30 seconds
+			enabled_state = nc.enabled_state
+			last_enabled_check = time()
+
+		if not enabled_state:
+			LOGGER.info('App is disabled, files indexing thread will sleep until next enabled state check')
+			sleep(POLLING_COOLDOWN)
+			continue
 
 		try:
 			if not network_em.check_connection(ThreadType.FILES_INDEXING.value):
 				sleep(POLLING_COOLDOWN)
 				continue
 
-			nc = NextcloudApp()
 			q_items_res = nc.ocs(
 				'GET',
 				'/ocs/v2.php/apps/context_chat/queues/documents',
@@ -273,20 +284,30 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 
 
 
-def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
+def updates_processing_thread(app_config: TConfig) -> None:
 	try:
 		vectordb_loader = VectorDBLoader(app_config)
 	except LoaderException as e:
 		LOGGER.error('Error initializing vector DB loader, files indexing thread will not start:', exc_info=e)
 		return
 
+	nc = NextcloudApp()
+	enabled_state = nc.enabled_state
+	last_enabled_check = time()
 	while True:
 		if THREAD_STOP_EVENT.is_set():
 			LOGGER.info('Updates processing thread is stopping due to stop event being set')
 			return
 
+		if time() - last_enabled_check > 30:  # check enabled state every 30 seconds
+			enabled_state = nc.enabled_state
+			last_enabled_check = time()
+
+		if not enabled_state:
+			sleep(POLLING_COOLDOWN)
+			continue
+
 		try:
-			nc = NextcloudApp()
 			q_items_res = nc.ocs(
 				'GET',
 				'/ocs/v2.php/apps/context_chat/queues/actions',
@@ -454,7 +475,7 @@ def resolve_scope_list(source_ids: list[str], userId: str) -> list[str]:
 	return ScopeList.model_validate(data).source_ids
 
 
-def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
+def request_processing_thread(app_config: TConfig) -> None:
 	LOGGER.info('Starting request processing thread')
 
 	try:
@@ -466,6 +487,8 @@ def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 		return
 
 	nc = NextcloudApp()
+	enabled_state = nc.enabled_state
+	last_enabled_check = time()
 	llm: LLM = llm_loader.load()
 
 	while True:
@@ -474,6 +497,14 @@ def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			return
 
 		if not network_em.check_connection(ThreadType.REQUEST_PROCESSING.value):
+			sleep(POLLING_COOLDOWN)
+			continue
+
+		if time() - last_enabled_check > 30:  # check enabled state every 30 seconds
+			enabled_state = nc.enabled_state
+			last_enabled_check = time()
+
+		if not enabled_state:
 			sleep(POLLING_COOLDOWN)
 			continue
 
@@ -695,7 +726,7 @@ def process_search_task(
 	)
 
 
-def start_bg_threads(app_config: TConfig, app_enabled: Event):
+def start_bg_threads(app_config: TConfig):
 	if APP_ROLE == AppRole.INDEXING or APP_ROLE == AppRole.NORMAL:
 		if (
 			ThreadType.FILES_INDEXING in THREADS
@@ -707,12 +738,12 @@ def start_bg_threads(app_config: TConfig, app_enabled: Event):
 		THREAD_STOP_EVENT.clear()
 		THREADS[ThreadType.FILES_INDEXING] = Thread(
 			target=files_indexing_thread,
-			args=(app_config, app_enabled),
+			args=(app_config,),
 			name='FilesIndexingThread',
 		)
 		THREADS[ThreadType.UPDATES_PROCESSING] = Thread(
 			target=updates_processing_thread,
-			args=(app_config, app_enabled),
+			args=(app_config,),
 			name='UpdatesProcessingThread',
 		)
 		THREADS[ThreadType.FILES_INDEXING].start()
@@ -726,7 +757,7 @@ def start_bg_threads(app_config: TConfig, app_enabled: Event):
 		THREAD_STOP_EVENT.clear()
 		THREADS[ThreadType.REQUEST_PROCESSING] = Thread(
 			target=request_processing_thread,
-			args=(app_config, app_enabled),
+			args=(app_config,),
 			name='RequestProcessingThread',
 		)
 		THREADS[ThreadType.REQUEST_PROCESSING].start()
