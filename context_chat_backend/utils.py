@@ -9,7 +9,6 @@ import multiprocessing as mp
 import os
 import signal
 import sys
-import time
 import traceback
 from collections.abc import Callable
 from contextlib import suppress
