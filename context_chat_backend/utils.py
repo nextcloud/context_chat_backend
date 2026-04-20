@@ -18,6 +18,7 @@ from time import perf_counter_ns
 from typing import Any, TypeGuard, TypeVar
 
 from fastapi.responses import JSONResponse as FastAPIJSONResponse
+
 from .types import AppRole, TConfig, TEmbeddingAuthApiKey, TEmbeddingAuthBasic, TEmbeddingConfig
 
 T = TypeVar('T')

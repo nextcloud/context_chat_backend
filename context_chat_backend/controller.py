@@ -66,7 +66,7 @@ models_to_fetch = {
 
 
 app_enabled = threading.Event()
-last_enabled_check: int|None = None
+last_enabled_check: float | None = None
 def get_enabled_state() -> bool:
 	global last_enabled_check
 	if last_enabled_check is None or time.time() - last_enabled_check > 30:
