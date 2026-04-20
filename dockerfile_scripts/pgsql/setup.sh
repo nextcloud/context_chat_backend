@@ -18,7 +18,7 @@ fi
 # Check if EXTERNAL_DB is set
 if [ -n "${EXTERNAL_DB}" ]; then
     if [[ "$EXTERNAL_DB" != "postgresql+psycopg://"* ]]; then
-        echo "EXTERNAL_DB must be a PostgreSQL URL and start with 'postgresql+psycopg://'"
+        printf "%s\n" "EXTERNAL_DB must be a PostgreSQL URL and start with 'postgresql+psycopg://'" >&2
         exit 1
     fi
 
@@ -29,6 +29,11 @@ if [ -n "${EXTERNAL_DB}" ]; then
         echo "export CCB_DB_URL=\"$EXTERNAL_DB\"" >> /etc/environment
     fi
     exit 0
+fi
+
+if [[ -n "${APP_ROLE}" && "$APP_ROLE" != "normal" && "$APP_ROLE" != "" ]]; then
+    printf "%s\n" "Refusing to start the internal postgresql server in Kubernetes environment, use an external database through the EXTERNAL_DB env var." >&2
+    exit 1
 fi
 
 # Ensure the directory exists and has the correct permissions
