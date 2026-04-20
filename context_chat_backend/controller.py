@@ -8,7 +8,7 @@ from nc_py_api.ex_app.providers.task_processing import TaskProcessingProvider
 
 # isort: off
 from .chain.types import ContextException
-from .types import LoaderException, EmbeddingException
+from .types import AppRole, LoaderException, EmbeddingException
 from .vectordb.types import DbException, SafeDbException
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
 
@@ -36,7 +36,7 @@ from .config_parser import get_config
 from .dyn_loader import VectorDBLoader
 from .models.types import LlmException
 from nc_py_api.ex_app import AppAPIAuthMiddleware
-from .utils import JSONResponse, exec_in_proc
+from .utils import JSONResponse, exec_in_proc, get_app_role
 from .task_fetcher import THREAD_STOP_EVENT, start_bg_threads, trigger_handler, wait_for_bg_threads
 from .vectordb.service import count_documents_by_provider
 
@@ -117,7 +117,13 @@ def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-	set_handlers(app, enabled_handler, models_to_fetch=models_to_fetch, trigger_handler=trigger_handler)
+	app_role = get_app_role()
+	if app_role == AppRole.NORMAL:
+		set_handlers(app, enabled_handler, models_to_fetch=models_to_fetch, trigger_handler=trigger_handler)
+	else:
+		# k8s' rp role pulls tasks
+		set_handlers(app, enabled_handler, models_to_fetch=models_to_fetch)
+
 	start_bg_threads(app_config, get_enabled_state)
 	logger.info(f'App enable state at startup: {get_enabled_state()}')
 	yield
