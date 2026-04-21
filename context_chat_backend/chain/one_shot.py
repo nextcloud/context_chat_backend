@@ -52,6 +52,8 @@ def process_context_query(
 	db = vectordb_loader.load()
 	context_docs = get_context_docs(user_id, query, db, ctx_limit, scope_type, scope_list)
 	if len(context_docs) == 0:
+		if scope_type is not None:
+			raise ContextException('No documents retrieved, please choose a wider scope of documents to search from')
 		raise ContextException('No documents retrieved, please index a few documents first')
 
 	context_chunks = get_context_chunks(context_docs)

@@ -610,10 +610,9 @@ class VectorDB(BaseVectorDB):
 		try:
 			with self.session_maker() as session:
 				doc_filters = [AccessListStore.uid == user_id]
-				match scope_type:
-					case ScopeType.PROVIDER:
+				if scope_type == ScopeType.PROVIDER.value:
 						doc_filters.append(DocumentsStore.provider.in_(scope_list))  # pyright: ignore[reportArgumentType]
-					case ScopeType.SOURCE:
+				elif scope_type == ScopeType.SOURCE.value:
 						doc_filters.append(DocumentsStore.source_id.in_(scope_list))  # pyright: ignore[reportArgumentType]
 
 				# get chunks associated with the user
@@ -624,6 +623,9 @@ class VectorDB(BaseVectorDB):
 				)
 				result = session.execute(stmt).fetchall()
 				chunk_ids = [str(c) for res in result for c in res.chunks]
+
+				if len(chunk_ids) == 0:
+					return []
 
 				# get embeddings
 				return self._similarity_search(session, query, chunk_ids, k)
