@@ -47,8 +47,7 @@ COPY context_chat_backend context_chat_backend
 COPY main.py .
 COPY main_em.py .
 COPY config.?pu.yaml .
-COPY logger_config.yaml .
-COPY logger_config_em.yaml .
+COPY logger_config*.yaml .
 COPY hwdetect.sh .
 COPY harp_connect.sh .
 COPY supervisord.conf /etc/supervisor/supervisord.conf

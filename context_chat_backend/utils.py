@@ -318,4 +318,4 @@ def get_app_role() -> AppRole:
 
 def is_k8s_env():
 	role = get_app_role()
-	return role == AppRole.NORMAL
+	return role != AppRole.NORMAL

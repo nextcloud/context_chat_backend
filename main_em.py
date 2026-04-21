@@ -12,11 +12,11 @@ from urllib.parse import quote_plus, urlparse
 import niquests
 import uvicorn
 
-from context_chat_backend.types import DEFAULT_EM_MODEL_ALIAS  # isort: skip
+from context_chat_backend.types import DEFAULT_EM_MODEL_ALIAS, AppRole  # isort: skip
 from context_chat_backend.config_parser import get_config  # isort: skip
 from context_chat_backend.logger import get_logging_config, setup_logging  # isort: skip
 from context_chat_backend.setup_functions import ensure_config_file, setup_env_vars  # isort: skip
-from context_chat_backend.utils import is_k8s_env, redact_config	# isort: skip
+from context_chat_backend.utils import get_app_role, is_k8s_env, redact_config	# isort: skip
 
 
 LOGGER_CONFIG_NAME = 'logger_config_em.yaml'
@@ -89,9 +89,14 @@ def _wait_main_app_enabled() -> None:
 
 
 if __name__ == '__main__':
+	app_role = get_app_role()
+	if app_role == AppRole.UP:
+		print('Internal embedding server is not required for the Updates Processing role, stopping this process.')
+		exit(0)
+
 	# intial buffer
 	print(
-		f"Waiting for {STARTUP_CHECK_SEC} seconds before starting embedding server to allow main app to start",
+		f'Waiting for {STARTUP_CHECK_SEC} seconds before starting embedding server to allow main app to start',
 		flush=True,
 	)
 	sleep(STARTUP_CHECK_SEC)

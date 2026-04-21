@@ -43,7 +43,9 @@ from .vectordb.service import count_documents_by_provider
 # setup
 
 # only run once
-if mp.current_process().name == 'MainProcess':
+APP_ROLE = get_app_role()
+if mp.current_process().name == 'MainProcess' and APP_ROLE in (AppRole.NORMAL, AppRole.RP):
+	# normal docker containers and RP role in k8s
 	repair_run()
 	ensure_config_file()
 
@@ -117,8 +119,7 @@ def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-	app_role = get_app_role()
-	if app_role == AppRole.NORMAL:
+	if APP_ROLE == AppRole.NORMAL:
 		set_handlers(app, enabled_handler, models_to_fetch=models_to_fetch, trigger_handler=trigger_handler)
 	else:
 		# k8s' rp role pulls tasks
