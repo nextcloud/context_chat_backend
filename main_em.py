@@ -16,10 +16,11 @@ from context_chat_backend.types import DEFAULT_EM_MODEL_ALIAS  # isort: skip
 from context_chat_backend.config_parser import get_config  # isort: skip
 from context_chat_backend.logger import get_logging_config, setup_logging  # isort: skip
 from context_chat_backend.setup_functions import ensure_config_file, setup_env_vars  # isort: skip
-from context_chat_backend.utils import redact_config	# isort: skip
+from context_chat_backend.utils import is_k8s_env, redact_config	# isort: skip
 
 
 LOGGER_CONFIG_NAME = 'logger_config_em.yaml'
+LOGGER_K8S_CONFIG_NAME = 'logger_config.k8s.yaml'
 STARTUP_CHECK_SEC = 10
 MAX_TRIES = 180  # 180*10 secs = 30 minutes max
 
@@ -108,7 +109,8 @@ if __name__ == '__main__':
 	# in local embedding server config
 	print('Embedder config:\n' + redact_config(em_conf).model_dump_json(indent=2), flush=True)
 
-	logging_config = get_logging_config(LOGGER_CONFIG_NAME)
+	k8s_env = is_k8s_env()
+	logging_config = get_logging_config(LOGGER_K8S_CONFIG_NAME if k8s_env else LOGGER_CONFIG_NAME)
 	setup_logging(logging_config)
 	logger = logging.getLogger('emserver')
 	if app_config.debug:
@@ -158,11 +160,16 @@ if __name__ == '__main__':
 	)
 
 	uv_log_config = uvicorn.config.LOGGING_CONFIG  # pyright: ignore[reportAttributeAccessIssue]
-	uv_log_config['formatters']['json'] = logging_config['formatters']['json']
-	uv_log_config['handlers']['file_json'] = logging_config['handlers']['file_json']
+	use_colors = False if k8s_env else (app_config.use_colors and os.getenv('CI', 'false') == 'false')
 
-	uv_log_config['loggers']['uvicorn']['handlers'].append('file_json')
-	uv_log_config['loggers']['uvicorn.access']['handlers'].append('file_json')
+	if k8s_env:
+		uv_log_config['formatters']['default'] = logging_config['formatters']['json']
+		uv_log_config['formatters']['access'] = logging_config['formatters']['json']
+	else:
+		uv_log_config['formatters']['json'] = logging_config['formatters']['json']
+		uv_log_config['handlers']['file_json'] = logging_config['handlers']['file_json']
+		uv_log_config['loggers']['uvicorn']['handlers'].append('file_json')
+		uv_log_config['loggers']['uvicorn.access']['handlers'].append('file_json')
 
 	uvicorn.run(
 		# todo: use string import of the app
@@ -173,6 +180,6 @@ if __name__ == '__main__':
 		interface='asgi3',
 		log_config=uv_log_config,
 		log_level=app_config.uvicorn_log_level,
-		use_colors=bool(app_config.use_colors and os.getenv('CI', 'false') == 'false'),
+		use_colors=use_colors,
 		workers=em_conf.workers,
 	)

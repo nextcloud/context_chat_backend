@@ -51,6 +51,7 @@ class JSONFormatter(logging.Formatter):
 		self,
 		*,
 		fmt_keys: dict[str, str] | None = None,
+		use_colors: bool = False,
 	):
 		super().__init__()
 		self.fmt_keys = fmt_keys if fmt_keys is not None else {}

@@ -36,7 +36,7 @@ from .config_parser import get_config
 from .dyn_loader import VectorDBLoader
 from .models.types import LlmException
 from nc_py_api.ex_app import AppAPIAuthMiddleware
-from .utils import JSONResponse, exec_in_proc, get_app_role
+from .utils import JSONResponse, exec_in_proc, get_app_role, is_k8s_env
 from .task_fetcher import THREAD_STOP_EVENT, start_bg_threads, trigger_handler, wait_for_bg_threads
 from .vectordb.service import count_documents_by_provider
 
@@ -134,6 +134,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(debug=app_config.debug, lifespan=lifespan)  # pyright: ignore[reportArgumentType]
 
 app.extra['CONFIG'] = app_config
+k8s_env = is_k8s_env()
 
 
 # loaders
@@ -244,7 +245,13 @@ def _():
 
 
 @app.get('/downloadLogs')
-def download_logs() -> FileResponse:
+def download_logs():
+	if k8s_env:
+		return JSONResponse(
+			'Download of logs is not supported in Kubernetes environment. Use the standard logging infrastructure.',
+			status_code=400,
+		)
+
 	with tempfile.NamedTemporaryFile('wb', delete=False) as tmp:
 		with zipfile.ZipFile(tmp, mode='w', compression=zipfile.ZIP_DEFLATED) as zip_file:
 			files = os.listdir(os.path.join(persistent_storage(), 'logs'))

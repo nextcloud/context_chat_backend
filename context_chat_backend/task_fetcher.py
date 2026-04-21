@@ -282,7 +282,7 @@ def updates_processing_thread(app_config: TConfig, get_enabled_state) -> None:
 	try:
 		vectordb_loader = VectorDBLoader(app_config)
 	except LoaderException as e:
-		LOGGER.error('Error initializing vector DB loader, files indexing thread will not start:', exc_info=e)
+		LOGGER.error('Error initializing vector DB loader, updates processing thread will not start:', exc_info=e)
 		return
 
 	nc = NextcloudApp()
@@ -292,6 +292,7 @@ def updates_processing_thread(app_config: TConfig, get_enabled_state) -> None:
 			return
 
 		if not get_enabled_state():
+			LOGGER.info('App is disabled, updates processing thread will sleep until next enabled state check')
 			sleep(POLLING_COOLDOWN)
 			continue
 
@@ -471,7 +472,7 @@ def request_processing_thread(app_config: TConfig, get_enabled_state) -> None:
 		vectordb_loader = VectorDBLoader(app_config)
 		llm_loader = LLMModelLoader(app_config)
 	except LoaderException as e:
-		LOGGER.error('Error initializing vector DB loader, files indexing thread will not start:', exc_info=e)
+		LOGGER.error('Error initializing vector DB loader, request processing thread will not start:', exc_info=e)
 		return
 
 	nc = NextcloudApp()
@@ -482,15 +483,16 @@ def request_processing_thread(app_config: TConfig, get_enabled_state) -> None:
 			LOGGER.info('Request processing thread is stopping due to stop event being set')
 			return
 
-		if not network_em.check_connection(ThreadType.REQUEST_PROCESSING.value):
-			sleep(POLLING_COOLDOWN)
-			continue
-
 		if not get_enabled_state():
+			LOGGER.info('App is disabled, request processing thread will sleep until next enabled state check')
 			sleep(POLLING_COOLDOWN)
 			continue
 
 		try:
+			if not network_em.check_connection(ThreadType.REQUEST_PROCESSING.value):
+				sleep(POLLING_COOLDOWN)
+				continue
+
 			# Fetch pending task
 			try:
 				response = nc.providers.task_processing.next_task(

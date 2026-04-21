@@ -314,3 +314,8 @@ def get_app_role() -> AppRole:
 		_logger.warning(f'Invalid app role: {role}, defaulting to all roles')
 		return AppRole.NORMAL
 	return AppRole(role)
+
+
+def is_k8s_env():
+	role = get_app_role()
+	return role == AppRole.NORMAL
