@@ -310,7 +310,7 @@ def get_app_role() -> AppRole:
 	role = os.getenv('APP_ROLE', '').lower()
 	if role == '':
 		return AppRole.NORMAL
-	if role not in ['indexing', 'rp']:
+	if role not in ['indexing', 'rp', 'up']:
 		_logger.warning(f'Invalid app role: {role}, defaulting to all roles')
 		return AppRole.NORMAL
 	return AppRole(role)

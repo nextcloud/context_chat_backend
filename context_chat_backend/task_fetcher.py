@@ -711,34 +711,37 @@ def process_search_task(
 
 
 def start_bg_threads(app_config: TConfig, get_enabled_state):
+	THREAD_STOP_EVENT.clear()
+
 	if APP_ROLE == AppRole.INDEXING or APP_ROLE == AppRole.NORMAL:
-		if (
-			ThreadType.FILES_INDEXING in THREADS
-			or ThreadType.UPDATES_PROCESSING in THREADS
-		):
-			LOGGER.info('Background threads already running, skipping start')
+		if ThreadType.FILES_INDEXING in THREADS:
+			LOGGER.info('Indexing background threads are already up, skipping start')
 			return
 
-		THREAD_STOP_EVENT.clear()
 		THREADS[ThreadType.FILES_INDEXING] = Thread(
 			target=files_indexing_thread,
 			args=(app_config,get_enabled_state),
 			name='FilesIndexingThread',
 		)
+		THREADS[ThreadType.FILES_INDEXING].start()
+
+	if APP_ROLE == AppRole.UP or APP_ROLE == AppRole.NORMAL:
+		if ThreadType.UPDATES_PROCESSING in THREADS:
+			LOGGER.info('Updates processing background threads are already up, skipping start')
+			return
+
 		THREADS[ThreadType.UPDATES_PROCESSING] = Thread(
 			target=updates_processing_thread,
 			args=(app_config,get_enabled_state),
 			name='UpdatesProcessingThread',
 		)
-		THREADS[ThreadType.FILES_INDEXING].start()
 		THREADS[ThreadType.UPDATES_PROCESSING].start()
 
 	if APP_ROLE == AppRole.RP or APP_ROLE == AppRole.NORMAL:
 		if ThreadType.REQUEST_PROCESSING in THREADS:
-			LOGGER.info('Background threads already running, skipping start')
+			LOGGER.info('Request processing background threads are already up, skipping start')
 			return
 
-		THREAD_STOP_EVENT.clear()
 		THREADS[ThreadType.REQUEST_PROCESSING] = Thread(
 			target=request_processing_thread,
 			args=(app_config,get_enabled_state),
@@ -748,20 +751,25 @@ def start_bg_threads(app_config: TConfig, get_enabled_state):
 
 
 def wait_for_bg_threads():
+	THREAD_STOP_EVENT.set()
+
 	if APP_ROLE == AppRole.INDEXING or APP_ROLE == AppRole.NORMAL:
-		if (ThreadType.FILES_INDEXING not in THREADS or ThreadType.UPDATES_PROCESSING not in THREADS):
+		if ThreadType.FILES_INDEXING not in THREADS:
 			return
 
-		THREAD_STOP_EVENT.set()
 		THREADS[ThreadType.FILES_INDEXING].join()
-		THREADS[ThreadType.UPDATES_PROCESSING].join()
 		THREADS.pop(ThreadType.FILES_INDEXING)
+
+	if APP_ROLE == AppRole.UP or APP_ROLE == AppRole.NORMAL:
+		if ThreadType.UPDATES_PROCESSING not in THREADS:
+			return
+
+		THREADS[ThreadType.UPDATES_PROCESSING].join()
 		THREADS.pop(ThreadType.UPDATES_PROCESSING)
 
 	if APP_ROLE == AppRole.RP or APP_ROLE == AppRole.NORMAL:
 		if (ThreadType.REQUEST_PROCESSING not in THREADS):
 			return
 
-		THREAD_STOP_EVENT.set()
 		THREADS[ThreadType.REQUEST_PROCESSING].join()
 		THREADS.pop(ThreadType.REQUEST_PROCESSING)

@@ -156,6 +156,7 @@ class AppRole(str, Enum):
 	NORMAL = 'normal'
 	INDEXING = 'indexing'
 	RP = 'rp'
+	UP = 'up'
 
 
 class CommonSourceItem(BaseModel):

@@ -90,6 +90,12 @@ Setup background job workers as described here: https://docs.nextcloud.com/serve
 				<expose>true</expose>
 			</role>
 			<role>
+				<name>up</name>
+				<display-name>Metadata Updates Processing Mode</display-name>
+				<env>APP_ROLE=up</env>
+				<expose>false</expose>
+			</role>
+			<role>
 				<name>indexing</name>
 				<display-name>Indexing Mode</display-name>
 				<env>APP_ROLE=indexing</env>
