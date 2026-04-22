@@ -69,16 +69,18 @@ models_to_fetch = {
 
 app_enabled = threading.Event()
 last_enabled_check: float | None = None
+enabled_check_lock: threading.Lock = threading.Lock()
 def get_enabled_state() -> bool:
 	global last_enabled_check
-	if last_enabled_check is None or time.time() - last_enabled_check > 30:
-		nc = NextcloudApp()
-		if nc.enabled_state:
-			app_enabled.set()
-		else:
-			app_enabled.clear()
-		last_enabled_check = time.time()
-	return app_enabled.is_set()
+	with enabled_check_lock:
+		if last_enabled_check is None or time.time() - last_enabled_check > 30:
+			nc = NextcloudApp()
+			if nc.enabled_state:
+				app_enabled.set()
+			else:
+				app_enabled.clear()
+			last_enabled_check = time.time()
+		return app_enabled.is_set()
 
 def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
 	try:
