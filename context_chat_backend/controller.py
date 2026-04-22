@@ -44,7 +44,7 @@ from .vectordb.service import count_documents_by_provider
 
 # only run once
 APP_ROLE = get_app_role()
-if mp.current_process().name == 'MainProcess' and APP_ROLE in (AppRole.NORMAL, AppRole.RP):
+if mp.current_process().name == 'MainProcess' and APP_ROLE in (AppRole.NORMAL, AppRole.REQUEST_PROC):
 	# normal docker containers and RP role in k8s
 	repair_run()
 	ensure_config_file()

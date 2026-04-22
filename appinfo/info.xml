@@ -86,13 +86,13 @@ Setup background job workers as described here: https://docs.nextcloud.com/serve
 			<role>
 				<name>rp</name>
 				<display-name>Request Processing Mode</display-name>
-				<env>APP_ROLE=rp</env>
+				<env>APP_ROLE=requestproc</env>
 				<expose>true</expose>
 			</role>
 			<role>
 				<name>up</name>
 				<display-name>Metadata Updates Processing Mode</display-name>
-				<env>APP_ROLE=up</env>
+				<env>APP_ROLE=updatesproc</env>
 				<expose>false</expose>
 			</role>
 			<role>

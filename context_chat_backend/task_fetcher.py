@@ -725,7 +725,7 @@ def start_bg_threads(app_config: TConfig, get_enabled_state):
 		)
 		THREADS[ThreadType.FILES_INDEXING].start()
 
-	if APP_ROLE == AppRole.UP or APP_ROLE == AppRole.NORMAL:
+	if APP_ROLE == AppRole.UPDATES_PROC or APP_ROLE == AppRole.NORMAL:
 		if ThreadType.UPDATES_PROCESSING in THREADS:
 			LOGGER.info('Updates processing background threads are already up, skipping start')
 			return
@@ -737,7 +737,7 @@ def start_bg_threads(app_config: TConfig, get_enabled_state):
 		)
 		THREADS[ThreadType.UPDATES_PROCESSING].start()
 
-	if APP_ROLE == AppRole.RP or APP_ROLE == AppRole.NORMAL:
+	if APP_ROLE == AppRole.REQUEST_PROC or APP_ROLE == AppRole.NORMAL:
 		if ThreadType.REQUEST_PROCESSING in THREADS:
 			LOGGER.info('Request processing background threads are already up, skipping start')
 			return
@@ -760,14 +760,14 @@ def wait_for_bg_threads():
 		THREADS[ThreadType.FILES_INDEXING].join()
 		THREADS.pop(ThreadType.FILES_INDEXING)
 
-	if APP_ROLE == AppRole.UP or APP_ROLE == AppRole.NORMAL:
+	if APP_ROLE == AppRole.UPDATES_PROC or APP_ROLE == AppRole.NORMAL:
 		if ThreadType.UPDATES_PROCESSING not in THREADS:
 			return
 
 		THREADS[ThreadType.UPDATES_PROCESSING].join()
 		THREADS.pop(ThreadType.UPDATES_PROCESSING)
 
-	if APP_ROLE == AppRole.RP or APP_ROLE == AppRole.NORMAL:
+	if APP_ROLE == AppRole.REQUEST_PROC or APP_ROLE == AppRole.NORMAL:
 		if (ThreadType.REQUEST_PROCESSING not in THREADS):
 			return
 

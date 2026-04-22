@@ -155,8 +155,8 @@ class DocErrorEmbeddingException(EmbeddingException):
 class AppRole(str, Enum):
 	NORMAL = 'normal'
 	INDEXING = 'indexing'
-	RP = 'rp'
-	UP = 'up'
+	REQUEST_PROC = 'requestproc'
+	UPDATES_PROC = 'updatesproc'
 
 
 class CommonSourceItem(BaseModel):

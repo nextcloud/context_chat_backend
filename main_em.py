@@ -90,7 +90,7 @@ def _wait_main_app_enabled() -> None:
 
 if __name__ == '__main__':
 	app_role = get_app_role()
-	if app_role == AppRole.UP:
+	if app_role == AppRole.UPDATES_PROC:
 		print('Internal embedding server is not required for the Updates Processing role, stopping this process.')
 		exit(0)
 
