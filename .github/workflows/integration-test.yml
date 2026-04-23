@@ -122,6 +122,13 @@ jobs:
           path: context_chat_backend/
           persist-credentials: false
 
+      - name: Checkout app_api
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          repository: nextcloud/app_api
+          path: apps/app_api
+          persist-credentials: false
+
       - name: Get app version
         id: appinfo
         uses: skjnldsv/xpath-action@7e6a7c379d0e9abc8acaef43df403ab4fc4f770c # master
