@@ -224,14 +224,15 @@ jobs:
           context: context_chat_backend
           push: false
           platforms: linux/amd64
-          tags: ccb-cpu:latest
+          # use local tag so image is not pulled from remote
+          tags: ccb-cpu:local
           target: runtime-cpu
           load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Pre-load CCB ExApp image into k3s
-        run: docker save ccb-cpu:latest | sudo k3s ctr images import -
+        run: docker save ccb-cpu:local | sudo k3s ctr images import -
 
       - name: Start HaRP with K8s backend
         run: |
@@ -279,7 +280,7 @@ jobs:
       - name: Register backend
         run: |
           sed -i 's;<image>.*</image>;<image>ccb-cpu</image>;' context_chat_backend/appinfo/info.xml
-          sed -i 's;<image-tag>.*</image-tag>;<image-tag>latest</image-tag>;' context_chat_backend/appinfo/info.xml
+          sed -i 's;<image-tag>.*</image-tag>;<image-tag>local</image-tag>;' context_chat_backend/appinfo/info.xml
           timeout 120 ./occ app_api:app:register context_chat_backend k8s_test \
             --info-xml context_chat_backend/appinfo/info.xml \
             --env EXTERNAL_DB="postgresql+psycopg://root:rootpassword@localhost:4445/nextcloud" \
