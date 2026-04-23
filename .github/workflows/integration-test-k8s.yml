@@ -225,14 +225,14 @@ jobs:
           push: false
           platforms: linux/amd64
           # use local tag so image is not pulled from remote
-          tags: ccb-cpu:local
+          tags: ghcr.io/ccb-cpu:local
           target: runtime-cpu
           load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Pre-load CCB ExApp image into k3s
-        run: docker save ccb-cpu:local | sudo k3s ctr images import -
+        run: docker save ghcr.io/ccb-cpu:local | sudo k3s ctr images import -
 
       - name: Start HaRP with K8s backend
         run: |
