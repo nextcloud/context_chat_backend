@@ -69,8 +69,6 @@ jobs:
     env:
       MYSQL_PORT: 4444
       PGSQL_PORT: 4445
-      # use the same db for ccb and nextcloud
-      CCB_DB_URL: postgresql+psycopg://root:rootpassword@localhost:4445/nextcloud
       HP_SHARED_KEY: test_shared_key_12345
 
     services:
@@ -81,6 +79,7 @@ jobs:
         env:
           MYSQL_ROOT_PASSWORD: rootpassword
         options: --health-cmd="mysqladmin ping" --health-interval 5s --health-timeout 2s --health-retries 5
+      # use the same db for ccb and nextcloud
       postgres:
         image: pgvector/pgvector:pg17
         ports:
@@ -272,9 +271,12 @@ jobs:
 
       - name: Register backend
         run: |
-          sed -i 's;<image>.*</image>;<image>ccb-cpu</image>;' appinfo/info.xml
-          sed -i 's;<image-tag>.*</image-tag>;<image-tag>latest</image-tag>;' appinfo/info.xml
-          timeout 120 ./occ app_api:app:register context_chat_backend k8s_test --info-xml context_chat_backend/appinfo/info.xml
+          sed -i 's;<image>.*</image>;<image>ccb-cpu</image>;' context_chat_backend/appinfo/info.xml
+          sed -i 's;<image-tag>.*</image-tag>;<image-tag>latest</image-tag>;' context_chat_backend/appinfo/info.xml
+          timeout 120 ./occ app_api:app:register context_chat_backend k8s_test \
+            --info-xml context_chat_backend/appinfo/info.xml \
+            --env EXTERNAL_DB="postgresql+psycopg://root:rootpassword@localhost:4445/nextcloud" \
+            --wait-finish
 
       - name: Run cron jobs
         run: |
