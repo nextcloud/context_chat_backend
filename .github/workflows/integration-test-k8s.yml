@@ -139,7 +139,6 @@ jobs:
           sleep 25
           mkdir data
           ./occ maintenance:install --verbose --database=${{ matrix.databases }} --database-name=nextcloud --database-host=127.0.0.1 --database-port=$MYSQL_PORT --database-user=root --database-pass=rootpassword --admin-user admin --admin-pass password
-          composer run serve &
 
       - name: Set up Nextcloud PGSQL
         if: ${{ matrix.databases == 'pgsql'}}
@@ -147,7 +146,6 @@ jobs:
           sleep 25
           mkdir data
           ./occ maintenance:install --verbose --database=${{ matrix.databases }} --database-name=nextcloud --database-host=127.0.0.1 --database-port=$PGSQL_PORT --database-user=root --database-pass=rootpassword --admin-user admin --admin-pass password
-          composer run serve &
 
       - name: Enable context_chat, app_api and testing
         run: ./occ app:enable -vvv -f context_chat app_api testing
@@ -253,6 +251,9 @@ jobs:
           docker run --net host --name nextcloud --rm \
             -v $(pwd)/apps/app_api/tests/simple-nginx-NOT-FOR-PRODUCTION.conf:/etc/nginx/conf.d/default.conf:ro \
             -d nginx
+
+      - name: Start nextcloud
+        run: PHP_CLI_SERVER_WORKERS=2 php -S 0.0.0.0:8080 &
 
       - name: Wait for HaRP K8s readiness
         run: |
