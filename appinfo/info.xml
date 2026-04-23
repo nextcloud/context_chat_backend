@@ -84,13 +84,13 @@ Setup background job workers as described here: https://docs.nextcloud.com/serve
 		</environment-variables>
 		<k8s-service-roles>
 			<role>
-				<name>rp</name>
+				<name>requestproc</name>
 				<display-name>Request Processing Mode</display-name>
 				<env>APP_ROLE=requestproc</env>
 				<expose>true</expose>
 			</role>
 			<role>
-				<name>up</name>
+				<name>updatesproc</name>
 				<display-name>Metadata Updates Processing Mode</display-name>
 				<env>APP_ROLE=updatesproc</env>
 				<expose>false</expose>
