@@ -392,6 +392,11 @@ jobs:
         run: |
           tail -v -n +1 worker?_logs || echo "No worker logs"
 
+      - name: Show HaRP logs
+        if: always()
+        run: |
+          docker logs appapi-harp
+
       - name: Show main app indexing logs
         if: always()
         run: |
