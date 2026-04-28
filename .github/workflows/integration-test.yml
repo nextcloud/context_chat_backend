@@ -235,8 +235,8 @@ jobs:
             echo "Checking stats, attempt $i..."
 
             stats_err=$(mktemp)
-            stats=$(timeout 5 ./occ context_chat:stats --json 2>"$stats_err")
-            stats_exit=$?
+            stats_exit=0
+            stats=$(timeout 30 ./occ context_chat:stats --json 2>"$stats_err") || stats_exit=$?
             echo "Stats output:"
             echo "$stats"
             if [ -s "$stats_err" ]; then
