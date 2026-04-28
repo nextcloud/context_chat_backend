@@ -178,7 +178,7 @@ jobs:
 
       - name: Install k3s
         run: |
-          curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --disable servicelb" sh -
+          curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --disable servicelb --kubelet-arg=container-log-max-size=0" sh -
           sudo chmod 644 /etc/rancher/k3s/k3s.yaml
           echo "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> $GITHUB_ENV
 
@@ -300,6 +300,7 @@ jobs:
           ./occ background-job:list
 
       - name: Initial dump of DB with context_chat_queue populated
+        if: always()
         run: |
           docker exec postgres pg_dump nextcloud > /tmp/0_pgdump_nextcloud
 
@@ -402,20 +403,21 @@ jobs:
       - name: Show main app indexing logs
         if: always()
         run: |
-          kubectl logs -n nextcloud-exapps -l app=nc-app-context-chat-backend-indexing
+          kubectl logs -n nextcloud-exapps -l app=nc-app-context-chat-backend-indexing --prefix --tail=-1 --ignore-errors
 
       - name: Show main app updates processing logs
         if: always()
         run: |
-          kubectl logs -n nextcloud-exapps -l app=nc-app-context-chat-backend-updatesproc
+          kubectl logs -n nextcloud-exapps -l app=nc-app-context-chat-backend-updatesproc --prefix --tail=-1 --ignore-errors
 
       - name: Show main app request processing logs
         if: always()
         run: |
-          kubectl logs -n nextcloud-exapps -l app=nc-app-context-chat-backend-requestproc
+          kubectl logs -n nextcloud-exapps -l app=nc-app-context-chat-backend-requestproc --prefix --tail=-1 --ignore-errors
 
       - name: Upload database dumps
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: database-dumps-${{ matrix.server-versions }}-php@${{ matrix.php-versions }}
           path: |
@@ -423,6 +425,7 @@ jobs:
             /tmp/1_pgdump_nextcloud
 
       - name: Final stats log
+        if: always()
         run: |
           ./occ context_chat:stats
           ./occ context_chat:stats --json
