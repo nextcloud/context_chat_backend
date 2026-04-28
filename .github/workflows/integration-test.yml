@@ -224,6 +224,7 @@ jobs:
           ./occ background-job:list
 
       - name: Initial dump of DB with context_chat_queue populated
+        if: always()
         run: |
           docker exec postgres pg_dump nextcloud > /tmp/0_pgdump_nextcloud
 
@@ -365,6 +366,7 @@ jobs:
 
       - name: Upload database dumps
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: database-dumps-${{ matrix.server-versions }}-php@${{ matrix.php-versions }}
           path: |
@@ -372,6 +374,7 @@ jobs:
             /tmp/1_pgdump_nextcloud
 
       - name: Final stats log
+        if: always()
         run: |
           ./occ context_chat:stats
           ./occ context_chat:stats --json
