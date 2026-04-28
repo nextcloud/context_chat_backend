@@ -62,7 +62,7 @@ jobs:
       matrix:
         php-versions: [ '8.2' ]
         databases: [ 'pgsql' ]
-        server-versions: [ 'stable32', 'stable33', 'master' ]
+        server-versions: [ 'master' ]
 
     name: Integration test k8s on ${{ matrix.server-versions }} php@${{ matrix.php-versions }}
 
@@ -123,7 +123,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           repository: nextcloud/app_api
-          ref: ${{ matrix.server-versions }}
+          ref: ${{ matrix.server-versions == 'master' && 'main' || matrix.server-versions }}
           path: apps/app_api
           persist-credentials: false
 
