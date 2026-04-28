@@ -367,14 +367,17 @@ jobs:
           ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' > worker1_logs 2>&1 &
           ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' > worker2_logs 2>&1 &
 
+          echo ::group::English prompt
           OUT1=$(./occ context_chat:prompt admin "Which factors are taken into account for the Ethical AI Rating?")
           echo "$OUT1"
-          echo '--------------------------------------------------'
+          echo "$OUT1" | grep -q "If all of these points are met, we give a Green label." || exit 1
+          echo ::endgroup::
+
+          echo ::group::German prompt
           OUT2=$(./occ context_chat:prompt admin "Welche Faktoren beeinflussen das Ethical AI Rating?")
           echo "$OUT2"
-
-          echo "$OUT1" | grep -q "If all of these points are met, we give a Green label." || exit 1
           echo "$OUT2" | grep -q "If all of these points are met, we give a Green label." || exit 1
+          echo ::endgroup::
 
       - name: Final dump of DB with vectordb populated
         run: |
