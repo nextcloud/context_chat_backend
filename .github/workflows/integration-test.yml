@@ -330,6 +330,7 @@ jobs:
           fi
 
       - name: Final dump of DB with vectordb populated
+        if: always()
         run: |
           docker exec postgres pg_dump nextcloud > /tmp/1_pgdump_nextcloud
 
