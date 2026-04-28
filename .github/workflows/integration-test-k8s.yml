@@ -284,7 +284,7 @@ jobs:
           sed -i 's;<image-tag>.*</image-tag>;<image-tag>local</image-tag>;' context_chat_backend/appinfo/info.xml
           timeout 120 ./occ app_api:app:register context_chat_backend k8s_test \
             --info-xml context_chat_backend/appinfo/info.xml \
-            --env EXTERNAL_DB="postgresql+psycopg://root:rootpassword@localhost:4445/nextcloud" \
+            --env EXTERNAL_DB="postgresql+psycopg://root:rootpassword@${{ env.NODE_IP }}:4445/nextcloud" \
             --wait-finish
 
       - name: Run cron jobs
