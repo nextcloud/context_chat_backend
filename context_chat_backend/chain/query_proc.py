@@ -40,7 +40,7 @@ def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, doc_c
 	n_ctx = llm_config.get('n_ctx') \
 		or llm_config.get('config', {}).get('context_length') \
 		or llm_config.get('pipeline_kwargs', {}).get('config', {}).get('max_length') \
-		or 8192
+		or 16384
 
 	# fav: tokens to generate
 	n_gen = llm_config.get('max_tokens') \
