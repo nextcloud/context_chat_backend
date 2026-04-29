@@ -36,7 +36,7 @@ def do_doc_search(
 	user_id: str,
 	query: str,
 	vectordb_loader: VectorDBLoader,
-	ctx_limit: int = 20,
+	ctx_limit: int = 30,
 	scope_type: ScopeType | None = None,
 	scope_list: list[str] | None = None,
 ) -> list[SearchResult]:

@@ -38,7 +38,7 @@ def process_context_query(
 	llm: LLM,
 	app_config: TConfig,
 	query: str,
-	ctx_limit: int = 20,
+	ctx_limit: int = 30,
 	scope_type: ScopeType | None = None,
 	scope_list: list[str] | None = None,
 	template: str | None = None,

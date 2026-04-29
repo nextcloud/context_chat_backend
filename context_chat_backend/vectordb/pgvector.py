@@ -640,7 +640,7 @@ class VectorDB(BaseVectorDB):
 		session: orm.Session,
 		query: str,
 		chunk_ids: list[str],
-		k: int = 20,
+		k: int,
 	) -> list[Document]:
 		embedding = self.client.embeddings.embed_query(query)
 		collection = self.client.get_collection(session)
