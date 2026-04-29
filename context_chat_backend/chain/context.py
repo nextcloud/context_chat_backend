@@ -32,16 +32,6 @@ def get_context_docs(
 	return vectordb.doc_search(user_id, query, ctx_limit, scope_type, scope_list)
 
 
-def get_context_chunks(context_docs: list[Document]) -> list[str]:
-	context_chunks = []
-	for doc in context_docs:
-		if title := doc.metadata.get('title'):
-			context_chunks.append(title)
-		context_chunks.append(doc.page_content)
-
-	return context_chunks
-
-
 def do_doc_search(
 	user_id: str,
 	query: str,

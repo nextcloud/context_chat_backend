@@ -8,7 +8,7 @@ from langchain.llms.base import LLM
 
 from ..dyn_loader import VectorDBLoader
 from ..types import TConfig
-from .context import get_context_chunks, get_context_docs
+from .context import get_context_docs
 from .query_proc import get_pruned_query
 from .types import ContextException, LLMOutput, ScopeType, SearchResult
 
@@ -56,14 +56,12 @@ def process_context_query(
 			raise ContextException('No documents retrieved, please choose a wider scope of documents to search from')
 		raise ContextException('No documents retrieved, please index a few documents first')
 
-	context_chunks = get_context_chunks(context_docs)
 	logger.debug('context retrieved', extra={
 		'len(context_docs)': len(context_docs),
-		'len(context_chunks)': len(context_chunks),
 	})
 
 	output = llm.invoke(
-		get_pruned_query(llm, app_config, query, template or _LLM_TEMPLATE, context_chunks),
+		get_pruned_query(llm, app_config, query, template or _LLM_TEMPLATE, context_docs),
 		userid=user_id,
 	).strip()
 	unique_sources = [SearchResult(
