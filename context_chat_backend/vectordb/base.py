@@ -3,14 +3,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from typing import Any
 
-from fastapi import UploadFile
 from langchain.schema import Document
 from langchain.schema.embeddings import Embeddings
 from langchain.schema.vectorstore import VectorStore
 
 from ..chain.types import InDocument, ScopeType
+from ..types import IndexingError, ReceivedFileItem, SourceItem
 from ..utils import timed
 from .types import UpdateAccessOp
 
@@ -62,7 +63,7 @@ class BaseVectorDB(ABC):
 		'''
 
 	@abstractmethod
-	def add_indocuments(self, indocuments: list[InDocument]) -> tuple[list[str],list[str]]:
+	def add_indocuments(self, indocuments: Mapping[int, InDocument]) -> Mapping[int, IndexingError | None]:
 		'''
 		Adds the given indocuments to the vectordb and updates the docs + access tables.
 
@@ -79,10 +80,7 @@ class BaseVectorDB(ABC):
 
 	@timed
 	@abstractmethod
-	def check_sources(
-		self,
-		sources: list[UploadFile],
-	) -> tuple[list[str], list[str]]:
+	def check_sources(self, sources: Mapping[int, SourceItem | ReceivedFileItem]) -> tuple[list[str], list[str]]:
 		'''
 		Checks the sources in the vectordb if they are already embedded
 			and are up to date.
@@ -91,8 +89,8 @@ class BaseVectorDB(ABC):
 
 		Args
 		----
-		sources: list[UploadFile]
-			List of source ids to check.
+		sources: Mapping[int, SourceItem | ReceivedFileItem]
+			Dict of sources to check.
 
 		Returns
 		-------

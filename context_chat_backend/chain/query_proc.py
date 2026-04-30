@@ -7,6 +7,7 @@ import os
 from sys import maxsize as SYS_MAXSIZE
 
 from langchain.llms.base import LLM
+from langchain.schema import Document
 from transformers import GPT2Tokenizer
 
 from ..types import TConfig
@@ -22,7 +23,7 @@ def get_num_tokens(text: str, tokenizer: GPT2Tokenizer) -> int:
 	return len(tokenizer.encode(text, max_length=SYS_MAXSIZE, truncation=True))
 
 
-def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, text_chunks: list[str]) -> str:
+def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, doc_chunks: list[Document]) -> str:
 	'''
 	Truncates the input to fit the model's maximum context length
 	and returns the model's prediction
@@ -39,7 +40,7 @@ def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, text_
 	n_ctx = llm_config.get('n_ctx') \
 		or llm_config.get('config', {}).get('context_length') \
 		or llm_config.get('pipeline_kwargs', {}).get('config', {}).get('max_length') \
-		or 8192
+		or 16384
 
 	# fav: tokens to generate
 	n_gen = llm_config.get('max_tokens') \
@@ -69,19 +70,21 @@ def get_pruned_query(llm: LLM, config: TConfig, query: str, template: str, text_
 
 	accepted_chunks = []
 
-	while text_chunks and remaining_tokens > 0:
-		context = text_chunks.pop(0)
+	for chunk in doc_chunks:
+		context = f'{chunk.metadata.get("title", "")}:\n\n{chunk.page_content}'
 		context_tokens = get_num_tokens(context, tokenizer)
 
-		if context_tokens <= remaining_tokens:
-			accepted_chunks.append(context)
-			remaining_tokens -= context_tokens
+		if context_tokens > remaining_tokens or remaining_tokens <= 0:
+			break
+
+		accepted_chunks.append(context)
+		remaining_tokens -= context_tokens
 
 	logger.debug('pruned query stats', extra={
 		'total tokens': n_ctx - remaining_tokens,
 		'remaining tokens': remaining_tokens,
 		'accepted chunks': len(accepted_chunks),
-		'total chunks': len(text_chunks),
+		'total chunks': len(doc_chunks),
 	})
 
 	return template.format(context='\n\n'.join(accepted_chunks), question=query)

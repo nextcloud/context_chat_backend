@@ -3,14 +3,16 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 import logging
+import socket
 from time import sleep
 from typing import Literal, TypedDict
+from urllib.parse import urlparse
 
 import niquests
 from langchain_core.embeddings import Embeddings
-from pydantic import BaseModel
 
 from .types import (
+	DocErrorEmbeddingException,
 	EmbeddingException,
 	FatalEmbeddingException,
 	RetryableEmbeddingException,
@@ -20,6 +22,7 @@ from .types import (
 )
 
 logger = logging.getLogger('ccb.nextwork_em')
+TCP_CONNECT_TIMEOUT = 2.0  # seconds
 
 # Copied from llama_cpp/llama_types.py
 
@@ -41,8 +44,35 @@ class CreateEmbeddingResponse(TypedDict):
 	usage: EmbeddingUsage
 
 
-class NetworkEmbeddings(Embeddings, BaseModel):
-	app_config: TConfig
+class NetworkEmbeddings(Embeddings):
+	def __init__(self, app_config: TConfig):
+		self.app_config = app_config
+
+	def _get_host_and_port(self) -> tuple[str, int]:
+		parsed = urlparse(self.app_config.embedding.base_url)
+		host = parsed.hostname
+
+		if not host:
+			raise ValueError("Invalid URL: Missing hostname")
+
+		if parsed.port:
+			port = parsed.port
+		else:
+			port = 443 if parsed.scheme == "https" else 80
+
+		return host, port
+
+	def check_connection(self, check_origin: str) -> bool:
+		try:
+			host, port = self._get_host_and_port()
+			sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			sock.settimeout(TCP_CONNECT_TIMEOUT)
+			sock.connect((host, port))
+			sock.close()
+			return True
+		except (ValueError, TimeoutError, ConnectionRefusedError, socket.gaierror) as e:
+			logger.warning(f'[{check_origin}] Embedding server is not reachable, retrying after some time: {e}')
+			return False
 
 	def _get_embedding(self, input_: str | list[str], try_: int = 3) -> list[float] | list[list[float]]:
 		emconf = self.app_config.embedding
@@ -76,13 +106,27 @@ class NetworkEmbeddings(Embeddings, BaseModel):
 			if response.status_code is None:
 				raise EmbeddingException('Error: no response from embedding service')
 			if response.status_code // 100 == 4:
-				raise FatalEmbeddingException(response.text)
+				raise FatalEmbeddingException(
+					response.text or f'Error: embedding request returned non-2xx status code {response.status_code}',
+				)
 			if response.status_code // 100 != 2:
-				raise EmbeddingException(response.text)
+				raise EmbeddingException(
+					response.text or f'Error: embedding request returned non-2xx status code {response.status_code}',
+					response,
+				)
 		except FatalEmbeddingException as e:
 			logger.error('Fatal error while getting embeddings: %s', str(e), exc_info=e)
 			raise e
 		except EmbeddingException as e:
+			try:
+				if e.response is not None:
+					err_msg = e.response.json().get('error', {}).get('message', '')
+					if err_msg == 'llama_decode returned -1':
+						# the document coult not be processed
+						raise DocErrorEmbeddingException(f'Failed to embed the document: {err_msg}') from e
+			except niquests.exceptions.JSONDecodeError:
+				...
+
 			if try_ > 0:
 				logger.debug('Retrying embedding request in 5 secs', extra={'try': try_})
 				sleep(5)
@@ -108,10 +152,14 @@ class NetworkEmbeddings(Embeddings, BaseModel):
 			logger.error('Unexpected error while getting embeddings', exc_info=e)
 			raise EmbeddingException('Error: unexpected error while getting embeddings') from e
 
-		# converts TypedDict to a pydantic model
-		resp = CreateEmbeddingResponse(**response.json())
-		if isinstance(input_, str):
-			return resp['data'][0]['embedding']
+		try:
+			# converts TypedDict to a pydantic model
+			resp = CreateEmbeddingResponse(**response.json())
+			if isinstance(input_, str):
+				return resp['data'][0]['embedding']
+		except Exception as e:
+			logger.error('Error parsing embedding response', exc_info=e)
+			raise EmbeddingException('Error: failed to parse embedding response') from e
 
 		# only one embedding in d['embedding'] since truncate is True
 		return [d['embedding'] for d in resp['data']]  # pyright: ignore[reportReturnType]

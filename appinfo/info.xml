@@ -82,5 +82,25 @@ Setup background job workers as described here: https://docs.nextcloud.com/serve
 				<description>Password to be used for authenticating requests to the OpenAI-compatible endpoint set in CC_EM_BASE_URL.</description>
 			</variable>
 		</environment-variables>
+		<k8s-service-roles>
+			<role>
+				<name>requestproc</name>
+				<display-name>Request Processing Mode</display-name>
+				<env>APP_ROLE=requestproc</env>
+				<expose>true</expose>
+			</role>
+			<role>
+				<name>updatesproc</name>
+				<display-name>Metadata Updates Processing Mode</display-name>
+				<env>APP_ROLE=updatesproc</env>
+				<expose>false</expose>
+			</role>
+			<role>
+				<name>indexing</name>
+				<display-name>Indexing Mode</display-name>
+				<env>APP_ROLE=indexing</env>
+				<expose>false</expose>
+			</role>
+		</k8s-service-roles>
 	</external-app>
 </info>

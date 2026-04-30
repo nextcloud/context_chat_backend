@@ -2,11 +2,14 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+import time
+
+from nc_py_api.ex_app.providers.task_processing import TaskProcessingProvider
 
 # isort: off
-from .chain.types import ContextException, LLMOutput, ScopeType, SearchResult
-from .types import LoaderException, EmbeddingException
-from .vectordb.types import DbException, SafeDbException, UpdateAccessOp
+from .chain.types import ContextException
+from .types import AppRole, LoaderException, EmbeddingException
+from .vectordb.types import DbException, SafeDbException
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
 
 # setup env vars before importing other modules
@@ -23,39 +26,31 @@ import zipfile
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from functools import wraps
-from threading import Event, Thread
-from time import sleep
-from typing import Annotated, Any
 
-from fastapi import Body, FastAPI, Request, UploadFile
-from langchain.llms.base import LLM
+from fastapi import FastAPI, Request
 from nc_py_api import AsyncNextcloudApp, NextcloudApp
 from nc_py_api.ex_app import persistent_storage, set_handlers
-from pydantic import BaseModel, ValidationInfo, field_validator
 from starlette.responses import FileResponse
 
-from .chain.context import do_doc_search
-from .chain.ingest.injest import embed_sources
-from .chain.one_shot import process_context_query, process_query
 from .config_parser import get_config
-from .dyn_loader import LLMModelLoader, VectorDBLoader
+from .dyn_loader import VectorDBLoader
 from .models.types import LlmException
 from nc_py_api.ex_app import AppAPIAuthMiddleware
-from .utils import JSONResponse, exec_in_proc, is_valid_provider_id, is_valid_source_id, value_of
-from .vectordb.service import (
-	count_documents_by_provider,
-	decl_update_access,
-	delete_by_provider,
-	delete_by_source,
-	delete_user,
-	update_access,
-)
+from .utils import JSONResponse, exec_in_proc, get_app_role, is_k8s_env
+from .task_fetcher import THREAD_STOP_EVENT, start_bg_threads, trigger_handler, wait_for_bg_threads
+from .vectordb.service import count_documents_by_provider
 
 # setup
 
-repair_run()
-ensure_config_file()
+# only run once
+APP_ROLE = get_app_role()
+if mp.current_process().name == 'MainProcess' and APP_ROLE in (AppRole.NORMAL, AppRole.REQUEST_PROC):
+	# normal docker containers and RP role in k8s
+	repair_run()
+	ensure_config_file()
+
 logger = logging.getLogger('ccb.controller')
+app_config = get_config(os.environ['CC_CONFIG_PATH'])
 __download_models_from_hf = os.environ.get('CC_DOWNLOAD_MODELS_FROM_HF', 'true').lower() in ('1', 'true', 'yes')
 
 models_to_fetch = {
@@ -70,13 +65,55 @@ models_to_fetch = {
 		'revision': '607a30d783dfa663caf39e06633721c8d4cfcd7e',
 	}
 } if __download_models_from_hf else {}
-app_enabled = Event()
 
-def enabled_handler(enabled: bool, _: NextcloudApp | AsyncNextcloudApp) -> str:
-	if enabled:
-		app_enabled.set()
-	else:
-		app_enabled.clear()
+
+app_enabled = threading.Event()
+last_enabled_check: float | None = None
+enabled_check_lock: threading.Lock = threading.Lock()
+def get_enabled_state() -> bool:
+	global last_enabled_check
+	with enabled_check_lock:
+		if last_enabled_check is None or time.time() - last_enabled_check > 30:
+			nc = NextcloudApp()
+			if nc.enabled_state:
+				app_enabled.set()
+			else:
+				app_enabled.clear()
+			last_enabled_check = time.time()
+		return app_enabled.is_set()
+
+def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
+	try:
+		if enabled:
+			provider = TaskProcessingProvider(
+				id='context_chat-context_chat_search',
+				name='Context Chat',
+				task_type='context_chat:context_chat_search',
+				expected_runtime=30,
+				input_shape_defaults={
+					'limit': 10,
+				},
+			)
+			nc.providers.task_processing.register(provider)
+			provider = TaskProcessingProvider(
+				id='context_chat-context_chat',
+				name='Context Chat',
+				task_type='context_chat:context_chat',
+				expected_runtime=30,
+			)
+			nc.providers.task_processing.register(provider)
+			app_enabled.set()
+			if THREAD_STOP_EVENT.is_set():
+				# If the threads were previously stopped, we start them again
+				# otherwise the lifecycle handler has already started them
+				start_bg_threads(app_config, get_enabled_state)
+				THREAD_STOP_EVENT.clear()
+		else:
+			app_enabled.clear()
+			wait_for_bg_threads()
+	except Exception as e:
+		logger.exception('Error in enabled handler:', exc_info=e)
+		return f'Error in enabled handler: {e}'
 
 	logger.info(f'App {("disabled", "enabled")[enabled]}')
 	return ''
@@ -84,28 +121,28 @@ def enabled_handler(enabled: bool, _: NextcloudApp | AsyncNextcloudApp) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-	set_handlers(app, enabled_handler, models_to_fetch=models_to_fetch)
-	nc = NextcloudApp()
-	if nc.enabled_state:
-		app_enabled.set()
-	logger.info(f'App enable state at startup: {app_enabled.is_set()}')
-	t = Thread(target=background_thread_task, args=())
-	t.start()
+	if APP_ROLE == AppRole.NORMAL:
+		set_handlers(app, enabled_handler, models_to_fetch=models_to_fetch, trigger_handler=trigger_handler)
+	else:
+		# k8s' rp role pulls tasks
+		set_handlers(app, enabled_handler, models_to_fetch=models_to_fetch)
+
+	start_bg_threads(app_config, get_enabled_state)
+	logger.info(f'App enable state at startup: {get_enabled_state()}')
 	yield
 	vectordb_loader.offload()
-	llm_loader.offload()
+	wait_for_bg_threads()
 
 
-app_config = get_config(os.environ['CC_CONFIG_PATH'])
 app = FastAPI(debug=app_config.debug, lifespan=lifespan)  # pyright: ignore[reportArgumentType]
 
 app.extra['CONFIG'] = app_config
+k8s_env = is_k8s_env()
 
 
 # loaders
 
 vectordb_loader = VectorDBLoader(app_config)
-llm_loader = LLMModelLoader(app, app_config)
 
 
 # locks and semaphores
@@ -117,21 +154,11 @@ llm_lock = threading.Lock()
 index_lock = threading.Lock()
 _indexing = {}
 
-# limit the number of concurrent document parsing
-doc_parse_semaphore = mp.Semaphore(app_config.doc_parser_worker_limit)
-
 
 # middlewares
 
 if not app_config.disable_aaa:
 	app.add_middleware(AppAPIAuthMiddleware)
-
-# logger background thread
-
-def background_thread_task():
-	while(True):
-		logger.info(f'Currently indexing {len(_indexing)} documents (filename, size): ', extra={'_indexing': _indexing})
-		sleep(10)
 
 # exception handlers
 
@@ -189,7 +216,7 @@ def enabled_guard(app: FastAPI):
 		@wraps(func)
 		def wrapper(*args, **kwargs):
 			disable_aaa = app.extra['CONFIG'].disable_aaa
-			if not disable_aaa and not app_enabled.is_set():
+			if not disable_aaa and not get_enabled_state():
 				return JSONResponse('Context Chat is disabled, enable it from AppAPI to use it.', 503)
 
 			return func(*args, **kwargs)
@@ -210,122 +237,7 @@ def _(request: Request):
 
 @app.get('/enabled')
 def _():
-	return JSONResponse(content={'enabled': app_enabled.is_set()}, status_code=200)
-
-
-@app.post('/updateAccessDeclarative')
-@enabled_guard(app)
-def _(
-	userIds: Annotated[list[str], Body()],
-	sourceId: Annotated[str, Body()],
-):
-	logger.debug('Update access declarative request:', extra={
-		'user_ids': userIds,
-		'source_id': sourceId,
-	})
-
-	if len(userIds) == 0:
-		return JSONResponse('Empty list of user ids', 400)
-
-	if not is_valid_source_id(sourceId):
-		return JSONResponse('Invalid source id', 400)
-
-	exec_in_proc(target=decl_update_access, args=(vectordb_loader, userIds, sourceId))
-
-	return JSONResponse('Access updated')
-
-
-@app.post('/updateAccess')
-@enabled_guard(app)
-def _(
-	op: Annotated[UpdateAccessOp, Body()],
-	userIds: Annotated[list[str], Body()],
-	sourceId: Annotated[str, Body()],
-):
-	logger.debug('Update access request', extra={
-		'op': op,
-		'user_ids': userIds,
-		'source_id': sourceId,
-	})
-
-	if len(userIds) == 0:
-		return JSONResponse('Empty list of user ids', 400)
-
-	if not is_valid_source_id(sourceId):
-		return JSONResponse('Invalid source id', 400)
-
-	exec_in_proc(target=update_access, args=(vectordb_loader, op, userIds, sourceId))
-
-	return JSONResponse('Access updated')
-
-
-@app.post('/updateAccessProvider')
-@enabled_guard(app)
-def _(
-	op: Annotated[UpdateAccessOp, Body()],
-	userIds: Annotated[list[str], Body()],
-	providerId: Annotated[str, Body()],
-):
-	logger.debug('Update access by provider request', extra={
-		'op': op,
-		'user_ids': userIds,
-		'provider_id': providerId,
-	})
-
-	if len(userIds) == 0:
-		return JSONResponse('Empty list of user ids', 400)
-
-	if not is_valid_provider_id(providerId):
-		return JSONResponse('Invalid provider id', 400)
-
-	exec_in_proc(target=update_access, args=(vectordb_loader, op, userIds, providerId))
-
-	return JSONResponse('Access updated')
-
-
-@app.post('/deleteSources')
-@enabled_guard(app)
-def _(sourceIds: Annotated[list[str], Body(embed=True)]):
-	logger.debug('Delete sources request', extra={
-		'source_ids': sourceIds,
-	})
-
-	sourceIds = [source.strip() for source in sourceIds if source.strip() != '']
-
-	if len(sourceIds) == 0:
-		return JSONResponse('No sources provided', 400)
-
-	res = exec_in_proc(target=delete_by_source, args=(vectordb_loader, sourceIds))
-	if res is False:
-		return JSONResponse('Error: VectorDB delete failed, check vectordb logs for more info.', 400)
-
-	return JSONResponse('All valid sources deleted')
-
-
-@app.post('/deleteProvider')
-@enabled_guard(app)
-def _(providerKey: str = Body(embed=True)):
-	logger.debug('Delete sources by provider for all users request', extra={ 'provider_key': providerKey })
-
-	if value_of(providerKey) is None:
-		return JSONResponse('Invalid provider key provided', 400)
-
-	exec_in_proc(target=delete_by_provider, args=(vectordb_loader, providerKey))
-
-	return JSONResponse('All valid sources deleted')
-
-
-@app.post('/deleteUser')
-@enabled_guard(app)
-def _(userId: str = Body(embed=True)):
-	logger.debug('Remove access list for user, and orphaned sources', extra={ 'user_id': userId })
-
-	if value_of(userId) is None:
-		return JSONResponse('Invalid userId provided', 400)
-
-	exec_in_proc(target=delete_user, args=(vectordb_loader, userId))
-
-	return JSONResponse('User deleted')
+	return JSONResponse(content={'enabled': get_enabled_state()}, status_code=200)
 
 
 @app.post('/countIndexedDocuments')
@@ -335,179 +247,14 @@ def _():
 	return JSONResponse(counts)
 
 
-@app.put('/loadSources')
-@enabled_guard(app)
-def _(sources: list[UploadFile]):
-	global _indexing
-
-	if len(sources) == 0:
-		return JSONResponse('No sources provided', 400)
-
-	filtered_sources = []
-
-	for source in sources:
-		if not value_of(source.filename):
-			logger.warning('Skipping source with invalid source_id', extra={
-				'source_id': source.filename,
-				'title': source.headers.get('title'),
-			})
-			continue
-
-		with index_lock:
-			if source.filename in _indexing:
-				# this request will be retried by the client
-				return JSONResponse(
-					f'This source ({source.filename}) is already being processed in another request, try again later',
-					503,
-					headers={'cc-retry': 'true'},
-				)
-
-		if not (
-			value_of(source.headers.get('userIds'))
-			and source.headers.get('title', None) is not None
-			and value_of(source.headers.get('type'))
-			and value_of(source.headers.get('modified'))
-			and source.headers['modified'].isdigit()
-			and value_of(source.headers.get('provider'))
-		):
-			logger.warning('Skipping source with invalid/missing headers', extra={
-				'source_id': source.filename,
-				'title': source.headers.get('title'),
-				'headers': source.headers,
-			})
-			continue
-
-		filtered_sources.append(source)
-
-	# wait for 10 minutes before failing the request
-	semres = doc_parse_semaphore.acquire(block=True, timeout=10*60)
-	if not semres:
-		return JSONResponse(
-			'Document parser worker limit reached, try again in some time or consider increasing the limit',
-			503,
-			headers={'cc-retry': 'true'}
-		)
-
-	with index_lock:
-		for source in filtered_sources:
-			_indexing[source.filename] = source.size
-
-	try:
-		loaded_sources, not_added_sources = exec_in_proc(
-			target=embed_sources,
-			args=(vectordb_loader, app.extra['CONFIG'], filtered_sources)
-		)
-	except (DbException, EmbeddingException):
-		raise
-	except Exception as e:
-		raise DbException('Error: failed to load sources') from e
-	finally:
-		with index_lock:
-			for source in filtered_sources:
-				_indexing.pop(source.filename, None)
-		doc_parse_semaphore.release()
-
-	if len(loaded_sources) != len(filtered_sources):
-		logger.debug('Some sources were not loaded', extra={
-			'Count of loaded sources': f'{len(loaded_sources)}/{len(filtered_sources)}',
-			'source_ids': loaded_sources,
-		})
-
-	# loaded sources include the existing sources that may only have their access updated
-	return JSONResponse({'loaded_sources': loaded_sources, 'sources_to_retry': not_added_sources})
-
-
-class Query(BaseModel):
-	userId: str
-	query: str
-	useContext: bool = True
-	scopeType: ScopeType | None = None
-	scopeList: list[str] | None = None
-	ctxLimit: int = 20
-
-	@field_validator('userId', 'query', 'ctxLimit')
-	@classmethod
-	def check_empty_values(cls, value: Any, info: ValidationInfo):
-		if value_of(value) is None:
-			raise ValueError('Empty value for field', info.field_name)
-
-		return value
-
-	@field_validator('ctxLimit')
-	@classmethod
-	def at_least_one_context(cls, value: int):
-		if value < 1:
-			raise ValueError('Invalid context chunk limit')
-
-		return value
-
-
-def execute_query(query: Query, in_proc: bool = True) -> LLMOutput:
-	llm: LLM = llm_loader.load()
-	template = app.extra.get('LLM_TEMPLATE')
-	no_ctx_template = app.extra['LLM_NO_CTX_TEMPLATE']
-	# todo: array
-	end_separator = app.extra.get('LLM_END_SEPARATOR', '')
-
-	if query.useContext:
-		target = process_context_query
-		args=(
-			query.userId,
-			vectordb_loader,
-			llm,
-			app_config,
-			query.query,
-			query.ctxLimit,
-			query.scopeType,
-			query.scopeList,
-			template,
-			end_separator,
-		)
-	else:
-		target=process_query
-		args=(
-			query.userId,
-			llm,
-			app_config,
-			query.query,
-			no_ctx_template,
-			end_separator,
-		)
-
-	if in_proc:
-		return exec_in_proc(target=target, args=args)
-
-	return target(*args)  # pyright: ignore
-
-
-@app.post('/query')
-@enabled_guard(app)
-def _(query: Query) -> LLMOutput:
-	logger.debug('received query request', extra={ 'query': query.dict() })
-
-	if app_config.llm[0] == 'nc_texttotext':
-		return execute_query(query)
-
-	with llm_lock:
-		return execute_query(query, in_proc=False)
-
-
-@app.post('/docSearch')
-@enabled_guard(app)
-def _(query: Query) -> list[SearchResult]:
-	# useContext from Query is not used here
-	return exec_in_proc(target=do_doc_search, args=(
-		query.userId,
-		query.query,
-		vectordb_loader,
-		query.ctxLimit,
-		query.scopeType,
-		query.scopeList,
-	))
-
-
 @app.get('/downloadLogs')
-def download_logs() -> FileResponse:
+def download_logs():
+	if k8s_env:
+		return JSONResponse(
+			'Download of logs is not supported in Kubernetes environment. Use the standard logging infrastructure.',
+			status_code=400,
+		)
+
 	with tempfile.NamedTemporaryFile('wb', delete=False) as tmp:
 		with zipfile.ZipFile(tmp, mode='w', compression=zipfile.ZIP_DEFLATED) as zip_file:
 			files = os.listdir(os.path.join(persistent_storage(), 'logs'))
