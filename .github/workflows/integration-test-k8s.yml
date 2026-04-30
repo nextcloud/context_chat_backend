@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2025 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-name: Integration test
+name: Integration test k8s
 
 on:
   pull_request:
@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: integration-test-${{ github.head_ref || github.run_id }}
+  group: integration-test-k8s-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
 
@@ -46,10 +46,9 @@ jobs:
               - 'persistent_storage/**'
               - 'project.toml'
               - 'requirements.txt'
-              - 'logger_config.yaml'
-              - 'logger_config_em.yaml'
+              - 'logger_config.k8s.yaml'
               - 'supervisord.conf'
-              - '.github/workflows/integration-test.yml'
+              - '.github/workflows/integration-test-k8s.yml'
 
   integration:
     runs-on: ubuntu-24.04
@@ -63,15 +62,14 @@ jobs:
       matrix:
         php-versions: [ '8.2' ]
         databases: [ 'pgsql' ]
-        server-versions: [ 'stable32', 'stable33', 'master' ]
+        server-versions: [ 'master' ]
 
-    name: Integration test on ${{ matrix.server-versions }} php@${{ matrix.php-versions }}
+    name: Integration test k8s on ${{ matrix.server-versions }} php@${{ matrix.php-versions }}
 
     env:
       MYSQL_PORT: 4444
       PGSQL_PORT: 4445
-      # use the same db for ccb and nextcloud
-      CCB_DB_URL: postgresql+psycopg://root:rootpassword@localhost:4445/nextcloud
+      HP_SHARED_KEY: test_shared_key_12345
 
     services:
       mysql:
@@ -81,6 +79,7 @@ jobs:
         env:
           MYSQL_ROOT_PASSWORD: rootpassword
         options: --health-cmd="mysqladmin ping" --health-interval 5s --health-timeout 2s --health-retries 5
+      # use the same db for ccb and nextcloud
       postgres:
         image: pgvector/pgvector:pg17
         ports:
@@ -141,7 +140,6 @@ jobs:
           sleep 25
           mkdir data
           ./occ maintenance:install --verbose --database=${{ matrix.databases }} --database-name=nextcloud --database-host=127.0.0.1 --database-port=$MYSQL_PORT --database-user=root --database-pass=rootpassword --admin-user admin --admin-pass password
-          composer run serve &
 
       - name: Set up Nextcloud PGSQL
         if: ${{ matrix.databases == 'pgsql'}}
@@ -149,7 +147,6 @@ jobs:
           sleep 25
           mkdir data
           ./occ maintenance:install --verbose --database=${{ matrix.databases }} --database-name=nextcloud --database-host=127.0.0.1 --database-port=$PGSQL_PORT --database-user=root --database-pass=rootpassword --admin-user admin --admin-pass password
-          composer run serve &
 
       - name: Enable context_chat, app_api and testing
         run: ./occ app:enable -vvv -f context_chat app_api testing
@@ -179,39 +176,117 @@ jobs:
         run: |
           ./occ files:scan --all
 
-      - name: Setup python 3.11
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: |
-            requirements.txt
-
-      - name: Install and init backend
+      - name: Install k3s
         run: |
-          cd context_chat_backend
-          pip install --upgrade pip setuptools wheel
-          # use the cpu version of torch to not run out of space
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          sed -i '/torch(vision)?/d' requirements.txt
-          pip install -r requirements.txt
-          cp example.env .env
-          echo "NEXTCLOUD_URL=http://localhost:8080" >> .env
-          python3 -u ./main_em.py > em_backend_logs 2>&1 &
-          python3 -u ./main.py > backend_logs 2>&1 &
-          echo $! > ../pid.txt          # Save the process ID (PID)
-          sleep 60 # Wait for the backend to get ready
+          curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --disable servicelb --kubelet-arg=container-log-max-size=0" sh -
+          sudo chmod 644 /etc/rancher/k3s/k3s.yaml
+          echo "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> $GITHUB_ENV
+
+      - name: Wait for k3s and create namespace
+        run: |
+          kubectl wait --for=condition=Ready node --all --timeout=120s
+          kubectl create namespace nextcloud-exapps
+          NODE_IP=$(kubectl get node -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+          echo "NODE_IP=${NODE_IP}" >> $GITHUB_ENV
+          echo "k3s node IP: $NODE_IP"
+
+      - name: Configure Nextcloud for k3s networking
+        run: |
+          ./occ config:system:set overwrite.cli.url --value "http://${{ env.NODE_IP }}" --type=string
+          ./occ config:system:set trusted_domains 1 --value "${{ env.NODE_IP }}"
+
+      - name: Create K8s service account for HaRP
+        run: |
+          kubectl -n nextcloud-exapps create serviceaccount harp-sa
+          kubectl create clusterrolebinding harp-admin \
+            --clusterrole=cluster-admin \
+            --serviceaccount=nextcloud-exapps:harp-sa
+          K3S_TOKEN=$(kubectl -n nextcloud-exapps create token harp-sa --duration=2h)
+          echo "K3S_TOKEN=${K3S_TOKEN}" >> $GITHUB_ENV
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build the context_chat_backend cpu image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
+        with:
+          context: context_chat_backend
+          push: false
+          platforms: linux/amd64
+          # use local tag so image is not pulled from remote
+          tags: ghcr.io/ccb-cpu:local
+          target: runtime-cpu
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Pre-load CCB ExApp image into k3s
+        run: docker save ghcr.io/ccb-cpu:local | sudo k3s ctr images import -
+
+      - name: Start HaRP with K8s backend
+        run: |
+          docker run --net host --name appapi-harp \
+            -e HP_SHARED_KEY="${{ env.HP_SHARED_KEY }}" \
+            -e NC_INSTANCE_URL="http://${{ env.NODE_IP }}" \
+            -e HP_LOG_LEVEL="debug" \
+            -e HP_K8S_ENABLED="true" \
+            -e HP_K8S_API_SERVER="https://127.0.0.1:6443" \
+            -e HP_K8S_BEARER_TOKEN="${{ env.K3S_TOKEN }}" \
+            -e HP_K8S_NAMESPACE="nextcloud-exapps" \
+            -e HP_K8S_VERIFY_SSL="false" \
+            --restart unless-stopped \
+            -d ghcr.io/nextcloud/nextcloud-appapi-harp:latest
+
+      - name: Start nginx proxy
+        run: |
+          docker run --net host --name nextcloud --rm \
+            -v $(pwd)/apps/app_api/tests/simple-nginx-NOT-FOR-PRODUCTION.conf:/etc/nginx/conf.d/default.conf:ro \
+            -d nginx
+
+      - name: Start nextcloud
+        run: PHP_CLI_SERVER_WORKERS=2 php -S 0.0.0.0:8080 &
+
+      - name: Wait for HaRP K8s readiness
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://${{ env.NODE_IP }}:8780/exapps/app_api/info \
+                -H "harp-shared-key: ${{ env.HP_SHARED_KEY }}" 2>/dev/null | grep -q '"kubernetes"'; then
+              echo "HaRP is ready with K8s backend"
+              exit 0
+            fi
+            echo "Waiting for HaRP... ($i/30)"
+            sleep 2
+          done
+          echo "HaRP K8s readiness check failed"
+          docker logs appapi-harp
+          exit 1
+
+      - name: Register K8s daemon
+        run: |
+          ./occ app_api:daemon:register \
+            k8s_test "K8s Test" "kubernetes-install" "http" "${{ env.NODE_IP }}:8780" "http://${{ env.NODE_IP }}" \
+            --harp --harp_shared_key "${{ env.HP_SHARED_KEY }}" \
+            --k8s --k8s_expose_type=nodeport --set-default
+          ./occ app_api:daemon:list
 
       - name: Register backend
         run: |
-          timeout 10 ./occ app_api:daemon:register --net host manual_install "Manual Install" manual-install http localhost http://localhost:8080
-          timeout 120 ./occ app_api:app:register context_chat_backend manual_install --json-info "{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"${{ fromJson(steps.appinfo.outputs.result).version }}\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system_app\":0}" --force-scopes --wait-finish
-          ls -la context_chat_backend/persistent_storage/*
-
-      - name: Initial memory usage check
-        run: |
-          ps -p $(cat pid.txt) -o pid,cmd,%mem,rss --sort=-%mem
-          ps -p $(cat pid.txt) -o %mem --no-headers > initial_mem.txt
+          sed -i 's;<image>.*</image>;<image>ccb-cpu</image>;' context_chat_backend/appinfo/info.xml
+          sed -i 's;<image-tag>.*</image-tag>;<image-tag>local</image-tag>;' context_chat_backend/appinfo/info.xml
+          timeout 120 ./occ app_api:app:register context_chat_backend k8s_test \
+            --info-xml context_chat_backend/appinfo/info.xml \
+            --env EXTERNAL_DB="postgresql+psycopg://root:rootpassword@${{ env.NODE_IP }}:4445/nextcloud" \
+            --wait-finish
 
       - name: Run cron jobs
         run: |
@@ -277,13 +352,6 @@ jobs:
               echo "Outside 3% tolerance: diff=$diff (${progress}%), threshold=$threshold"
             fi
 
-            # Check if backend is still alive
-            ccb_alive=$(ps -p $(cat pid.txt) -o cmd= | grep -c "main.py" || echo "0")
-            if [ "$ccb_alive" -eq 0 ]; then
-              echo "Error: Context Chat Backend process is not running. Exiting."
-              exit 1
-            fi
-
             sleep 10
           done
 
@@ -311,24 +379,6 @@ jobs:
           echo "$OUT2" | grep -q "If all of these points are met, we give a Green label." || exit 1
           echo ::endgroup::
 
-      - name: Check python memory usage
-        run: |
-          ps -p $(cat pid.txt) -o pid,cmd,%mem,rss --sort=-%mem
-          ps -p $(cat pid.txt) -o %mem --no-headers > after_prompt_mem.txt
-
-      - name: Compare memory usage and detect leak
-        run: |
-          initial_mem=$(cat initial_mem.txt | tr -d ' ')
-          final_mem=$(cat after_scan_mem.txt | tr -d ' ')
-          echo "Initial Memory Usage: $initial_mem%"
-          echo "Memory Usage after scan: $final_mem%"
-
-          if (( $(echo "$final_mem > $initial_mem" | bc -l) )); then
-            echo "Memory usage has increased during scan. Possible memory leak detected!"
-          else
-            echo "Memory usage during scan is stable. No memory leak detected."
-          fi
-
       - name: Final dump of DB with vectordb populated
         if: always()
         run: |
@@ -349,25 +399,25 @@ jobs:
         run: |
           tail -v -n +1 worker?_logs || echo "No worker logs"
 
-      - name: Show main app logs
+      - name: Show HaRP logs
         if: always()
         run: |
-          cat context_chat_backend/backend_logs || echo "No main backend logs"
+          docker logs appapi-harp
 
-      - name: Show main app JSON logs
+      - name: Show main app indexing logs
         if: always()
         run: |
-          tail -v -n +1 context_chat_backend/persistent_storage/logs/ccb.log* || echo "No logs in logs directory"
+          kubectl logs -n nextcloud-exapps -l app=nc-app-context-chat-backend-indexing --prefix --tail=-1 --ignore-errors
 
-      - name: Show embedding server logs
+      - name: Show main app updates processing logs
         if: always()
         run: |
-          cat context_chat_backend/em_backend_logs || echo "No main backend logs"
+          kubectl logs -n nextcloud-exapps -l app=nc-app-context-chat-backend-updatesproc --prefix --tail=-1 --ignore-errors
 
-      - name: Show embedding server JSON logs
+      - name: Show main app request processing logs
         if: always()
         run: |
-          tail -v -n +1 context_chat_backend/persistent_storage/logs/em_server.log* || echo "No logs in logs directory"
+          kubectl logs -n nextcloud-exapps -l app=nc-app-context-chat-backend-requestproc --prefix --tail=-1 --ignore-errors
 
       - name: Upload database dumps
         uses: actions/upload-artifact@v4
@@ -393,7 +443,7 @@ jobs:
     if: always()
 
     # This is the summary, we just avoid to rename it so that branch protection rules still match
-    name: integration-test
+    name: integration-test-k8s
 
     steps:
       - name: Summary status
