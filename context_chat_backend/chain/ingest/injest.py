@@ -15,9 +15,9 @@ from nc_py_api import AsyncNextcloudApp
 
 from ...dyn_loader import VectorDBLoader
 from ...mimetype_list import AUDIO_MIMETYPES, IMAGE_MIMETYPES, SUPPORTED_MIMETYPES
+from ...types import FILES_PROVIDER_ID, IndexingError, IndexingException, ReceivedFileItem, SourceItem, TConfig
 from ...vectordb.base import BaseVectorDB
 from ...vectordb.types import DbException, SafeDbException, UpdateAccessOp
-from ...types import FILES_PROVIDER_ID, IndexingError, IndexingException, ReceivedFileItem, SourceItem, TConfig
 from ..types import InDocument
 from .doc_loader import decode_source
 from .doc_splitter import get_splitter_for
@@ -311,7 +311,7 @@ def _sources_to_indocuments(
 def _increase_access_for_existing_sources(
 	vectordb: BaseVectorDB,
 	existing_sources: Mapping[int, SourceItem | ReceivedFileItem]
-) -> Mapping[int, IndexingError | None]:
+) -> dict[int, IndexingError | None]:
 	'''
 	update userIds for existing sources
 	allow the userIds as additional users, not as the only users
@@ -352,7 +352,7 @@ def _process_sources(
 	vectordb: BaseVectorDB,
 	config: TConfig,
 	sources: Mapping[int, SourceItem | ReceivedFileItem]
-) -> Mapping[int, IndexingError | None]:
+) -> dict[int, IndexingError | None]:
 	'''
 	Processes the sources and adds them to the vectordb.
 	Returns the list of source ids that were successfully added and those that need to be retried.

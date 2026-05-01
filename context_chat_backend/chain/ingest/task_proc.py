@@ -226,6 +226,8 @@ async def __get_task_result(user_id: str, task: Task) -> Any:
 			raise TaskProcException('Failed to parse TaskProcessing task result') from e
 
 	if task.status != 'STATUS_SUCCESSFUL':
+		# it's not possible to know if the document is unprocessable or the provider is having a temporary issue
+		# so we retry it
 		raise TaskProcException(
 			f'TaskProcessing task id {task.id} failed with status {task.status}'
 			f' after waiting {now_waiting_for} seconds',

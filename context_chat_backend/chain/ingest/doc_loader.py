@@ -20,7 +20,7 @@ from pypdf import PdfReader
 from pypdf.errors import FileNotDecryptedError as PdfFileNotDecryptedError
 from striprtf import striprtf
 
-from ...types import IndexingException, SourceItem, TaskProcException, TaskProcFatalException
+from ...types import IndexingException, SourceItem, TaskProcClientException, TaskProcException, TaskProcFatalException
 from .task_proc import (
 	OCR_TASK_TYPE,
 	SPEECH_TO_TEXT_TASK_TYPE,
@@ -35,7 +35,7 @@ from .task_proc import (
 logger = logging.getLogger('ccb.doc_loader')
 PDF_IMAGES_BATCH_SIZE = 25
 PDF_IMAGES_MAX_SIZE = 100 * 1024 * 1024  # 100 MiB in bytes
-# todo: reduce the frequency of this check?
+# todo: cache it across processes?
 IS_OCR_AVAILABLE = is_task_type_available(OCR_TASK_TYPE)
 IS_STT_AVAILABLE = is_task_type_available(SPEECH_TO_TEXT_TASK_TYPE)
 
@@ -60,7 +60,7 @@ def _load_pdf(file: BytesIO, source: SourceItem) -> str:
 
 	for page in pdf_reader.pages:
 		text = page.extract_text().strip()
-		ocr_outputs = []
+		page_ocr_outputs = []
 
 		if IS_OCR_AVAILABLE:
 			for i in range(0, len(page.images), PDF_IMAGES_BATCH_SIZE):
@@ -87,12 +87,12 @@ def _load_pdf(file: BytesIO, source: SourceItem) -> str:
 				try:
 					ocr_tp_outputs = asyncio.run(do_ocr(source.userIds[0], file_ids_map.values()))  # pyright: ignore[reportArgumentType]
 					asyncio.run(delete_temp_files(file_ids_map.values()))  # pyright: ignore[reportArgumentType]
-				except TaskProcFatalException:
+				except TaskProcFatalException as e:
 					# task type is not present anymore, flip the task type indicator manually
 					# for this complete batched injest process
 					logger.warning(
 						'The OCR provider disappeared mid-operation, disabling OCR for this batch of'
-						f' documents including {source.reference}'
+						f' documents including {source.reference}: {e}'
 					)
 					IS_OCR_AVAILABLE = False
 					break
@@ -101,11 +101,11 @@ def _load_pdf(file: BytesIO, source: SourceItem) -> str:
 					continue
 
 				# for each image batch
-				ocr_outputs += ocr_tp_outputs
+				page_ocr_outputs += ocr_tp_outputs
 
-		# for each page
+		# for each page, append text then its OCR outputs to preserve document order
 		output.append(text)
-		output += ocr_outputs
+		output += page_ocr_outputs
 
 	return '\n\n'.join(output)
 
@@ -192,6 +192,7 @@ def decode_source(source: SourceItem) -> str:
 	IndexingException
 	'''
 
+	global IS_OCR_AVAILABLE
 	io_obj: BytesIO | None = None
 	try:
 		# .pot files are powerpoint templates but also plain text files,
@@ -200,16 +201,36 @@ def decode_source(source: SourceItem) -> str:
 			raise IndexingException('PowerPoint template files (.pot) are not supported')
 
 		try:
-			if IS_OCR_AVAILABLE and source.type.startswith('image/'):
-				return asyncio.run(do_ocr(source.userIds[0], [source.file_id]))[0]
-			if IS_STT_AVAILABLE and source.type.startswith('audio/'):
-				return asyncio.run(do_transcription(source.userIds[0], source.file_id))
-		except TaskProcException as e:
-			# todo: convert this to error obj return
-			# todo: short circuit all other ocr/transcription files when a fatal error arrives
-			# todo:  maybe with a global ttl, with a retryable tag
+			if source.type.startswith('image/'):
+				if IS_OCR_AVAILABLE:
+					return asyncio.run(do_ocr(source.userIds[0], [source.file_id]))[0]
+				raise IndexingException(
+					f'Image file ({source.reference}) cannot be processed since OCR task type is not present'
+				)
+			if source.type.startswith('audio/'):
+				if IS_STT_AVAILABLE:
+					return asyncio.run(do_transcription(source.userIds[0], source.file_id))
+				raise IndexingException(
+					f'Audio file ({source.reference}) cannot be processed since Speech-to-Text task type is not present'
+				)
+		except TaskProcFatalException as e:
+			logger.warning(
+				'The OCR provider disappeared mid-operation, disabling OCR for this batch of'
+				f' documents including {source.reference}: {e}'
+			)
+			IS_OCR_AVAILABLE = False
+			raise IndexingException(  # noqa: B904
+				f'Image file ({source.reference}) cannot be processed since OCR task type is not present'
+			)
+		except TaskProcClientException as e:
 			logger.warning(f'OCR task failed for source file ({source.reference}): {e}')
 			raise IndexingException(f'OCR task failed for source file ({source.reference}): {e}')  # noqa: B904
+		except TaskProcException as e:
+			logger.warning(f'OCR task failed for source file ({source.reference}), it will be retried: {e}')
+			raise IndexingException(  # noqa: B904
+				f'OCR task failed for source file ({source.reference}), it will be retried: {e}',
+				retryable=True,
+			)
 		except ValueError:
 			# should not happen
 			logger.warning(f'Unexpected ValueError for source file ({source.reference})')

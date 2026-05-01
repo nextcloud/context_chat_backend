@@ -150,6 +150,10 @@ class TaskProcFatalException(TaskProcException):
 	...
 
 
+class TaskProcClientException(TaskProcException):
+	...
+
+
 class AppRole(str, Enum):
 	NORMAL = 'normal'
 	INDEXING = 'indexing'
