@@ -4,8 +4,11 @@
 #
 import logging
 import os
+from collections.abc import Mapping
 from datetime import datetime
+from time import perf_counter_ns
 
+import psycopg
 import sqlalchemy as sa
 import sqlalchemy.dialects.postgresql as postgresql_dialects
 import sqlalchemy.orm as orm
@@ -16,7 +19,15 @@ from langchain_core.embeddings import Embeddings
 from langchain_postgres.vectorstores import Base, PGVector
 
 from ..chain.types import InDocument, ScopeType
-from ..types import EmbeddingException, FatalEmbeddingException, IndexingError, RetryableEmbeddingException, SourceItem
+from ..types import (
+	DocErrorEmbeddingException,
+	EmbeddingException,
+	FatalEmbeddingException,
+	IndexingError,
+	ReceivedFileItem,
+	RetryableEmbeddingException,
+	SourceItem,
+)
 from ..utils import timed
 from .base import BaseVectorDB
 from .types import DbException, SafeDbException, UpdateAccessOp
@@ -110,7 +121,15 @@ class VectorDB(BaseVectorDB):
 			kwargs['connection'] = os.environ['CCB_DB_URL']
 
 		# setup langchain db + our access list table
-		self.client = PGVector(embedding, collection_name=COLLECTION_NAME, **kwargs)
+		try:
+			self.client = PGVector(embedding, collection_name=COLLECTION_NAME, **kwargs)
+		except sa.exc.IntegrityError as ie:  # pyright: ignore[reportAttributeAccessIssue]
+			if not isinstance(ie.orig, psycopg.errors.UniqueViolation):
+				raise
+
+			# tried to create the tables but it was already created in another process
+			# init the client again to detect it already exists, and continue from there
+			self.client = PGVector(embedding, collection_name=COLLECTION_NAME, **kwargs)
 
 	def get_instance(self) -> VectorStore:
 		return self.client
@@ -128,7 +147,7 @@ class VectorDB(BaseVectorDB):
 			except Exception as e:
 				raise DbException('Error: getting a list of all users from access list') from e
 
-	def add_indocuments(self, indocuments: dict[int, InDocument]) -> dict[int, IndexingError | None]:
+	def add_indocuments(self, indocuments: Mapping[int, InDocument]) -> Mapping[int, IndexingError | None]:
 		"""
 		Raises
 			EmbeddingException: if the embedding request definitively fails
@@ -143,8 +162,25 @@ class VectorDB(BaseVectorDB):
 					# so we chunk the documents into (5 values * 10k) chunks
 					# change the chunk size when there are more inserted values per document
 					chunk_ids = []
-					for i in range(0, len(indoc.documents), batch_size):
+					total_chunks = len(indoc.documents)
+					num_batches = max(1, -(-total_chunks // batch_size))  # ceiling division
+					logger.debug(
+						'Embedding source %s: %d chunk(s) in %d batch(es)',
+						indoc.source_id, total_chunks, num_batches,
+					)
+					for i in range(0, total_chunks, batch_size):
+						batch_num = i // batch_size + 1
+						logger.debug(
+							'Sending embedding batch %d/%d (%d chunk(s)) for source %s',
+							batch_num, num_batches, len(indoc.documents[i:i+batch_size]), indoc.source_id,
+						)
+						t0 = perf_counter_ns()
 						chunk_ids.extend(self.client.add_documents(indoc.documents[i:i+batch_size]))
+						elapsed_ms = (perf_counter_ns() - t0) / 1e6
+						logger.debug(
+							'Embedding batch %d/%d for source %s completed in %.2f ms',
+							batch_num, num_batches, indoc.source_id, elapsed_ms,
+						)
 
 					doc = DocumentsStore(
 						source_id=indoc.source_id,
@@ -153,7 +189,18 @@ class VectorDB(BaseVectorDB):
 						chunks=chunk_ids,
 					)
 					session.add(doc)
-					session.commit()
+					try:
+						session.commit()
+					except sa.exc.IntegrityError as ie:  # pyright: ignore[reportAttributeAccessIssue]
+						if not isinstance(ie.orig, psycopg.errors.UniqueViolation):
+							raise
+
+						# it's already in the db, continue updating the access
+						logger.debug(
+							'Unique violation: document already exists in the database',
+							exc_info=ie,
+							extra={ 'source_id': indoc.source_id },
+						)
 
 					self.decl_update_access(indoc.userIds, indoc.source_id, session)
 					results[php_db_id] = None
@@ -169,13 +216,24 @@ class VectorDB(BaseVectorDB):
 						retryable=True,
 					)
 					continue
+				except DocErrorEmbeddingException as e:
+					logger.warning(
+						'Error adding documents to vectordb, server failed to index it, it will not be retried',
+						exc_info=e,
+						extra={ 'source_id': indoc.source_id },
+					)
+					results[php_db_id] = IndexingError(
+						error=str(e),
+						retryable=False,
+					)
+					continue
 				except FatalEmbeddingException as e:
 					raise EmbeddingException(
 						f'Fatal error while embedding documents for source {indoc.source_id}: {e}'
 					) from e
 				except (RetryableEmbeddingException, EmbeddingException) as e:
 					# temporary error, continue with the next document
-					logger.exception('Error adding documents to vectordb, should be retried later.', exc_info=e, extra={
+					logger.warning('Error adding documents to vectordb, should be retried later.', exc_info=e, extra={
 						'source_id': indoc.source_id,
 					})
 					results[php_db_id] = IndexingError(
@@ -196,7 +254,7 @@ class VectorDB(BaseVectorDB):
 		return results
 
 	@timed
-	def check_sources(self, sources: dict[int, SourceItem]) -> tuple[list[str], list[str]]:
+	def check_sources(self, sources: Mapping[int, SourceItem | ReceivedFileItem]) -> tuple[list[str], list[str]]:
 		'''
 		returns a tuple of (existing_source_ids, to_embed_source_ids)
 		'''
@@ -267,20 +325,22 @@ class VectorDB(BaseVectorDB):
 				.filter(AccessListStore.source_id == source_id)
 			)
 			session.execute(stmt)
-			session.commit()
 
-			stmt = (
-				postgresql_dialects.insert(AccessListStore)
-				.values([
-					{
-						'uid': user_id,
-						'source_id': source_id,
-					}
-					for user_id in user_ids
-				])
-				.on_conflict_do_nothing(index_elements=['uid', 'source_id'])
-			)
-			session.execute(stmt)
+			for i in range(0, len(user_ids), PG_BATCH_SIZE):
+				batched_uids = user_ids[i:i+PG_BATCH_SIZE]
+				stmt = (
+					postgresql_dialects.insert(AccessListStore)
+					.values([
+						{
+							'uid': user_id,
+							'source_id': source_id,
+						}
+						for user_id in batched_uids
+					])
+					.on_conflict_do_nothing(index_elements=['uid', 'source_id'])
+				)
+				session.execute(stmt)
+
 			session.commit()
 		except SafeDbException as e:
 			session.rollback()
@@ -320,27 +380,31 @@ class VectorDB(BaseVectorDB):
 
 			match op:
 				case UpdateAccessOp.ALLOW:
-					stmt = (
-						postgresql_dialects.insert(AccessListStore)
-						.values([
-							{
-								'uid': user_id,
-								'source_id': source_id,
-							}
-							for user_id in user_ids
-						])
-						.on_conflict_do_nothing(index_elements=['uid', 'source_id'])
-					)
-					session.execute(stmt)
+					for i in range(0, len(user_ids), PG_BATCH_SIZE):
+						batched_uids = user_ids[i:i+PG_BATCH_SIZE]
+						stmt = (
+							postgresql_dialects.insert(AccessListStore)
+							.values([
+								{
+									'uid': user_id,
+									'source_id': source_id,
+								}
+								for user_id in batched_uids
+							])
+							.on_conflict_do_nothing(index_elements=['uid', 'source_id'])
+						)
+						session.execute(stmt)
 					session.commit()
 
 				case UpdateAccessOp.DENY:
-					stmt = (
-						sa.delete(AccessListStore)
-						.filter(AccessListStore.uid.in_(user_ids))
-						.filter(AccessListStore.source_id == source_id)
-					)
-					session.execute(stmt)
+					for i in range(0, len(user_ids), PG_BATCH_SIZE):
+						batched_uids = user_ids[i:i+PG_BATCH_SIZE]
+						stmt = (
+							sa.delete(AccessListStore)
+							.filter(AccessListStore.uid.in_(batched_uids))
+							.filter(AccessListStore.source_id == source_id)
+						)
+						session.execute(stmt)
 					session.commit()
 
 					# check if all entries related to the source were deleted
@@ -352,6 +416,8 @@ class VectorDB(BaseVectorDB):
 			logger.info('Error: updating access list', exc_info=e, extra={
 				'source_id': source_id,
 			})
+		except DbException:
+			raise
 		except Exception as e:
 			session.rollback()
 			raise DbException('Error: updating access list') from e
@@ -384,33 +450,35 @@ class VectorDB(BaseVectorDB):
 		if len(source_ids) == 0:
 			return
 
-		filter_ = [
-			AccessListStore.source_id.in_(source_ids) if len(source_ids) > 1
-			else AccessListStore.source_id == source_ids[0]
-		]
-
 		session = session_ or self.session_maker()
 
 		try:
-			stmt = (
-				sa.select(AccessListStore.source_id)
-				.filter(*filter_)
-				.distinct()
-			)
-			result = session.execute(stmt).fetchall()
+			# find orphaned source_ids (no AccessListStore entry) in batches
+			orphaned_ids = []
+			for i in range(0, len(source_ids), PG_BATCH_SIZE):
+				batched_ids = source_ids[i:i+PG_BATCH_SIZE]
+				stmt = (
+					sa.select(DocumentsStore.source_id)
+					.filter(DocumentsStore.source_id.in_(batched_ids))
+					.filter(
+						~sa.exists(  # NOT EXISTS
+							sa.select(sa.literal(1))
+							.where(AccessListStore.source_id == DocumentsStore.source_id)
+						)
+					)
+				)
+				result = session.execute(stmt).fetchall()
+				orphaned_ids.extend(str(r.source_id) for r in result)
+
+			if len(orphaned_ids) > 0:
+				self.delete_source_ids(orphaned_ids, session)
+		except DbException:
+			raise
 		except Exception as e:
+			raise DbException('Error: cleaning up orphaned source ids') from e
+		finally:
 			if session_ is None:
 				session.close()
-			raise DbException('Error: getting source ids from access list') from e
-
-		existing_links = [str(r.source_id) for r in result]
-		to_delete = [source_id for source_id in source_ids if source_id not in existing_links]
-
-		if len(to_delete) > 0:
-			self.delete_source_ids(to_delete, session_)
-
-		if session_ is None:
-			session.close()
 
 	def delete_source_ids(self, source_ids: list[str], session_: orm.Session | None = None):
 		session = session_ or self.session_maker()
@@ -419,36 +487,34 @@ class VectorDB(BaseVectorDB):
 			collection = self.client.get_collection(session)
 
 			# entry from "AccessListStore" is deleted automatically due to the foreign key constraint
-			stmt_doc = (
-				sa.delete(DocumentsStore)
-				.filter(DocumentsStore.source_id.in_(source_ids))
-				.returning(DocumentsStore.chunks, DocumentsStore.source_id)
-			)
+      # batch the deletion to avoid hitting the query parameter limit
+			chunks_to_delete = []
+			deleted_source_ids = []
+			for i in range(0, len(source_ids), PG_BATCH_SIZE):
+				batched_ids = source_ids[i:i+PG_BATCH_SIZE]
+				stmt_doc = (
+					sa.delete(DocumentsStore)
+					.filter(DocumentsStore.source_id.in_(batched_ids))
+					.returning(DocumentsStore.chunks, DocumentsStore.source_id)
+				)
+				doc_result = session.execute(stmt_doc)
+				chunks_to_delete.extend(str(c) for res in doc_result for c in res.chunks)
+				deleted_source_ids.extend(str(res.source_id) for res in doc_result)
 
-			doc_result = session.execute(stmt_doc)
-			chunks_to_delete = [str(c) for res in doc_result for c in res.chunks]
-			deleted_source_ids = [str(res.source_id) for res in doc_result]
-		except Exception as e:
-			session.rollback()
-			if session_ is None:
-				session.close()
-			raise DbException('Error: deleting source ids from docs store') from e
+			for i in range(0, len(chunks_to_delete), PG_BATCH_SIZE):
+				batched_chunks = chunks_to_delete[i:i+PG_BATCH_SIZE]
+				stmt_chunks = (
+					sa.delete(self.client.EmbeddingStore)
+					.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
+					.filter(self.client.EmbeddingStore.id.in_(batched_chunks))
+				)
+				session.execute(stmt_chunks)
 
-		try:
-			stmt_chunks = (
-				sa.delete(self.client.EmbeddingStore)
-				.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
-				.filter(self.client.EmbeddingStore.id.in_(chunks_to_delete))
-			)
-
-			session.execute(stmt_chunks)
 			session.commit()
 		except Exception as e:
-			logger.error('Error deleting chunks, rolling back documents store deletion for source ids')
+			logger.error('Error deleting source ids, rolling back changes.')
 			session.rollback()
-			raise DbException(
-				'Error: deleting chunks, rolling back documents store deletion for source ids'
-			) from e
+			raise DbException('Error: deleting source ids, rolling back changes.') from e
 		finally:
 			if session_ is None:
 				session.close()
@@ -475,26 +541,19 @@ class VectorDB(BaseVectorDB):
 				doc_result = session.execute(stmt)
 				chunks_to_delete = [str(c) for res in doc_result for c in res.chunks]
 
-				if len(chunks_to_delete) == 0:
-					logger.info(f'No documents found for provider {provider_key} when attempting to delete provider.')
-					return
-			except Exception as e:
-				session.rollback()
-				raise DbException('Error: deleting provider from docs store') from e
+				for i in range(0, len(chunks_to_delete), PG_BATCH_SIZE):
+					batched_chunks = chunks_to_delete[i:i+PG_BATCH_SIZE]
+					stmt = (
+						sa.delete(self.client.EmbeddingStore)
+						.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
+						.filter(self.client.EmbeddingStore.id.in_(batched_chunks))
+					)
+					session.execute(stmt)
 
-			try:
-				stmt = (
-					sa.delete(self.client.EmbeddingStore)
-					.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
-					.filter(self.client.EmbeddingStore.id.in_(chunks_to_delete))
-				)
-				session.execute(stmt)
 				session.commit()
 			except Exception as e:
 				session.rollback()
-				raise DbException(
-					'Error: deleting chunks, rolling back documents store deletion for provider'
-				) from e
+				raise DbException('Error: deleting chunks, rolling back changes') from e
 
 	def delete_user(self, user_id: str):
 		with self.session_maker() as session:
@@ -551,10 +610,9 @@ class VectorDB(BaseVectorDB):
 		try:
 			with self.session_maker() as session:
 				doc_filters = [AccessListStore.uid == user_id]
-				match scope_type:
-					case ScopeType.PROVIDER:
+				if scope_type == ScopeType.PROVIDER.value:
 						doc_filters.append(DocumentsStore.provider.in_(scope_list))  # pyright: ignore[reportArgumentType]
-					case ScopeType.SOURCE:
+				elif scope_type == ScopeType.SOURCE.value:
 						doc_filters.append(DocumentsStore.source_id.in_(scope_list))  # pyright: ignore[reportArgumentType]
 
 				# get chunks associated with the user
@@ -566,8 +624,13 @@ class VectorDB(BaseVectorDB):
 				result = session.execute(stmt).fetchall()
 				chunk_ids = [str(c) for res in result for c in res.chunks]
 
+				if len(chunk_ids) == 0:
+					return []
+
 				# get embeddings
 				return self._similarity_search(session, query, chunk_ids, k)
+		except EmbeddingException:
+			raise
 		except Exception as e:
 			raise DbException('Error: performing doc search in vectordb') from e
 
@@ -577,7 +640,7 @@ class VectorDB(BaseVectorDB):
 		session: orm.Session,
 		query: str,
 		chunk_ids: list[str],
-		k: int = 20,
+		k: int,
 	) -> list[Document]:
 		embedding = self.client.embeddings.embed_query(query)
 		collection = self.client.get_collection(session)

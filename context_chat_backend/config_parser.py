@@ -103,17 +103,11 @@ def get_config(file_path: str) -> TConfig:
 		except Exception as e:
 			raise AssertionError('Error: could not create embedding config from config file') from e
 
-	return TConfig(
-		debug=config.get('debug', False),
-		uvicorn_log_level=config.get('uvicorn_log_level', 'info'),
-		disable_aaa=config.get('disable_aaa', False),
-		verify_ssl=config.get('verify_ssl', config.get('httpx_verify_ssl', True)),
-		use_colors=config.get('use_colors', True),
-		uvicorn_workers=config.get('uvicorn_workers', 1),
-		embedding_chunk_size=config.get('embedding_chunk_size', 1000),
-		doc_parser_worker_limit=config.get('doc_parser_worker_limit', 10),
+	config['verify_ssl']  = config.get('verify_ssl', config.get('httpx_verify_ssl', True))
+	config.pop('httpx_verify_ssl', None)
 
-		vectordb=vectordb,
-		embedding=embedding_config,
-		llm=llm,
-	)
+	config['llm'] = llm
+	config['vectordb'] = vectordb
+	config['embedding'] = embedding_config
+
+	return TConfig(**config)

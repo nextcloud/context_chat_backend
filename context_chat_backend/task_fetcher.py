@@ -2,22 +2,29 @@
 # SPDX-FileCopyrightText: 2026 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-
-import asyncio
 import logging
+import math
 import os
+from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from enum import Enum
-from io import BytesIO
 from threading import Event, Thread
 from time import sleep
+from typing import Any
 
 import niquests
-from nc_py_api import AsyncNextcloudApp, NextcloudApp
+from langchain.llms.base import LLM
+from nc_py_api import NextcloudApp, NextcloudException
+from niquests import JSONDecodeError, RequestException
 from pydantic import ValidationError
 
+from .chain.context import do_doc_search
 from .chain.ingest.injest import embed_sources
-from .dyn_loader import VectorDBLoader
+from .chain.one_shot import process_context_query
+from .chain.types import ContextException, EnrichedSourceList, LLMOutput, ScopeList, SearchResult
+from .dyn_loader import LLMModelLoader, VectorDBLoader
+from .network_em import NetworkEmbeddings
 from .types import (
 	ActionsQueueItems,
 	ActionType,
@@ -25,13 +32,12 @@ from .types import (
 	EmbeddingException,
 	FilesQueueItems,
 	IndexingError,
-	IndexingException,
 	LoaderException,
 	ReceivedFileItem,
 	SourceItem,
 	TConfig,
 )
-from .utils import exec_in_proc, get_app_role
+from .utils import SubprocessKilledError, exec_in_proc, get_app_role
 from .vectordb.service import (
 	decl_update_access,
 	delete_by_provider,
@@ -46,14 +52,15 @@ APP_ROLE = get_app_role()
 THREADS = {}
 THREAD_STOP_EVENT = Event()
 LOGGER = logging.getLogger('ccb.task_fetcher')
-FILES_INDEXING_BATCH_SIZE = 64  # todo: config?
-# divides the batch into these many chunks
-PARALLEL_FILE_PARSING = max(1, (os.cpu_count() or 2) - 1)  # todo: config?
-# max concurrent fetches to avoid overloading the NC server or hitting rate limits
-CONCURRENT_FILE_FETCHES = 10  # todo: config?
-MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB, todo: config?
-ACTIONS_BATCH_SIZE = 512  # todo: config?
+MIN_FILES_PER_CPU = 4
 POLLING_COOLDOWN = 30
+
+# task processing or request processing
+TP_TRIGGER = Event()
+TP_CHECK_INTERVAL = 5
+TP_CHECK_INTERVAL_WITH_TRIGGER = 5 * 60
+TP_CHECK_INTERVAL_ON_ERROR = 15
+CONTEXT_LIMIT = 30
 
 
 class ThreadType(Enum):
@@ -62,176 +69,94 @@ class ThreadType(Enum):
 	REQUEST_PROCESSING = 'request_processing'
 
 
-async def __fetch_file_content(
-	semaphore: asyncio.Semaphore,
-	file_id: int,
-	user_id: str,
-	_rlimit = 3,
-) -> BytesIO:
-	'''
-	Raises
-	------
-	IndexingException
-	'''
-
-	async with semaphore:
-		nc = AsyncNextcloudApp()
-		try:
-			# a file pointer for storing the stream in memory until it is consumed
-			fp = BytesIO()
-			await nc._session.download2fp(
-				url_path=f'/ocs/v2.php/apps/context_chat/files/{file_id}',
-				fp=fp,
-				dav=False,
-				params={ 'userId': user_id },
-			)
-			return fp
-		except niquests.exceptions.RequestException as e:
-			# todo: raise IndexingException with retryable=True for rate limit errors,
-			# todo: and handle it in the caller to not delete the source from the queue and retry later through
-			# todo: the normal lock expiry mechanism
-			if e.response is None:
-				raise
-
-			if e.response.status_code == niquests.codes.too_many_requests:  # pyright: ignore[reportAttributeAccessIssue]
-				# todo: implement rate limits in php CC?
-				wait_for = int(e.response.headers.get('Retry-After', '30'))
-				if _rlimit <= 0:
-					raise IndexingException(
-						f'Rate limited when fetching content for file id {file_id}, user id {user_id},'
-						' max retries exceeded',
-						retryable=True,
-					) from e
-				LOGGER.warning(
-					f'Rate limited when fetching content for file id {file_id}, user id {user_id},'
-					f' waiting {wait_for} before retrying',
-					exc_info=e,
-				)
-				await asyncio.sleep(wait_for)
-				return await __fetch_file_content(semaphore, file_id, user_id, _rlimit - 1)
-
-			raise
-		except IndexingException:
-			raise
-		except Exception as e:
-			LOGGER.error(f'Error fetching content for file id {file_id}, user id {user_id}: {e}', exc_info=e)
-			raise IndexingException(f'Error fetching content for file id {file_id}, user id {user_id}: {e}') from e
-
-
-async def __fetch_files_content(
-	files: dict[int, ReceivedFileItem]
-) -> dict[int, SourceItem | IndexingError]:
-	source_items = {}
-	task_sources = {}
-	semaphore = asyncio.Semaphore(CONCURRENT_FILE_FETCHES)
-	tasks = []
-
-	for db_id, file in files.items():
-		try:
-			# to detect any validation errors but it should not happen since file.reference is validated
-			file.file_id  # noqa: B018
-		except ValueError as e:
-			LOGGER.error(
-				f'Invalid file reference format for db id {db_id}, file reference {file.reference}: {e}',
-				exc_info=e,
-			)
-			source_items[db_id] = IndexingError(
-				error=f'Invalid file reference format: {file.reference}',
-				retryable=False,
-			)
-			continue
-
-		if file.size > MAX_FILE_SIZE:
-			LOGGER.info(
-				f'Skipping db id {db_id}, file id {file.file_id}, source id {file.reference} due to size'
-				f' {(file.size/(1024*1024)):.2f} MiB exceeding the limit {(MAX_FILE_SIZE/(1024*1024)):.2f} MiB',
-			)
-			source_items[db_id] = IndexingError(
-				error=(
-					f'File size {(file.size/(1024*1024)):.2f} MiB'
-					f' exceeds the limit {(MAX_FILE_SIZE/(1024*1024)):.2f} MiB'
-				),
-				retryable=False,
-			)
-			continue
-		# todo: perform the existing file check before fetching the content to avoid unnecessary fetches
-		# any user id from the list should have read access to the file
-		tasks.append(asyncio.ensure_future(__fetch_file_content(semaphore, file.file_id, file.userIds[0])))
-		task_sources[db_id] = file
-
-	results = await asyncio.gather(*tasks, return_exceptions=True)
-	for (db_id, file), result in zip(task_sources.items(), results, strict=True):
-		if isinstance(result, IndexingException):
-			LOGGER.error(
-				f'Error fetching content for db id {db_id}, file id {file.file_id}, reference {file.reference}'
-				f': {result}',
-				exc_info=result,
-			)
-			source_items[db_id] = IndexingError(
-				error=str(result),
-				retryable=result.retryable,
-			)
-		elif isinstance(result, str) or isinstance(result, BytesIO):
-			source_items[db_id] = SourceItem(
-				**{
-					**file.model_dump(),
-					'content': result,
-				}
-			)
-		elif isinstance(result, BaseException):
-			LOGGER.error(
-				f'Unexpected error fetching content for db id {db_id}, file id {file.file_id},'
-				f' reference {file.reference}: {result}',
-				exc_info=result,
-			)
-			source_items[db_id] = IndexingError(
-				error=f'Unexpected error: {result}',
-				retryable=True,
-			)
-		else:
-			LOGGER.error(
-				f'Unknown error fetching content for db id {db_id}, file id {file.file_id}, reference {file.reference}'
-				f': {result}',
-				exc_info=True,
-			)
-			source_items[db_id] = IndexingError(
-				error='Unknown error',
-				retryable=True,
-			)
-	return source_items
-
-
-def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
+def files_indexing_thread(app_config: TConfig, get_enabled_state) -> None:
 	try:
+		network_em = NetworkEmbeddings(app_config)
 		vectordb_loader = VectorDBLoader(app_config)
 	except LoaderException as e:
 		LOGGER.error('Error initializing vector DB loader, files indexing thread will not start:', exc_info=e)
 		return
 
-	def _load_sources(source_items: dict[int, SourceItem]) -> dict[int, IndexingError | None]:
+	def _load_sources(source_items: Mapping[int, SourceItem | ReceivedFileItem]) -> Mapping[int, IndexingError | None]:
+		source_refs = [s.reference for s in source_items.values()]
+		LOGGER.info('Starting embed_sources subprocess for %d source(s)', len(source_items), extra={
+			'source_ids': source_refs,
+		})
 		try:
-			return exec_in_proc(
+			result = exec_in_proc(
 				target=embed_sources,
 				args=(vectordb_loader, app_config, source_items),
 			)
-		except (DbException, EmbeddingException):
-			raise
+			errors = {k: v for k, v in result.items() if isinstance(v, IndexingError)}
+			LOGGER.info(
+				'embed_sources finished for %d source(s): %d succeeded, %d errored',
+				len(source_items), len(result) - len(errors), len(errors),
+				extra={'errors': errors},
+			)
+			return result
+		except SubprocessKilledError as e:
+			LOGGER.error(
+				'embed_sources subprocess was killed for %d source(s) with exitcode %s',
+				len(source_items), e.exitcode, exc_info=e, extra={
+					'source_ids': source_refs,
+				},
+			)
+			if len(source_items) == 1:
+				return dict.fromkeys(
+					source_items,
+					IndexingError(error=f'Subprocess killed with exitcode {e.exitcode}: {e}', retryable=False),
+				)
+
+			# Fall back to one-by-one to isolate the problematic file.
+			LOGGER.warning(
+				'Falling back to individual processing for %d sources',
+				len(source_items),
+			)
+			fallback: dict[int, IndexingError | None] = {}
+			for db_id, item in source_items.items():
+				fallback.update(_load_sources({db_id: item}))
+			return fallback
 		except Exception as e:
-			raise DbException('Error: failed to load sources') from e
+			err = IndexingError(
+				error=f'{e.__class__.__name__}: {e}',
+				retryable=True,
+			)
+			LOGGER.error(
+				'embed_sources subprocess raised a %s error for %d sources, marking all as retryable',
+				e.__class__.__name__, len(source_refs), exc_info=e, extra={
+					'source_ids': source_refs,
+				}
+			)
+			return dict.fromkeys(source_items, err)
 
 
+	# divides the batch into these many chunks
+	file_parsing_cpu_count = (
+		app_config.file_parsing_cpu_count,  # when set to a positive value
+		max(1, (os.cpu_count() or 2) - 1),  # when set to auto (-1)
+	)[app_config.file_parsing_cpu_count == -1]
+	LOGGER.info(f'Using {file_parsing_cpu_count} parallel file parsing workers')
+
+	nc = NextcloudApp()
 	while True:
 		if THREAD_STOP_EVENT.is_set():
 			LOGGER.info('Files indexing thread is stopping due to stop event being set')
 			return
 
+		if not get_enabled_state():
+			LOGGER.info('App is disabled, files indexing thread will sleep until next enabled state check')
+			sleep(POLLING_COOLDOWN)
+			continue
+
 		try:
-			nc = NextcloudApp()
-			# todo: add the 'size' param to the return of this call.
+			if not network_em.check_connection(ThreadType.FILES_INDEXING.value):
+				sleep(POLLING_COOLDOWN)
+				continue
+
 			q_items_res = nc.ocs(
 				'GET',
 				'/ocs/v2.php/apps/context_chat/queues/documents',
-				params={ 'n': FILES_INDEXING_BATCH_SIZE }
+				params={ 'n': app_config.doc_indexing_batch_size }
 			)
 
 			try:
@@ -244,35 +169,43 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 				sleep(POLLING_COOLDOWN)
 				continue
 
-			LOGGER.debug(f'Fetched {len(q_items.files)} files and {len(q_items.content_providers)} content providers')
-			# populate files content and convert to source items
-			fetched_files = {}
-			source_files = {}
-			# unified error structure for files and content providers
-			source_errors = {}
-
-			if q_items.files:
-				fetched_files = asyncio.run(__fetch_files_content(q_items.files))
-
-			for db_id, result in fetched_files.items():
-				if isinstance(result, SourceItem):
-					source_files[db_id] = result
-				else:
-					source_errors[db_id] = result
-
 			files_result = {}
 			providers_result = {}
-			chunk_size = FILES_INDEXING_BATCH_SIZE // PARALLEL_FILE_PARSING
 
-			# todo: do it in asyncio, it's not truly parallel yet
 			# chunk file parsing for better file operation parallelism
-			for i in range(0, len(source_files), chunk_size):
-				chunk = dict(list(source_files.items())[i:i+chunk_size])
-				files_result.update(_load_sources(chunk))
+			file_chunk_size = max(MIN_FILES_PER_CPU, math.ceil(len(q_items.files) / file_parsing_cpu_count))
+			file_chunks = [
+				dict(list(q_items.files.items())[i:i+file_chunk_size])
+				for i in range(0, len(q_items.files), file_chunk_size)
+			]
+			provider_chunk_size = max(
+				MIN_FILES_PER_CPU,
+				math.ceil(len(q_items.content_providers) / file_parsing_cpu_count),
+			)
+			provider_chunks = [
+				dict(list(q_items.content_providers.items())[i:i+provider_chunk_size])
+				for i in range(0, len(q_items.content_providers), provider_chunk_size)
+			]
 
-			for i in range(0, len(q_items.content_providers), chunk_size):
-				chunk = dict(list(q_items.content_providers.items())[i:i+chunk_size])
-				providers_result.update(_load_sources(chunk))
+			with ThreadPoolExecutor(
+				max_workers=file_parsing_cpu_count,
+				thread_name_prefix='IndexingPool',
+			) as executor:
+				LOGGER.info(
+					'Dispatching %d file chunk(s) and %d provider chunk(s)',
+					len(file_chunks), len(provider_chunks),
+				)
+				file_futures = [executor.submit(_load_sources, chunk) for chunk in file_chunks]
+				provider_futures = [executor.submit(_load_sources, chunk) for chunk in provider_chunks]
+
+				for i, future in enumerate(file_futures):
+					LOGGER.debug('Waiting for file chunk %d/%d future to complete', i + 1, len(file_futures))
+					files_result.update(future.result())
+					LOGGER.debug('File chunk %d/%d future completed', i + 1, len(file_futures))
+				for i, future in enumerate(provider_futures):
+					LOGGER.debug('Waiting for provider chunk %d/%d future to complete', i + 1, len(provider_futures))
+					providers_result.update(future.result())
+					LOGGER.debug('Provider chunk %d/%d future completed', i + 1, len(provider_futures))
 
 			if (
 				any(isinstance(res, IndexingError) for res in files_result.values())
@@ -345,24 +278,29 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 
 
 
-def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
+def updates_processing_thread(app_config: TConfig, get_enabled_state) -> None:
 	try:
 		vectordb_loader = VectorDBLoader(app_config)
 	except LoaderException as e:
-		LOGGER.error('Error initializing vector DB loader, files indexing thread will not start:', exc_info=e)
+		LOGGER.error('Error initializing vector DB loader, updates processing thread will not start:', exc_info=e)
 		return
 
+	nc = NextcloudApp()
 	while True:
 		if THREAD_STOP_EVENT.is_set():
 			LOGGER.info('Updates processing thread is stopping due to stop event being set')
 			return
 
+		if not get_enabled_state():
+			LOGGER.info('App is disabled, updates processing thread will sleep until next enabled state check')
+			sleep(POLLING_COOLDOWN)
+			continue
+
 		try:
-			nc = NextcloudApp()
 			q_items_res = nc.ocs(
 				'GET',
 				'/ocs/v2.php/apps/context_chat/queues/actions',
-				params={ 'n': ACTIONS_BATCH_SIZE }
+				params={ 'n': app_config.actions_batch_size }
 			)
 
 			try:
@@ -386,7 +324,6 @@ def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			sleep(POLLING_COOLDOWN)
 			continue
 
-		LOGGER.debug(f'Fetched {len(q_items.actions)} updates')
 		processed_event_ids = []
 		errored_events = {}
 		for i, (db_id, action_item) in enumerate(q_items.actions.items()):
@@ -508,64 +445,331 @@ def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			continue
 
 
-def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
-	...
+def resolve_scope_list(source_ids: list[str], userId: str) -> list[str]:
+	"""
+
+	Parameters
+	----------
+	source_ids
+
+	Returns
+	-------
+	source_ids with only files, no folders (or source_ids in case of non-file provider)
+	"""
+	nc = NextcloudApp()
+	data = nc.ocs('POST', '/ocs/v2.php/apps/context_chat/resolve_scope_list', json={
+		'source_ids': source_ids,
+		'userId': userId,
+	})
+	return ScopeList.model_validate(data).source_ids
 
 
-def start_bg_threads(app_config: TConfig, app_enabled: Event):
-	match APP_ROLE:
-		case AppRole.INDEXING | AppRole.NORMAL:
-			if (
-				ThreadType.FILES_INDEXING in THREADS
-				or ThreadType.UPDATES_PROCESSING in THREADS
-			):
-				LOGGER.info('Background threads already running, skipping start')
-				return
+def request_processing_thread(app_config: TConfig, get_enabled_state) -> None:
+	LOGGER.info('Starting request processing thread')
 
-			THREAD_STOP_EVENT.clear()
-			THREADS[ThreadType.FILES_INDEXING] = Thread(
-				target=files_indexing_thread,
-				args=(app_config, app_enabled),
-				name='FilesIndexingThread',
-			)
-			THREADS[ThreadType.UPDATES_PROCESSING] = Thread(
-				target=updates_processing_thread,
-				args=(app_config, app_enabled),
-				name='UpdatesProcessingThread',
-			)
-			THREADS[ThreadType.FILES_INDEXING].start()
-			THREADS[ThreadType.UPDATES_PROCESSING].start()
+	try:
+		network_em = NetworkEmbeddings(app_config)
+		vectordb_loader = VectorDBLoader(app_config)
+		llm_loader = LLMModelLoader(app_config)
+	except LoaderException as e:
+		LOGGER.error('Error initializing vector DB loader, request processing thread will not start:', exc_info=e)
+		return
 
-		case AppRole.RP | AppRole.NORMAL:
-			if ThreadType.REQUEST_PROCESSING in THREADS:
-				LOGGER.info('Background threads already running, skipping start')
-				return
+	nc = NextcloudApp()
+	llm: LLM = llm_loader.load()
 
-			THREAD_STOP_EVENT.clear()
-			THREADS[ThreadType.REQUEST_PROCESSING] = Thread(
-				target=request_processing_thread,
-				args=(app_config, app_enabled),
-				name='RequestProcessingThread',
-			)
-			THREADS[ThreadType.REQUEST_PROCESSING].start()
+	while True:
+		if THREAD_STOP_EVENT.is_set():
+			LOGGER.info('Request processing thread is stopping due to stop event being set')
+			return
+
+		if not get_enabled_state():
+			LOGGER.info('App is disabled, request processing thread will sleep until next enabled state check')
+			sleep(POLLING_COOLDOWN)
+			continue
+
+		try:
+			if not network_em.check_connection(ThreadType.REQUEST_PROCESSING.value):
+				sleep(POLLING_COOLDOWN)
+				continue
+
+			# Fetch pending task
+			try:
+				response = nc.providers.task_processing.next_task(
+					['context_chat-context_chat', 'context_chat-context_chat_search'],
+					['context_chat:context_chat', 'context_chat:context_chat_search'],
+				)
+				if not response:
+					wait_for_tasks()
+					continue
+			except (NextcloudException, RequestException, JSONDecodeError) as e:
+				LOGGER.error(f"Network error fetching the next task {e}", exc_info=e)
+				wait_for_tasks(TP_CHECK_INTERVAL_ON_ERROR)
+				continue
+
+			# Process task
+			task = response["task"]
+			userId = task['userId']
+
+			try:
+				LOGGER.debug(f'Processing task {task["id"]}')
+
+				if task['input'].get('scopeType') == 'source':
+					# Resolve scope list to only files, no folders
+					task['input']['scopeList'] = resolve_scope_list(task['input'].get('scopeList'), userId)
+
+				if task['type'] == 'context_chat:context_chat':
+					result: LLMOutput = process_normal_task(task, vectordb_loader, llm, app_config)
+					# Return result to Nextcloud
+					success = return_result_to_nextcloud(task['id'], userId, {
+						'output': result['output'],
+						'sources': enrich_sources(result['sources'], userId),
+					})
+				elif task['type'] == 'context_chat:context_chat_search':
+					search_result: list[SearchResult] = process_search_task(task, vectordb_loader)
+					# Return result to Nextcloud
+					success = return_result_to_nextcloud(task['id'], userId, {
+						'sources': enrich_sources(search_result, userId),
+					})
+				else:
+					LOGGER.error(f'Unknown task type {task["type"]}')
+					success = return_error_to_nextcloud(task['id'], Exception(f'Unknown task type {task["type"]}'))
+
+				if success:
+					LOGGER.info(f'Task {task["id"]} completed successfully')
+				else:
+					LOGGER.error(f'Failed to return result for task {task["id"]}')
+
+			except EmbeddingException as e:
+				LOGGER.warning(f'Embedding server error for task {task["id"]}: {e}')
+				return_error_to_nextcloud(task['id'], e)
+			except ContextException as e:
+				LOGGER.warning(f'Context error for task {task["id"]}: {e}')
+				return_error_to_nextcloud(task['id'], e)
+			except ValueError as e:
+				LOGGER.warning(f'Validation error for task {task["id"]}: {e}')
+				return_error_to_nextcloud(task['id'], e)
+			except Exception as e:
+				LOGGER.exception(f'Unexpected error processing task {task["id"]}', exc_info=e)
+				return_error_to_nextcloud(task['id'], e)
+
+		except Exception as e:
+			LOGGER.exception('Error in task fetcher loop', exc_info=e)
+			wait_for_tasks(TP_CHECK_INTERVAL_ON_ERROR)
+
+def trigger_handler(provider_id: str):
+	global TP_TRIGGER
+	LOGGER.debug('Task processing trigger received', extra={'provider_id': provider_id})
+	TP_TRIGGER.set()
+
+def wait_for_tasks(interval = None):
+	global TP_TRIGGER
+	global TP_CHECK_INTERVAL
+	global TP_CHECK_INTERVAL_WITH_TRIGGER
+	actual_interval = TP_CHECK_INTERVAL if interval is None else interval
+	if TP_TRIGGER.wait(timeout=actual_interval):
+		TP_CHECK_INTERVAL = TP_CHECK_INTERVAL_WITH_TRIGGER
+	TP_TRIGGER.clear()
+
+
+def enrich_sources(results: list[SearchResult], userId: str) -> list[str]:
+	nc = NextcloudApp()
+	data = nc.ocs('POST', '/ocs/v2.php/apps/context_chat/enrich_sources', json={'sources': results, 'userId': userId})
+	sources = EnrichedSourceList.model_validate(data).sources
+	return [s.model_dump_json() for s in sources]
+
+
+def return_result_to_nextcloud(task_id: int, userId: str, result: dict[str, Any]) -> bool:
+	"""
+	Return query result back to Nextcloud.
+
+	Args:
+		result: dict[str, Any]
+
+	Returns:
+		True if successful, False otherwise
+	"""
+	LOGGER.debug('Returning result to Nextcloud', extra={
+		'task_id': task_id,
+		'result': result,
+	})
+
+	nc = NextcloudApp()
+
+	try:
+		nc.providers.task_processing.report_result(task_id, result)
+	except (NextcloudException, RequestException, JSONDecodeError) as e:
+		LOGGER.error(f"Network error reporting task result {e}", exc_info=e)
+		return False
+
+	return True
+
+
+def return_error_to_nextcloud(task_id: int, e: Exception) -> bool:
+	"""
+	Return error result back to Nextcloud.
+
+	Args:
+		task_id: Unique task identifier
+		e: error object
+
+	Returns:
+		True if successful, False otherwise
+	"""
+	LOGGER.debug('Returning error to Nextcloud', exc_info=e)
+
+	nc = NextcloudApp()
+
+	if isinstance(e, ValueError):
+		message = "Validation error: " + str(e)
+	elif isinstance(e, ContextException):
+		message = "Context error" + str(e)
+	else:
+		message = "Unexpected error" + str(e)
+
+	try:
+		nc.providers.task_processing.report_result(task_id, None, message)
+	except (NextcloudException, RequestException, JSONDecodeError) as e:
+		LOGGER.error(f"Network error reporting task result {e}", exc_info=e)
+		return False
+
+	return True
+
+
+def process_normal_task(
+	task: dict[str, Any],
+	vectordb_loader: VectorDBLoader,
+	llm: LLM,
+	app_config: TConfig,
+) -> LLMOutput:
+	"""
+	Process a single query task.
+
+	Args:
+		task: Task dictionary from fetch_query_tasks_from_nextcloud
+		vectordb_loader: Vector database loader instance
+		llm: Language model instance
+		app_config: Application configuration
+
+	Returns:
+		LLMOutput with generated text and sources
+
+	Raises:
+		Various exceptions from query execution
+	"""
+	user_id = task['userId']
+	task_input = task['input']
+	if task_input.get('scopeType') == 'none':
+		task_input['scopeType'] = None
+
+	return exec_in_proc(target=process_context_query,
+		args=(
+			user_id,
+			vectordb_loader,
+			llm,
+			app_config,
+			task_input.get('prompt'),
+			CONTEXT_LIMIT,
+			task_input.get('scopeType'),
+			task_input.get('scopeList'),
+			app_config.llm[1].get('template'),
+		)
+	)
+
+def process_search_task(
+	task: dict[str, Any],
+	vectordb_loader: VectorDBLoader,
+) -> list[SearchResult]:
+	"""
+	Process a single search task.
+
+	Args:
+		task: Task dictionary from fetch_query_tasks_from_nextcloud
+		vectordb_loader: Vector database loader instance
+
+	Returns:
+		list of Search results
+
+	Raises:
+		Various exceptions from query execution
+	"""
+	user_id = task['userId']
+	task_input = task['input']
+	if task_input.get('scopeType') == 'none':
+		task_input['scopeType'] = None
+
+	return exec_in_proc(target=do_doc_search,
+		args=(
+			user_id,
+			task_input.get('prompt'),
+			vectordb_loader,
+			CONTEXT_LIMIT,
+			task_input.get('scopeType'),
+			task_input.get('scopeList'),
+		)
+	)
+
+
+def start_bg_threads(app_config: TConfig, get_enabled_state):
+	THREAD_STOP_EVENT.clear()
+
+	if APP_ROLE == AppRole.INDEXING or APP_ROLE == AppRole.NORMAL:
+		if ThreadType.FILES_INDEXING in THREADS:
+			LOGGER.info('Indexing background threads are already up, skipping start')
+			return
+
+		THREADS[ThreadType.FILES_INDEXING] = Thread(
+			target=files_indexing_thread,
+			args=(app_config,get_enabled_state),
+			name='FilesIndexingThread',
+		)
+		THREADS[ThreadType.FILES_INDEXING].start()
+
+	if APP_ROLE == AppRole.UPDATES_PROC or APP_ROLE == AppRole.NORMAL:
+		if ThreadType.UPDATES_PROCESSING in THREADS:
+			LOGGER.info('Updates processing background threads are already up, skipping start')
+			return
+
+		THREADS[ThreadType.UPDATES_PROCESSING] = Thread(
+			target=updates_processing_thread,
+			args=(app_config,get_enabled_state),
+			name='UpdatesProcessingThread',
+		)
+		THREADS[ThreadType.UPDATES_PROCESSING].start()
+
+	if APP_ROLE == AppRole.REQUEST_PROC or APP_ROLE == AppRole.NORMAL:
+		if ThreadType.REQUEST_PROCESSING in THREADS:
+			LOGGER.info('Request processing background threads are already up, skipping start')
+			return
+
+		THREADS[ThreadType.REQUEST_PROCESSING] = Thread(
+			target=request_processing_thread,
+			args=(app_config,get_enabled_state),
+			name='RequestProcessingThread',
+		)
+		THREADS[ThreadType.REQUEST_PROCESSING].start()
 
 
 def wait_for_bg_threads():
-	match APP_ROLE:
-		case AppRole.INDEXING | AppRole.NORMAL:
-			if (ThreadType.FILES_INDEXING not in THREADS or ThreadType.UPDATES_PROCESSING not in THREADS):
-				return
+	THREAD_STOP_EVENT.set()
 
-			THREAD_STOP_EVENT.set()
-			THREADS[ThreadType.FILES_INDEXING].join()
-			THREADS[ThreadType.UPDATES_PROCESSING].join()
-			THREADS.pop(ThreadType.FILES_INDEXING)
-			THREADS.pop(ThreadType.UPDATES_PROCESSING)
+	if APP_ROLE == AppRole.INDEXING or APP_ROLE == AppRole.NORMAL:
+		if ThreadType.FILES_INDEXING not in THREADS:
+			return
 
-		case AppRole.RP | AppRole.NORMAL:
-			if (ThreadType.REQUEST_PROCESSING not in THREADS):
-				return
+		THREADS[ThreadType.FILES_INDEXING].join()
+		THREADS.pop(ThreadType.FILES_INDEXING)
 
-			THREAD_STOP_EVENT.set()
-			THREADS[ThreadType.REQUEST_PROCESSING].join()
-			THREADS.pop(ThreadType.REQUEST_PROCESSING)
+	if APP_ROLE == AppRole.UPDATES_PROC or APP_ROLE == AppRole.NORMAL:
+		if ThreadType.UPDATES_PROCESSING not in THREADS:
+			return
+
+		THREADS[ThreadType.UPDATES_PROCESSING].join()
+		THREADS.pop(ThreadType.UPDATES_PROCESSING)
+
+	if APP_ROLE == AppRole.REQUEST_PROC or APP_ROLE == AppRole.NORMAL:
+		if (ThreadType.REQUEST_PROCESSING not in THREADS):
+			return
+
+		THREADS[ThreadType.REQUEST_PROCESSING].join()
+		THREADS.pop(ThreadType.REQUEST_PROCESSING)

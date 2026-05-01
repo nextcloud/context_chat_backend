@@ -3,23 +3,16 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 import re
+from collections.abc import Mapping
 from enum import Enum
 from io import BytesIO
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import AfterValidator, BaseModel, Discriminator, computed_field, field_validator
+import niquests
+from pydantic import AfterValidator, BaseModel, Discriminator, computed_field, field_validator, model_validator
 
+from .mimetype_list import SUPPORTED_MIMETYPES
 from .vectordb.types import UpdateAccessOp
-
-__all__ = [
-	'DEFAULT_EM_MODEL_ALIAS',
-	'EmbeddingException',
-	'LoaderException',
-	'TConfig',
-	'TEmbeddingAuthApiKey',
-	'TEmbeddingAuthBasic',
-	'TEmbeddingConfig',
-]
 
 DEFAULT_EM_MODEL_ALIAS = 'em_model'
 FILES_PROVIDER_ID = 'files__default'
@@ -35,7 +28,6 @@ def is_valid_provider_id(provider_id: str) -> bool:
 
 
 def _validate_source_ids(source_ids: list[str]) -> list[str]:
-	# todo: use is_valid_source_id()
 	if (
 		not isinstance(source_ids, list)
 		or not all(isinstance(sid, str) and sid.strip() != '' for sid in source_ids)
@@ -103,14 +95,17 @@ class TEmbeddingConfig(BaseModel):
 
 
 class TConfig(BaseModel):
-	debug: bool
-	uvicorn_log_level: str
-	disable_aaa: bool
-	verify_ssl: bool
-	use_colors: bool
-	uvicorn_workers: int
-	embedding_chunk_size: int
-	doc_parser_worker_limit: int
+	debug: bool = False
+	uvicorn_log_level: str = 'info'
+	disable_aaa: bool = False
+	verify_ssl: bool = True
+	use_colors: bool = True
+	uvicorn_workers: int = 1
+	embedding_chunk_size: int = 2000
+	doc_indexing_batch_size: int = 32
+	actions_batch_size: int = 512
+	file_parsing_cpu_count: int = -1
+	concurrent_file_fetches: int = 10
 
 	vectordb: tuple[str, dict]
 	embedding: TEmbeddingConfig
@@ -122,7 +117,9 @@ class LoaderException(Exception):
 
 
 class EmbeddingException(Exception):
-	...
+	def __init__(self, msg: str, response: niquests.Response | None = None):
+		super().__init__(msg)
+		self.response = response
 
 class RetryableEmbeddingException(EmbeddingException):
 	"""
@@ -139,11 +136,25 @@ class FatalEmbeddingException(EmbeddingException):
 	Either malformed request, authentication error, or other non-retryable error.
 	"""
 
+class DocErrorEmbeddingException(EmbeddingException):
+	"""
+	Exception that indicates a fatal error for the document, this document should not be retried.
+	"""
+
+
+class TaskProcException(Exception):
+	...
+
+
+class TaskProcFatalException(TaskProcException):
+	...
+
 
 class AppRole(str, Enum):
 	NORMAL = 'normal'
 	INDEXING = 'indexing'
-	RP = 'rp'
+	REQUEST_PROC = 'requestproc'
+	UPDATES_PROC = 'updatesproc'
 
 
 class CommonSourceItem(BaseModel):
@@ -155,6 +166,11 @@ class CommonSourceItem(BaseModel):
 	type: str
 	provider: Annotated[str, AfterValidator(_validate_provider_id)]
 	size: float
+
+	@computed_field
+	@property
+	def file_id(self) -> int:
+		return _get_file_id_from_source_ref(self.reference)
 
 	@field_validator('modified', mode='before')
 	@classmethod
@@ -182,14 +198,15 @@ class CommonSourceItem(BaseModel):
 			return float(v)
 		raise ValueError(f'Invalid size value: {v}, must be a non-negative number')
 
+	@model_validator(mode='after')
+	def validate_type(self) -> Self:
+		if self.reference.startswith(FILES_PROVIDER_ID) and self.type not in SUPPORTED_MIMETYPES:
+			raise ValueError(f'Unsupported file type: {self.type} for reference {self.reference}')
+		return self
+
 
 class ReceivedFileItem(CommonSourceItem):
 	content: None
-
-	@computed_field
-	@property
-	def file_id(self) -> int:
-		return _get_file_id_from_source_ref(self.reference)
 
 
 class SourceItem(CommonSourceItem):
@@ -198,11 +215,6 @@ class SourceItem(CommonSourceItem):
 	and for directly fetched content providers.
 	'''
 	content: str | BytesIO
-
-	@computed_field
-	@property
-	def file_id(self) -> int:
-		return _get_file_id_from_source_ref(self.reference)
 
 	@field_validator('content')
 	@classmethod
@@ -223,8 +235,8 @@ class SourceItem(CommonSourceItem):
 
 
 class FilesQueueItems(BaseModel):
-	files: dict[int, ReceivedFileItem]  # [db id]: FileItem
-	content_providers: dict[int, SourceItem]  # [db id]: SourceItem
+	files: Mapping[int, ReceivedFileItem]  # [db id]: FileItem
+	content_providers: Mapping[int, SourceItem]  # [db id]: SourceItem
 
 
 class IndexingException(Exception):
@@ -342,16 +354,4 @@ ActionsQueueItem = Annotated[
 
 
 class ActionsQueueItems(BaseModel):
-	actions: dict[int, ActionsQueueItem]
-
-
-class TaskProcException(Exception):
-	...
-
-
-class TaskProcFatalException(TaskProcException):
-	...
-
-
-class TaskProcClientException(TaskProcException):
-	...
+	actions: Mapping[int, ActionsQueueItem]

@@ -20,7 +20,7 @@ from pypdf import PdfReader
 from pypdf.errors import FileNotDecryptedError as PdfFileNotDecryptedError
 from striprtf import striprtf
 
-from ...types import SourceItem, TaskProcException, TaskProcFatalException
+from ...types import IndexingException, SourceItem, TaskProcException, TaskProcFatalException
 from .task_proc import (
 	OCR_TASK_TYPE,
 	SPEECH_TO_TEXT_TASK_TYPE,
@@ -147,7 +147,7 @@ def _load_xlsx(file: BytesIO, _: SourceItem) -> str:
 def _load_email(file: BytesIO, _: SourceItem, ext: str = 'eml') -> str | None:
 	# NOTE: msg format is not tested
 	if ext not in ['eml', 'msg']:
-		return None
+		raise IndexingException(f'Unsupported email format: {ext}')
 
 	# TODO: implement attachment partitioner using unstructured.partition.partition_{email,msg}
 	# since langchain does not pass through the attachment_partitioner kwarg
@@ -185,50 +185,52 @@ _loader_map = {
 }
 
 
-def decode_source(source: SourceItem) -> str | None:
+def decode_source(source: SourceItem) -> str:
+	'''
+	Raises
+	------
+	IndexingException
+	'''
+
 	io_obj: BytesIO | None = None
 	try:
 		# .pot files are powerpoint templates but also plain text files,
 		# so we skip them to prevent decoding errors
 		if source.title.endswith('.pot'):
-			return None
-
-		mimetype = source.type
-		if mimetype is None:
-			return None
+			raise IndexingException('PowerPoint template files (.pot) are not supported')
 
 		try:
-			if IS_OCR_AVAILABLE and mimetype.startswith('image/'):
+			if IS_OCR_AVAILABLE and source.type.startswith('image/'):
 				return asyncio.run(do_ocr(source.userIds[0], [source.file_id]))[0]
-			if IS_STT_AVAILABLE and mimetype.startswith('audio/'):
+			if IS_STT_AVAILABLE and source.type.startswith('audio/'):
 				return asyncio.run(do_transcription(source.userIds[0], source.file_id))
 		except TaskProcException as e:
 			# todo: convert this to error obj return
 			# todo: short circuit all other ocr/transcription files when a fatal error arrives
 			# todo:  maybe with a global ttl, with a retryable tag
 			logger.warning(f'OCR task failed for source file ({source.reference}): {e}')
-			return None
+			raise IndexingException(f'OCR task failed for source file ({source.reference}): {e}')  # noqa: B904
 		except ValueError:
 			# should not happen
 			logger.warning(f'Unexpected ValueError for source file ({source.reference})')
-			return None
+			raise IndexingException(f'Unexpected ValueError for source file ({source.reference})')  # noqa: B904
 
 		if isinstance(source.content, str):
 			io_obj = BytesIO(source.content.encode('utf-8', 'ignore'))
 		else:
 			io_obj = source.content
 
-		if _loader_map.get(mimetype):
-			result = _loader_map[mimetype](io_obj, source)
-			return result.encode('utf-8', 'ignore').decode('utf-8', 'ignore')
+		if _loader_map.get(source.type):
+			result = _loader_map[source.type](io_obj)
+			return result.encode('utf-8', 'ignore').decode('utf-8', 'ignore').strip()
 
-		return io_obj.read().decode('utf-8', 'ignore')
-	except PdfFileNotDecryptedError:
-		logger.warning(f'PDF file ({source.reference}) is encrypted and cannot be read')
-		return None
-	except Exception:
-		logger.exception(f'Error decoding source file ({source.reference})', stack_info=True)
-		return None
+		return io_obj.read().decode('utf-8', 'ignore').strip()
+	except IndexingException:
+		raise
+	except PdfFileNotDecryptedError as e:
+		raise IndexingException('PDF file is encrypted and cannot be read') from e
+	except Exception as e:
+		raise IndexingException(f'Error decoding source file: {e}') from e
 	finally:
 		if io_obj is not None:
 			io_obj.close()

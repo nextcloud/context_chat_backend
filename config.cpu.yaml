@@ -7,7 +7,10 @@ verify_ssl: true
 use_colors: true
 uvicorn_workers: 1
 embedding_chunk_size: 2000
-doc_parser_worker_limit: 10
+doc_indexing_batch_size: 32  # theoretical max RAM usage: 32 * 100 MiB
+actions_batch_size: 512
+file_parsing_cpu_count: -1  # divides the batch into these many chunks, -1 = auto
+concurrent_file_fetches: 10  # maximum number of files to fetch concurrently to not overload the NC server
 
 
 vectordb:
@@ -43,6 +46,9 @@ embedding:
 
 llm:
   nc_texttotext:
+    # template:
+    # n_ctx:
+    # max_tokens:
 
   llama:
     # all options: https://python.langchain.com/api_reference/community/llms/langchain_community.llms.llamacpp.LlamaCpp.html
@@ -52,14 +58,12 @@ llm:
     max_tokens: 4096
     template: "<|im_start|> system \nYou're an AI assistant named Nextcloud Assistant, good at finding relevant context from documents to answer questions provided by the user. <|im_end|>\n<|im_start|> user\nUse the following documents as context to answer the question at the end. REMEMBER to excersice source critisicm as the documents are returned by a search provider that can return unrelated documents.\n\nSTART OF CONTEXT: \n{context} \n\nEND OF CONTEXT!\n\nIf you don't know the answer or are unsure, just say that you don't know, don't try to make up an answer. Don't mention the context in your answer but rather just answer the question directly. Detect the language of the question and make sure to use the same language that was used in the question to answer the question. Don't mention which language was used, but just answer the question directly in the same langauge. \nQuestion: {question} Let's think this step-by-step. \n<|im_end|>\n<|im_start|> assistant\n"
     no_ctx_template: "<|im_start|> system \nYou're an AI assistant named Nextcloud Assistant.<|im_end|>\n<|im_start|> user\n{question}<|im_end|>\n<|im_start|> assistant\n"
-    end_separator: "<|im_end|>"
 
   ctransformer:
     # all options: https://python.langchain.com/api_reference/community/llms/langchain_community.llms.ctransformers.CTransformers.html
     model: dolphin-2.2.1-mistral-7b.Q5_K_M.gguf
     template: "<|im_start|> system \nYou're an AI assistant named Nextcloud Assistant, good at finding relevant context from documents to answer questions provided by the user. <|im_end|>\n<|im_start|> user\nUse the following documents as context to answer the question at the end. REMEMBER to excersice source critisicm as the documents are returned by a search provider that can return unrelated documents.\n\nSTART OF CONTEXT: \n{context} \n\nEND OF CONTEXT!\n\nIf you don't know the answer or are unsure, just say that you don't know, don't try to make up an answer. Don't mention the context in your answer but rather just answer the question directly.  Detect the language of the question and make sure to use the same language that was used in the question to answer the question. Don't mention which language was used, but just answer the question directly in the same langauge. \nQuestion: {question} Let's think this step-by-step. \n<|im_end|>\n<|im_start|> assistant\n"
     no_ctx_template: "<|im_start|> system \nYou're an AI assistant named Nextcloud Assistant.<|im_end|>\n<|im_start|> user\n{question}<|im_end|>\n<|im_start|> assistant\n"
-    end_separator: "<|im_end|>"
     config:
       context_length: 8192
       max_new_tokens: 4096
