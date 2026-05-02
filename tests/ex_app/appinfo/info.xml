@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<!--
+  - SPDX-FileCopyrightText: 2026 Nextcloud GmbH and Nextcloud contributors
+  - SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<info>
+	<id>ccb_test_providers</id>
+	<name>CCB Test Providers</name>
+	<summary>Mock STT and OCR providers for CCB integration tests</summary>
+	<version>1.0.0</version>
+	<licence>AGPL-3.0-or-later</licence>
+	<author>Nextcloud</author>
+	<namespace>CcbTestProviders</namespace>
+	<category>ai</category>
+	<dependencies>
+		<nextcloud min-version="32" max-version="99" />
+	</dependencies>
+	<external-app>
+		<docker-install>
+			<registry>ghcr.io</registry>
+			<image>nextcloud/ccb_test_providers</image>
+			<image-tag>1.0.0</image-tag>
+		</docker-install>
+	</external-app>
+</info>

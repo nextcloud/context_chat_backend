@@ -114,7 +114,7 @@ jobs:
           path: apps/context_chat
           persist-credentials: false
           # todo: remove later
-          ref: feat/reverse-content-flow
+          ref: feat/noid/ocr-support
 
       - name: Checkout backend
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -153,8 +153,8 @@ jobs:
           ./occ maintenance:install --verbose --database=${{ matrix.databases }} --database-name=nextcloud --database-host=127.0.0.1 --database-port=$PGSQL_PORT --database-user=root --database-pass=rootpassword --admin-user admin --admin-pass password
           composer run serve &
 
-      - name: Enable context_chat, app_api and testing
-        run: ./occ app:enable -vvv -f context_chat app_api testing
+      - name: Enable context_chat and app_api
+        run: ./occ app:enable -vvv -f context_chat app_api
 
       - name: Checkout documentation
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -165,6 +165,7 @@ jobs:
 
       - name: Prepare docs
         run: |
+          cp -r context_chat_backend/tests/res data/admin/files/
           cd data/admin/files
           mv documentation/admin_manual .
           cp -R documentation/developer_manual .
@@ -204,11 +205,24 @@ jobs:
           echo $! > ../pid.txt          # Save the process ID (PID)
           sleep 60 # Wait for the backend to get ready
 
-      - name: Register backend
+      - name: Setup the fake OCR and STT provider
+        run: |
+          cd context_chat_backend/tests/ex_app
+          python3 -u lib/main.py >& ../../ocr_stt_exapp_logs &
+
+      - name: Register backend and the OCR/STT provider
         run: |
           timeout 10 ./occ app_api:daemon:register --net host manual_install "Manual Install" manual-install http localhost http://localhost:8080
-          timeout 120 ./occ app_api:app:register context_chat_backend manual_install --json-info "{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"${{ fromJson(steps.appinfo.outputs.result).version }}\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system_app\":0}" --force-scopes --wait-finish
+          timeout 120 ./occ app_api:app:register ccb_test_providers manual_install --json-info "{\"appid\":\"ccb_test_providers\",\"name\":\"CCB Test Providers\",\"daemon_config_name\":\"manual_install\",\"version\":\"1.0.0\",\"secret\":\"12345\",\"port\":10020}" --wait-finish
+          timeout 120 ./occ app_api:app:register context_chat_backend manual_install --json-info "{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"${{ fromJson(steps.appinfo.outputs.result).version }}\",\"secret\":\"12345\",\"port\":10034}" --wait-finish
           ls -la context_chat_backend/persistent_storage/*
+
+      - name: Enable multimodal indexing
+        run: |
+          ./occ context_chat:queue-multimodal-files
+
+      - name: Enable the testing app late so it does not register for the OCR/STT first
+        run: ./occ app:enable testing
 
       - name: Initial memory usage check
         run: |
@@ -301,17 +315,34 @@ jobs:
           ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' > worker1_logs 2>&1 &
           ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' > worker2_logs 2>&1 &
 
-          echo ::group::English prompt
-          OUT1=$(./occ context_chat:prompt admin "Which factors are taken into account for the Ethical AI Rating?")
-          echo "$OUT1"
-          echo "$OUT1" | grep -q "If all of these points are met, we give a Green label." || exit 1
-          echo ::endgroup::
+          # Each entry: "Label|prompt text|grep pattern|grep flags"
+          checks=(
+            "Text - Ethical AI Rating (EN)|Which factors are taken into account for the Ethical AI Rating?|If all of these points are met, we give a Green label.|"
+            "Text - Ethical AI Rating (DE)|Welche Faktoren beeinflussen das Ethical AI Rating?|If all of these points are met, we give a Green label.|"
+            "Text - occ maintenance mode|How do I enable maintenance mode in Nextcloud using the command line?|maintenance:mode --on|-iE"
+            "Text - background job configuration|What are the available background job execution methods in Nextcloud?|cron|webcron|ajax|-iE"
+            "STT - Amazon oxygen fraction|What fraction of the world's oxygen supply does the Amazon rainforest produce?|twenty percent|-i"
+            "STT - quantum computing|How does quantum computing perform calculations?|superposition|entanglement|-iE"
+            "STT - Jungle Book|Who raised Mowgli in the jungle and which villain does he face?|wolves|Shere Khan|-iE"
+            "OCR - invoice total|What is the total amount on invoice number 10042?|299|-E"
+            "OCR - train to Amsterdam|What time does the express train to Amsterdam depart from Platform 3?|08:14|"
+          )
 
-          echo ::group::German prompt
-          OUT2=$(./occ context_chat:prompt admin "Welche Faktoren beeinflussen das Ethical AI Rating?")
-          echo "$OUT2"
-          echo "$OUT2" | grep -q "If all of these points are met, we give a Green label." || exit 1
-          echo ::endgroup::
+          failed=0
+          for entry in "${checks[@]}"; do
+            IFS='|' read -r label prompt pattern flags <<< "$entry"
+            echo "::group::$label"
+            OUT=$(./occ context_chat:prompt admin "$prompt")
+            echo "$OUT"
+            # shellcheck disable=SC2086
+            if ! echo "$OUT" | grep -q $flags "$pattern"; then
+              echo "FAIL: expected to find '$pattern' in output"
+              failed=1
+            fi
+            echo "::endgroup::"
+          done
+
+          [ $failed -eq 0 ] || exit 1
 
       - name: Check python memory usage
         run: |
@@ -350,6 +381,11 @@ jobs:
         if: always()
         run: |
           tail -v -n +1 worker?_logs || echo "No worker logs"
+
+      - name: Show ccb_test_providers app logs
+        if: always()
+        run: |
+          cat context_chat_backend/ocr_stt_exapp_logs || echo "No ccb_test_providers app logs"
 
       - name: Show main app logs
         if: always()

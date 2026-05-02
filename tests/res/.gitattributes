@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 Nextcloud GmbH and Nextcloud contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Binary test files - prevent line-ending conversion and diff noise
+*.aac   binary
+*.bmp   binary
+*.flac  binary
+*.gif   binary
+*.heic  binary
+*.jpg   binary
+*.m4a   binary
+*.mp3   binary
+*.png   binary
+*.tiff  binary
+*.wav   binary
+*.webp  binary
