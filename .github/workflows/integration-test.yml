@@ -206,6 +206,15 @@ jobs:
           sleep 60 # Wait for the backend to get ready
 
       - name: Setup the fake OCR and STT provider
+        env:
+          APP_ID: ccb_test_providers
+          APP_DISPLAY_NAME: CCB Test Providers
+          APP_VERSION: '1.0.0'
+          APP_SECRET: '12345'
+          APP_HOST: '0.0.0.0'
+          APP_PORT: '10020'
+          APP_PERSISTENT_STORAGE: persistent_storage
+          NEXTCLOUD_URL: http://localhost:8080
         run: |
           cd context_chat_backend/tests/ex_app
           python3 -u lib/main.py >& ../../ocr_stt_exapp_logs &
