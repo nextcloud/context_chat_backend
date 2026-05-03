@@ -160,23 +160,29 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           repository: nextcloud/documentation
-          path: data/admin/files/documentation
+          path: documentation
           persist-credentials: false
 
       - name: Prepare docs
         run: |
+          # images and audio test files
           cp -r context_chat_backend/tests/res data/admin/files/
-          cd data/admin/files
-          mv documentation/admin_manual .
-          cp -R documentation/developer_manual .
-          cd developer_manual
-          find . -type f -name "*.rst" -exec bash -c 'mv "$0" "${0%.rst}.md"' {} \;
-          cd ..
-          cp -R documentation/developer_manual ./developer_manual2
-          cd developer_manual2
-          find . -type f -name "*.rst" -exec bash -c 'mv "$0" "${0%.rst}.txt"' {} \;
-          cd ..
-          rm -rf documentation
+          # admin_manual - text files only, rename .rst -> .md
+          find documentation/admin_manual -type f \( -name '*.rst' -o -name '*.md' -o -name '*.txt' \) \
+            | while IFS= read -r src; do
+                rel="${src#documentation/admin_manual/}"
+                dest="data/admin/files/admin_manual/${rel%.rst}.md"
+                mkdir -p "$(dirname "$dest")"
+                cp "$src" "$dest"
+              done
+          # developer_manual - text files only, rename .rst -> .txt
+          find documentation/developer_manual -type f \( -name '*.rst' -o -name '*.md' -o -name '*.txt' \) \
+            | while IFS= read -r src; do
+                rel="${src#documentation/developer_manual/}"
+                dest="data/admin/files/developer_manual/${rel%.rst}.txt"
+                mkdir -p "$(dirname "$dest")"
+                cp "$src" "$dest"
+              done
 
       - name: Run files scan
         run: |
