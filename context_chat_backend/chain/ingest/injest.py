@@ -14,7 +14,7 @@ from langchain.schema import Document
 from nc_py_api import AsyncNextcloudApp
 
 from ...dyn_loader import VectorDBLoader
-from ...mimetype_list import AUDIO_MIMETYPES, IMAGE_MIMETYPES, SUPPORTED_MIMETYPES
+from ...mimetype_list import AUDIO_MIMETYPES, IMAGE_MIMETYPES, TEXT_MIMETYPES
 from ...types import FILES_PROVIDER_ID, IndexingError, IndexingException, ReceivedFileItem, SourceItem, TConfig
 from ...vectordb.base import BaseVectorDB
 from ...vectordb.types import DbException, SafeDbException, UpdateAccessOp
@@ -40,7 +40,7 @@ def _do_extended_mimetype_validation(
 	'''
 
 	extended_mimetypes = (
-		*SUPPORTED_MIMETYPES,
+		*TEXT_MIMETYPES,
 		*(([], IMAGE_MIMETYPES)[ocr_available]),
 		*(([], AUDIO_MIMETYPES)[stt_available]),
 	)

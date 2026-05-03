@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-SUPPORTED_MIMETYPES = (
+TEXT_MIMETYPES = (
 	'text/plain',
 	'text/markdown',
 	'application/json',
@@ -52,3 +52,5 @@ AUDIO_MIMETYPES = (
 	'audio/webm',
 	'audio/x-scpls',
 )
+
+SUPPORTED_MIMETYPES = TEXT_MIMETYPES + IMAGE_MIMETYPES + AUDIO_MIMETYPES
