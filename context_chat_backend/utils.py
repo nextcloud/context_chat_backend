@@ -217,10 +217,13 @@ def exec_in_proc(group=None, target=None, name=None, args=(), kwargs=None, *, da
 				stdobj = std_pconn.recv()
 				# no need to update got_std here
 	if stdobj.get('stdout') or stdobj.get('stderr'):
-		_logger.info('std info for %s', target_name, extra={
-			'stdout': stdobj.get('stdout', ''),
-			'stderr': stdobj.get('stderr', ''),
-		})
+		# log as WARNING if stderr is present
+		_logger.log((logging.INFO, logging.WARNING)[bool(stdobj.get('stderr'))],
+			'std info for %s\nstdout: %s\nstderr: %s\n--------------------------',
+			target_name,
+			stdobj.get('stdout', '(none)'),
+			stdobj.get('stderr', '(none)'),
+		)
 
 	if not got_result:
 		with suppress(EOFError, OSError, BrokenPipeError):

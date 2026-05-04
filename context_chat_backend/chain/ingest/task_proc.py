@@ -7,11 +7,11 @@ import asyncio
 import json
 import logging
 import os
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 import niquests
 from nc_py_api import AsyncNextcloudApp, NextcloudException
-from pydantic import AfterValidator, BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError
 
 from ...types import TaskProcClientException, TaskProcException, TaskProcFatalException
 from ...utils import timed_cache_async
@@ -86,7 +86,7 @@ class UploadFileError(BaseModel):
 
 
 class UploadFileResponse(BaseModel):
-	fileIds: Annotated[dict[str, int], AfterValidator(lambda xs: all(x > 0 for x in xs))]
+	fileIds: dict[str, int]
 	errors: dict[str, UploadFileError]
 
 
@@ -313,6 +313,7 @@ async def upload_temp_files(files: dict[str, str | bytes | bytearray], _tries: i
 	Raises
 	------
 	niquests.RequestException
+	nc_py_api._exceptions.NextcloudException
 	pydantic.ValidationError
 	RetryableException: the upload or the pdf file as a whole should be retried later
 	'''
@@ -320,7 +321,7 @@ async def upload_temp_files(files: dict[str, str | bytes | bytearray], _tries: i
 	try:
 		nc = AsyncNextcloudApp()
 		res = await nc.ocs(
-			'GET',
+			'POST',
 			'/ocs/v2.php/apps/context_chat/upload_files',
 			files=files,
 		)
@@ -336,6 +337,10 @@ async def upload_temp_files(files: dict[str, str | bytes | bytearray], _tries: i
 			raise
 		if e.response.status_code // 100 == 4 and _tries > 0:
 			return await upload_temp_files(files, _tries - 1)
+		raise
+	except NextcloudException as e:
+		reason = e.response.text if e.response else e.reason
+		LOGGER.warning('NextcloudException occurred during temp image file upload from PDF: %s', reason)
 		raise
 
 

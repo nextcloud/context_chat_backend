@@ -35,9 +35,11 @@ from .task_proc import (
 logger = logging.getLogger('ccb.doc_loader')
 PDF_IMAGES_BATCH_SIZE = 25
 PDF_IMAGES_MAX_SIZE = 100 * 1024 * 1024  # 100 MiB in bytes
-# todo: cache it across processes?
-IS_OCR_AVAILABLE = is_task_type_available(OCR_TASK_TYPE)
-IS_STT_AVAILABLE = is_task_type_available(SPEECH_TO_TEXT_TASK_TYPE)
+# Use callables so the check is deferred to worker process execution time,
+# avoiding a stale value inherited from the forkserver preload phase.
+# is_task_type_available is cached for 15 minutes so repeated calls are cheap.
+is_ocr_available: Callable[[], bool] = lambda: asyncio.run(is_task_type_available(OCR_TASK_TYPE))
+is_stt_available: Callable[[], bool] = lambda: asyncio.run(is_task_type_available(SPEECH_TO_TEXT_TASK_TYPE))
 
 def _temp_file_wrapper(file: BytesIO, loader: Callable, sep: str = '\n') -> str:
 	raw_bytes = file.read()
@@ -54,7 +56,9 @@ def _temp_file_wrapper(file: BytesIO, loader: Callable, sep: str = '\n') -> str:
 # -- LOADERS -- #
 
 def _load_pdf(file: BytesIO, source: SourceItem) -> str:
-	global IS_OCR_AVAILABLE
+	# ocr_enabled = is_ocr_available()
+	# todo: skip processsing images inside PDFs for now
+	ocr_enabled = False
 	pdf_reader = PdfReader(file)
 	output = []
 
@@ -62,7 +66,7 @@ def _load_pdf(file: BytesIO, source: SourceItem) -> str:
 		text = page.extract_text().strip()
 		page_ocr_outputs = []
 
-		if IS_OCR_AVAILABLE:
+		if ocr_enabled:
 			for i in range(0, len(page.images), PDF_IMAGES_BATCH_SIZE):
 				image_files = {}
 				for img in page.images[i:i+PDF_IMAGES_BATCH_SIZE]:
@@ -85,16 +89,15 @@ def _load_pdf(file: BytesIO, source: SourceItem) -> str:
 					continue
 
 				try:
-					ocr_tp_outputs = asyncio.run(do_ocr(source.userIds[0], file_ids_map.values()))  # pyright: ignore[reportArgumentType]
+					ocr_tp_outputs = asyncio.run(do_ocr(source.userIds[0], list(file_ids_map.values())))  # pyright: ignore[reportArgumentType]
 					asyncio.run(delete_temp_files(file_ids_map.values()))  # pyright: ignore[reportArgumentType]
 				except TaskProcFatalException as e:
-					# task type is not present anymore, flip the task type indicator manually
-					# for this complete batched injest process
+					# task type is not present anymore, stop OCR for this document
 					logger.warning(
 						'The OCR provider disappeared mid-operation, disabling OCR for this batch of'
 						f' documents including {source.reference}: {e}'
 					)
-					IS_OCR_AVAILABLE = False
+					ocr_enabled = False
 					break
 				except TaskProcException as e:
 					logger.warning(f'OCR for embedded images in PDF {source.reference} failed: {e}', exc_info=e)
@@ -192,7 +195,6 @@ def decode_source(source: SourceItem) -> str:
 	IndexingException
 	'''
 
-	global IS_OCR_AVAILABLE
 	io_obj: BytesIO | None = None
 	try:
 		# .pot files are powerpoint templates but also plain text files,
@@ -202,25 +204,27 @@ def decode_source(source: SourceItem) -> str:
 
 		try:
 			if source.type.startswith('image/'):
-				if IS_OCR_AVAILABLE:
+				if is_ocr_available():
 					return asyncio.run(do_ocr(source.userIds[0], [source.file_id]))[0]
 				raise IndexingException(
-					f'Image file ({source.reference}) cannot be processed since OCR task type is not present'
+					f'Image file ({source.reference}) cannot be processed since OCR task type is not present',
+					retryable=True,
 				)
 			if source.type.startswith('audio/'):
-				if IS_STT_AVAILABLE:
+				if is_stt_available():
 					return asyncio.run(do_transcription(source.userIds[0], source.file_id))
 				raise IndexingException(
-					f'Audio file ({source.reference}) cannot be processed since Speech-to-Text task type is not present'
+					f'Audio file ({source.reference}) cannot be processed since Speech-to-Text task type is not present',  # noqa: E501
+					retryable=True,
 				)
 		except TaskProcFatalException as e:
 			logger.warning(
 				'The OCR provider disappeared mid-operation, disabling OCR for this batch of'
 				f' documents including {source.reference}: {e}'
 			)
-			IS_OCR_AVAILABLE = False
 			raise IndexingException(  # noqa: B904
-				f'Image file ({source.reference}) cannot be processed since OCR task type is not present'
+				f'Image file ({source.reference}) cannot be processed since OCR task type is not present',
+				retryable=True,
 			)
 		except TaskProcClientException as e:
 			logger.warning(f'OCR task failed for source file ({source.reference}): {e}')
@@ -242,7 +246,7 @@ def decode_source(source: SourceItem) -> str:
 			io_obj = source.content
 
 		if _loader_map.get(source.type):
-			result = _loader_map[source.type](io_obj)
+			result = _loader_map[source.type](io_obj, source)
 			return result.encode('utf-8', 'ignore').decode('utf-8', 'ignore').strip()
 
 		return io_obj.read().decode('utf-8', 'ignore').strip()

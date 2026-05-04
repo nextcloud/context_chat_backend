@@ -183,6 +183,14 @@ jobs:
                 mkdir -p "$(dirname "$dest")"
                 cp "$src" "$dest"
               done
+          # user_manual - text files only, no rename
+          find documentation/user_manual -type f \( -name '*.rst' -o -name '*.md' -o -name '*.txt' \) \
+            | while IFS= read -r src; do
+                rel="${src#documentation/user_manual/}"
+                dest="data/admin/files/user_manual/${rel}"
+                mkdir -p "$(dirname "$dest")"
+                cp "$src" "$dest"
+              done
 
       - name: Run files scan
         run: |
