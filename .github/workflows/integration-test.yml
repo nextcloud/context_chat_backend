@@ -354,15 +354,21 @@ jobs:
           failed=0
           for entry in "${checks[@]}"; do
             IFS='|' read -r label prompt pattern flags <<< "$entry"
-            echo "::group::$label"
             OUT=$(./occ context_chat:prompt admin "$prompt")
-            echo "$OUT"
             # shellcheck disable=SC2086
-            if ! echo "$OUT" | grep -q $flags "$pattern"; then
-              echo "FAIL: expected to find '$pattern' in output"
+            if echo "$OUT" | grep -q $flags "$pattern"; then
+              status="PASS"
+            else
+              status="FAIL"
               failed=1
             fi
+            echo "::group::[$status] $label"
+            echo "$OUT"
+            if [ "$status" = "FAIL" ]; then
+              echo "FAIL: expected to find '$pattern' in output"
+            fi
             echo "::endgroup::"
+            sleep 10
           done
 
           [ $failed -eq 0 ] || exit 1
