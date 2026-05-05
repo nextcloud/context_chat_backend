@@ -346,22 +346,22 @@ jobs:
           ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' > worker1_logs 2>&1 &
           ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' > worker2_logs 2>&1 &
 
-          # Each entry: "Label|prompt text|grep pattern|grep flags"
+          # Each entry: "Label;prompt text;grep pattern;grep flags"
           checks=(
-            "Text - Ethical AI Rating (EN)|Which factors are taken into account for the Ethical AI Rating?|If all of these points are met, we give a Green label.|"
-            "Text - Ethical AI Rating (DE)|Welche Faktoren beeinflussen das Ethical AI Rating?|If all of these points are met, we give a Green label.|"
-            "Text - occ maintenance mode|How do I enable maintenance mode in Nextcloud using the command line?|maintenance:mode --on|-iE"
-            "Text - background job configuration|What are the available background job execution methods in Nextcloud?|cron|webcron|ajax|-iE"
-            "STT - Amazon oxygen fraction|What fraction of the world's oxygen supply does the Amazon rainforest produce?|twenty percent|-i"
-            "STT - quantum computing|How does quantum computing perform calculations?|superposition|entanglement|-iE"
-            "STT - Jungle Book|Who raised Mowgli in the jungle and which villain does he face?|wolves|Shere Khan|-iE"
-            "OCR - invoice total|What is the total amount on invoice number 10042?|299|-E"
-            "OCR - train to Amsterdam|What time does the express train to Amsterdam depart from Platform 3?|08:14|"
+            "Text - Ethical AI Rating (EN);Which factors are taken into account for the Ethical AI Rating?;If all of these points are met, we give a Green label.;"
+            "Text - Ethical AI Rating (DE);Welche Faktoren beeinflussen das Ethical AI Rating?;If all of these points are met, we give a Green label.;"
+            "Text - occ maintenance mode;How do I enable maintenance mode in Nextcloud using the command line?;maintenance:mode --on;-iE"
+            "Text - background job configuration;What are the available background job execution methods in Nextcloud?;cron|webcron|ajax;-iE"
+            "STT - Amazon oxygen fraction;What fraction of the world's oxygen supply does the Amazon rainforest produce?;twenty percent;-i"
+            "STT - quantum computing;How does quantum computing perform calculations?;superposition|entanglement;-iE"
+            "STT - Jungle Book;Who raised Mowgli in the jungle and which villain does he face?;wolves|Shere Khan;-iE"
+            "OCR - invoice total;What is the total amount on invoice number 10042?;299;-E"
+            "OCR - train to Amsterdam;What time does the express train to Amsterdam depart from Platform 3?;08:14;"
           )
 
           failed=0
           for entry in "${checks[@]}"; do
-            IFS='|' read -r label prompt pattern flags <<< "$entry"
+            IFS=';' read -r label prompt pattern flags <<< "$entry"
             OUT=$(./occ context_chat:prompt admin "$prompt")
             # shellcheck disable=SC2086
             if echo "$OUT" | grep -q $flags "$pattern"; then
