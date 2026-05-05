@@ -272,7 +272,7 @@ jobs:
         run: |
           success=0
           echo "::group::Checking stats periodically for 15 minutes to allow the backend to index the files"
-          for i in {1..90}; do
+          for i in {1..30}; do
             echo "Checking stats, attempt $i..."
 
             stats_err=$(mktemp)
@@ -290,7 +290,7 @@ jobs:
             # Check for critical errors in output
             if [ $stats_exit -ne 0 ] || echo "$stats" | grep -q "Error during request"; then
               echo "Backend connection error detected (exit=$stats_exit), retrying..."
-              sleep 10
+              sleep 30
               continue
             fi
 
@@ -299,9 +299,11 @@ jobs:
 
             # Extract indexed documents count (files__default)
             indexed_count=$(echo "$stats" | jq '.vectordb_document_counts.files__default' || echo "")
+            queued_count=$(echo "$stats" | jq '.queued_documents_counts.files__default // empty' || echo "")
 
             echo "Total eligible files: $total_eligible_files"
             echo "Indexed documents (files__default): $indexed_count"
+            echo "Queued documents (files__default): $queued_count"
 
             diff=$((total_eligible_files - indexed_count))
             threshold=$((total_eligible_files * 3 / 100))
@@ -316,6 +318,12 @@ jobs:
               echo "Outside 3% tolerance: diff=$diff (${progress}%), threshold=$threshold"
             fi
 
+            # Exit early if no queued documents remain since nothing more will be indexed
+            if [ "$queued_count" = "0" ]; then
+              echo "No queued documents remaining but indexing outside tolerance (diff=$diff, threshold=$threshold). Possible locked/failed documents."
+              break
+            fi
+
             # Check if backend is still alive
             ccb_alive=$(ps -p $(cat pid.txt) -o cmd= | grep -c "main.py" || echo "0")
             if [ "$ccb_alive" -eq 0 ]; then
@@ -323,7 +331,7 @@ jobs:
               exit 1
             fi
 
-            sleep 10
+            sleep 30
           done
 
           echo "::endgroup::"
