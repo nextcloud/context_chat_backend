@@ -21,7 +21,7 @@ on:
 
 permissions:
   contents: read
-  packages: write
+  packages: read
 
 concurrency:
   group: docker-build-publish-${{ github.head_ref || github.run_id }}
@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   build_and_publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     strategy:
       # do not stop on another job's failure
@@ -42,6 +42,19 @@ jobs:
     # if: ${{ github.repository_owner == 'nextcloud-releases' }}
 
     steps:
+      - name: Maximize build space
+        if: matrix.targets != 'runtime-cpu'
+        uses: easimon/maximize-build-space@fc881a613ad2a34aca9c9624518214ebc21dfc0c # v10
+        with:
+          root-reserve-mb: 4096
+          swap-size-mb: 1024
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+          build-mount-path: /docker-data
+
       - name: Checkout app
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
@@ -57,6 +70,14 @@ jobs:
         with:
           filename: appinfo/info.xml
           expression: "/info/version/text()"
+
+      - name: Configure Docker data root
+        if: matrix.targets != 'runtime-cpu'
+        run: |
+          sudo systemctl stop docker
+          sudo mkdir -p /etc/docker
+          echo '{"data-root": "/docker-data"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl start docker
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
