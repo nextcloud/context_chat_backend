@@ -35,11 +35,12 @@ RUN apt-get install -y --no-install-recommends \
         libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN /usr/bin/python3.11 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
 ENV CMAKE_ARGS="-DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON"
 
-RUN python3.11 -m pip wheel \
+RUN /opt/venv/bin/python -m pip wheel \
     --no-cache-dir \
     --no-binary llama-cpp-python \
     --wheel-dir=/wheels \
@@ -71,7 +72,8 @@ ENV CC=/usr/bin/gcc-12
 ENV CXX=/usr/bin/g++-12
 ENV CUDAHOSTCXX=/usr/bin/g++-12
 
-RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN /usr/bin/python3.11 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Make the CUDA compat stub visible to the linker so cuMem* symbols resolve
 ENV LD_LIBRARY_PATH="/usr/local/cuda/compat:${LD_LIBRARY_PATH}"
@@ -83,7 +85,7 @@ ENV CMAKE_ARGS="-DGGML_CUDA=ON -DGGML_CUDA_FORCE_MMQ=ON -DGGML_NATIVE=OFF -DLLAM
     -DCMAKE_CUDA_FLAGS=--allow-unsupported-compiler \
     -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-12"
 
-RUN python3.11 -m pip wheel \
+RUN /opt/venv/bin/python -m pip wheel \
     --no-cache-dir \
     --no-binary llama-cpp-python \
     --wheel-dir=/wheels \
@@ -110,11 +112,12 @@ RUN apt-get update \
         libvulkan-dev glslc spirv-headers \
     && rm -rf /var/lib/apt/lists/*
 
-RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN /usr/bin/python3.11 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
 ENV CMAKE_ARGS="-DGGML_VULKAN=ON -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON"
 
-RUN python3.11 -m pip wheel \
+RUN /opt/venv/bin/python -m pip wheel \
     --no-cache-dir \
     --no-binary llama-cpp-python \
     --wheel-dir=/wheels \
@@ -152,16 +155,17 @@ ENV DEBIAN_FRONTEND=dialog
 
 # Install llama_cpp_python from the CPU builder wheel
 COPY --from=llama-builder-cpu /wheels /wheels
-RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel \
-    && python3 -m pip install --no-cache-dir --no-index --find-links=/wheels llama-cpp-python \
-    && python3 -m pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+RUN /usr/bin/python3.11 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --no-index --find-links=/wheels llama-cpp-python \
+    && /opt/venv/bin/python -m pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
     && rm -rf /wheels \
-    && pip cache purge
+    && /opt/venv/bin/python -m pip cache purge
 
 COPY requirements.txt .
 RUN sed -i '/^llama_cpp_python/d' requirements.txt \
-    && python3 -m pip install --no-cache-dir -r requirements.txt \
-    && python3 -m pip cache purge
+    && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt \
+    && /opt/venv/bin/python -m pip cache purge
 
 COPY context_chat_backend context_chat_backend
 COPY main.py .
@@ -208,15 +212,16 @@ ENV DEBIAN_FRONTEND=dialog
 
 # Install llama_cpp_python from the CUDA builder wheel
 COPY --from=llama-builder-cuda /wheels /wheels
-RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel \
-    && python3 -m pip install --no-cache-dir --no-index --find-links=/wheels llama-cpp-python \
+RUN /usr/bin/python3.11 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --no-index --find-links=/wheels llama-cpp-python \
     && rm -rf /wheels \
-    && pip cache purge
+    && /opt/venv/bin/python -m pip cache purge
 
 COPY requirements.txt .
 RUN sed -i '/^llama_cpp_python/d' requirements.txt \
-    && python3 -m pip install --no-cache-dir -r requirements.txt \
-    && python3 -m pip cache purge
+    && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt \
+    && /opt/venv/bin/python -m pip cache purge
 
 COPY context_chat_backend context_chat_backend
 COPY main.py .
@@ -270,15 +275,16 @@ ENV DEBIAN_FRONTEND=dialog
 
 # Install llama_cpp_python from the Vulkan builder wheel
 COPY --from=llama-builder-vulkan /wheels /wheels
-RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel \
-    && python3 -m pip install --no-cache-dir --no-index --find-links=/wheels llama-cpp-python \
+RUN /usr/bin/python3.11 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --no-index --find-links=/wheels llama-cpp-python \
     && rm -rf /wheels \
-    && pip cache purge
+    && /opt/venv/bin/python -m pip cache purge
 
 COPY requirements.txt .
 RUN sed -i '/^llama_cpp_python/d' requirements.txt \
-    && python3 -m pip install --no-cache-dir -r requirements.txt \
-    && python3 -m pip cache purge
+    && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt \
+    && /opt/venv/bin/python -m pip cache purge
 
 COPY context_chat_backend context_chat_backend
 COPY main.py .
