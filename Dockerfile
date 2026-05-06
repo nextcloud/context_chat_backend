@@ -28,16 +28,20 @@ ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /build
 ADD dockerfile_scripts/install_py11.sh dockerfile_scripts/install_py11.sh
 RUN ./dockerfile_scripts/install_py11.sh
-# install_py11.sh leaves apt lists in place – install build tools in one layer
+# gcc-14 is required on arm64: GCC 13 (Ubuntu 24.04 default) does not support
+# the +sme modifier in -march flags that GGML_CPU_ALL_VARIANTS triggers for
+# the armv9.2 SME backend variant.
 RUN apt-get install -y --no-install-recommends \
         python3.11-dev \
         cmake build-essential ninja-build git \
+        gcc-14 g++-14 \
         libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN /usr/bin/python3.11 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
+ENV CC=gcc-14 CXX=g++-14
 ENV CMAKE_ARGS="-DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON"
 
 RUN /opt/venv/bin/python -m pip wheel \
@@ -50,8 +54,8 @@ RUN /opt/venv/bin/python -m pip wheel \
 # CUDA (NVIDIA) builder
 # Builds llama_cpp_python with CUDA support.
 # CUDA 12.8 supports up to sm_100 (Blackwell / B100, B200).
-# Ubuntu 24.04 ships gcc-13 which CUDA 12.6+ accepts natively,
-# so no compiler pin or --allow-unsupported-compiler is needed.
+# gcc-14 is used for consistency with the other build stages and
+# because CUDA 12.6+ accepts gcc-14 natively on Ubuntu 24.04.
 # ============================================================
 FROM ${CUDA_DEVEL_IMAGE} AS llama-builder-cuda
 ARG LLAMA_CPP_PYTHON_VERSION
@@ -63,6 +67,7 @@ RUN ./dockerfile_scripts/install_py11.sh
 RUN apt-get install -y --no-install-recommends \
         python3.11-dev \
         cmake build-essential ninja-build git \
+        gcc-14 g++-14 \
         libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -71,6 +76,7 @@ RUN /usr/bin/python3.11 -m venv /opt/venv \
 
 # Make the CUDA compat stub visible to the linker so cuMem* symbols resolve
 ENV LD_LIBRARY_PATH="/usr/local/cuda/compat:${LD_LIBRARY_PATH}"
+ENV CC=gcc-14 CXX=g++-14
 
 # Real cubins for all shipping GPU generations through Blackwell (sm_100),
 # plus one forward-compatible PTX target to keep wheel size manageable.
@@ -100,6 +106,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         python3.11-dev \
         cmake build-essential ninja-build git \
+        gcc-14 g++-14 \
         libgomp1 \
         libvulkan-dev glslc spirv-headers \
     && rm -rf /var/lib/apt/lists/*
@@ -107,6 +114,7 @@ RUN apt-get update \
 RUN /usr/bin/python3.11 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
+ENV CC=gcc-14 CXX=g++-14
 ENV CMAKE_ARGS="-DGGML_VULKAN=ON -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON"
 
 RUN /opt/venv/bin/python -m pip wheel \
