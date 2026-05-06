@@ -70,6 +70,9 @@ ENV CUDAHOSTCXX=/usr/bin/g++-12
 
 RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
+# Make the CUDA compat stub visible to the linker so cuMem* symbols resolve
+RUN ln -sf /usr/local/cuda/compat/libcuda.so.1 /lib/x86_64-linux-gnu/libcuda.so.1
+
 # Architecture list aligned with the official llama-cpp-python CUDA CI workflow:
 #   https://github.com/abetlen/llama-cpp-python/blob/main/.github/workflows/build-wheels-cuda.yaml
 ENV CMAKE_ARGS="-DGGML_CUDA=ON -DGGML_CUDA_FORCE_MMQ=ON -DGGML_NATIVE=OFF \
