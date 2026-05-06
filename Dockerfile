@@ -1,10 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-ARG BASE_IMAGE=ubuntu:22.04
-ARG CUDA_DEVEL_IMAGE=nvidia/cuda:12.4.1-devel-ubuntu22.04
-ARG CUDA_RUNTIME_IMAGE=nvidia/cuda:12.4.1-runtime-ubuntu22.04
-ARG LLAMA_CPP_PYTHON_VERSION=0.3.20
+ARG UBUNTU_VERSION=24.04
+ARG CUDA_VERSION=12.8.2
+ARG LLAMA_CPP_PYTHON_VERSION=0.3.22
+
+ARG BASE_IMAGE=ubuntu:${UBUNTU_VERSION}
+ARG CUDA_DEVEL_IMAGE=nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION}
+ARG CUDA_RUNTIME_IMAGE=nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION}
 
 # ============================================================
 # CPU / ARM builder
