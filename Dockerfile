@@ -13,7 +13,7 @@ ARG CUDA_RUNTIME_IMAGE=nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSIO
 # CPU / ARM builder
 # Builds llama_cpp_python for any x86_64 (AVX+, Sandy Bridge 2011+)
 # and for arm64 (NEON always available).
-# ubuntu:22.04 is a multi-arch image so this stage covers both.
+# The Ubuntu base image is multi-arch so this stage covers both.
 #
 # GGML_NATIVE=OFF: no -march=native; the host build machine's SIMD
 # capabilities are not baked in. AVX/AVX2/FMA/F16C default to ON in
@@ -49,8 +49,9 @@ RUN /opt/venv/bin/python -m pip wheel \
 # ============================================================
 # CUDA (NVIDIA) builder
 # Builds llama_cpp_python with CUDA support.
-# sm_90 is the maximum compute capability supported by CUDA 12.4
-# (Hopper / H100).  Blackwell sm_100 requires CUDA 12.8+.
+# CUDA 12.8 supports up to sm_100 (Blackwell / B100, B200).
+# Ubuntu 24.04 ships gcc-13 which CUDA 12.6+ accepts natively,
+# so no compiler pin or --allow-unsupported-compiler is needed.
 # ============================================================
 FROM ${CUDA_DEVEL_IMAGE} AS llama-builder-cuda
 ARG LLAMA_CPP_PYTHON_VERSION
@@ -59,18 +60,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /build
 ADD dockerfile_scripts/install_py11.sh dockerfile_scripts/install_py11.sh
 RUN ./dockerfile_scripts/install_py11.sh
-# gcc-12 is required: Ubuntu 22.04 ships gcc-11 by default which CUDA 12.4
-# treats as "unsupported"; we pin gcc-12 to match the official CI workflow.
 RUN apt-get install -y --no-install-recommends \
         python3.11-dev \
         cmake build-essential ninja-build git \
-        gcc-12 g++-12 \
         libgomp1 \
     && rm -rf /var/lib/apt/lists/*
-
-ENV CC=/usr/bin/gcc-12
-ENV CXX=/usr/bin/g++-12
-ENV CUDAHOSTCXX=/usr/bin/g++-12
 
 RUN /usr/bin/python3.11 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel
@@ -78,12 +72,10 @@ RUN /usr/bin/python3.11 -m venv /opt/venv \
 # Make the CUDA compat stub visible to the linker so cuMem* symbols resolve
 ENV LD_LIBRARY_PATH="/usr/local/cuda/compat:${LD_LIBRARY_PATH}"
 
-# Architecture list aligned with the official llama-cpp-python CUDA CI workflow:
-#   https://github.com/abetlen/llama-cpp-python/blob/main/.github/workflows/build-wheels-cuda.yaml
+# Real cubins for all shipping GPU generations through Blackwell (sm_100),
+# plus one forward-compatible PTX target to keep wheel size manageable.
 ENV CMAKE_ARGS="-DGGML_CUDA=ON -DGGML_CUDA_FORCE_MMQ=ON -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON \
-    -DCMAKE_CUDA_ARCHITECTURES=70-real;75-real;80-real;86-real;89-real;90-real;90-virtual \
-    -DCMAKE_CUDA_FLAGS=--allow-unsupported-compiler \
-    -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-12"
+    -DCMAKE_CUDA_ARCHITECTURES=70-real;75-real;80-real;86-real;89-real;90-real;100-real;100-virtual"
 
 RUN /opt/venv/bin/python -m pip wheel \
     --no-cache-dir \
