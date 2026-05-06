@@ -34,7 +34,7 @@ RUN apt-get install -y --no-install-recommends \
 
 RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
-ENV CMAKE_ARGS="-DGGML_NATIVE=OFF"
+ENV CMAKE_ARGS="-DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON"
 
 RUN python3.11 -m pip wheel \
     --no-cache-dir \
@@ -75,7 +75,7 @@ RUN ln -sf /usr/local/cuda/compat/libcuda.so.1 /lib/x86_64-linux-gnu/libcuda.so.
 
 # Architecture list aligned with the official llama-cpp-python CUDA CI workflow:
 #   https://github.com/abetlen/llama-cpp-python/blob/main/.github/workflows/build-wheels-cuda.yaml
-ENV CMAKE_ARGS="-DGGML_CUDA=ON -DGGML_CUDA_FORCE_MMQ=ON -DGGML_NATIVE=OFF \
+ENV CMAKE_ARGS="-DGGML_CUDA=ON -DGGML_CUDA_FORCE_MMQ=ON -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON \
     -DCMAKE_CUDA_ARCHITECTURES=70-real;75-real;80-real;86-real;89-real;90-real;90-virtual \
     -DCMAKE_CUDA_FLAGS=--allow-unsupported-compiler \
     -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-12"
@@ -109,7 +109,7 @@ RUN apt-get update \
 
 RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
-ENV CMAKE_ARGS="-DGGML_VULKAN=ON -DGGML_NATIVE=OFF"
+ENV CMAKE_ARGS="-DGGML_VULKAN=ON -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON"
 
 RUN python3.11 -m pip wheel \
     --no-cache-dir \
