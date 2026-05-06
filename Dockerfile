@@ -13,9 +13,9 @@ ARG LLAMA_CPP_PYTHON_VERSION=0.3.20
 # ubuntu:22.04 is a multi-arch image so this stage covers both.
 #
 # GGML_NATIVE=OFF: no -march=native; the host build machine's SIMD
-# capabilities are not baked in.  AVX/AVX2/FMA/F16C default to ON in
+# capabilities are not baked in. AVX/AVX2/FMA/F16C default to ON in
 # llama.cpp cmake and are used when the CPU supports them at runtime
-# (the ggml_cpu_has_*() guards).  On arm64 those x86 flags are never
+# (the ggml_cpu_has_*() guards). On arm64 those x86 flags are never
 # emitted by cmake, so NEON/SVE detection remains intact.
 # ============================================================
 FROM ${BASE_IMAGE} AS llama-builder-cpu
@@ -71,7 +71,7 @@ ENV CUDAHOSTCXX=/usr/bin/g++-12
 RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Make the CUDA compat stub visible to the linker so cuMem* symbols resolve
-RUN ln -sf /usr/local/cuda/compat/libcuda.so.1 /lib/x86_64-linux-gnu/libcuda.so.1
+ENV LD_LIBRARY_PATH="/usr/local/cuda/compat:${LD_LIBRARY_PATH}"
 
 # Architecture list aligned with the official llama-cpp-python CUDA CI workflow:
 #   https://github.com/abetlen/llama-cpp-python/blob/main/.github/workflows/build-wheels-cuda.yaml
