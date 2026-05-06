@@ -98,12 +98,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /build
 ADD dockerfile_scripts/install_py11.sh dockerfile_scripts/install_py11.sh
 RUN ./dockerfile_scripts/install_py11.sh
-# Vulkan headers + glslang (shader compiler) are build-time only
-RUN apt-get install -y --no-install-recommends \
+# Vulkan headers + glslc (shader compiler) are build-time only
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
         python3.11-dev \
         cmake build-essential ninja-build git \
         libgomp1 \
-        libvulkan-dev glslang-tools \
+        libvulkan-dev glslc spirv-headers \
     && rm -rf /var/lib/apt/lists/*
 
 RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
