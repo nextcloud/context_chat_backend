@@ -1,7 +1,7 @@
-# SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
+# SPDX-FileCopyrightText: 2026 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-ARG CPU_IMAGE=ubuntu:22.04
+ARG BASE_IMAGE=ubuntu:22.04
 ARG CUDA_DEVEL_IMAGE=nvidia/cuda:12.4.1-devel-ubuntu22.04
 ARG CUDA_RUNTIME_IMAGE=nvidia/cuda:12.4.1-runtime-ubuntu22.04
 ARG LLAMA_CPP_PYTHON_VERSION=0.3.20
@@ -18,7 +18,7 @@ ARG LLAMA_CPP_PYTHON_VERSION=0.3.20
 # (the ggml_cpu_has_*() guards).  On arm64 those x86 flags are never
 # emitted by cmake, so NEON/SVE detection remains intact.
 # ============================================================
-FROM ubuntu:22.04 AS llama-builder-cpu
+FROM ${BASE_IMAGE} AS llama-builder-cpu
 ARG LLAMA_CPP_PYTHON_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -91,7 +91,7 @@ RUN python3.11 -m pip wheel \
 # Builds llama_cpp_python with Vulkan compute backend.
 # Works on RDNA1/2/3, GCN, Intel Arc, and more.
 # ============================================================
-FROM ubuntu:22.04 AS llama-builder-vulkan
+FROM ${BASE_IMAGE} AS llama-builder-vulkan
 ARG LLAMA_CPP_PYTHON_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -119,7 +119,7 @@ RUN python3.11 -m pip wheel \
 # ============================================================
 # CPU / ARM runtime
 # ============================================================
-FROM ubuntu:22.04 AS runtime-cpu
+FROM ${BASE_IMAGE} AS runtime-cpu
 
 ARG CCB_DB_NAME=ccb
 ARG CCB_DB_USER=ccbuser
@@ -231,7 +231,7 @@ ENTRYPOINT ["supervisord", "-c", "/etc/supervisor/supervisord.conf"]
 # The RADV Mesa driver (mesa-vulkan-drivers) is included and covers
 # GCN, RDNA1/2/3 and newer AMD GPUs out of the box.
 # ============================================================
-FROM ubuntu:22.04 AS runtime-vulkan
+FROM ${BASE_IMAGE} AS runtime-vulkan
 
 ARG CCB_DB_NAME=ccb
 ARG CCB_DB_USER=ccbuser
