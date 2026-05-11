@@ -11,15 +11,17 @@ ARG CUDA_RUNTIME_IMAGE=nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSIO
 
 # ============================================================
 # CPU / ARM builder
-# Builds llama_cpp_python for any x86_64 (AVX+, Sandy Bridge 2011+)
-# and for arm64 (NEON always available).
-# The Ubuntu base image is multi-arch so this stage covers both.
+# Builds llama_cpp_python for x86_64 and arm64.
 #
-# GGML_NATIVE=OFF: no -march=native; the host build machine's SIMD
-# capabilities are not baked in. AVX/AVX2/FMA/F16C default to ON in
-# llama.cpp cmake and are used when the CPU supports them at runtime
-# (the ggml_cpu_has_*() guards). On arm64 those x86 flags are never
-# emitted by cmake, so NEON/SVE detection remains intact.
+# x86_64: explicit SSE4.2 -> AVX -> AVX2 -> AVX-512 code paths compiled in;
+#   each path is guarded by ggml_cpu_has_*() and selected at runtime, so
+#   the same binary runs on anything from Atom/Silvermont (SSE4.2 only,
+#   e.g. older Synology NAS) up to modern Xeons with AVX-512.
+# arm64:  GGML_CPU_ARM_ARCH targets armv8.2-a+dotprod+fp16, covering
+#   Graviton2+, Cortex-A55+, Ampere Altra, Apple M-series (dev machines).
+#   All arm64 CPUs with those extensions since ~2019 are included.
+#
+# GGML_NATIVE=OFF: no -march=native; host SIMD is not baked in.
 # ============================================================
 FROM ${BASE_IMAGE} AS llama-builder-cpu
 ARG LLAMA_CPP_PYTHON_VERSION
@@ -28,9 +30,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /build
 ADD dockerfile_scripts/install_py11.sh dockerfile_scripts/install_py11.sh
 RUN ./dockerfile_scripts/install_py11.sh
-# gcc-14 is required on arm64: GCC 13 (Ubuntu 24.04 default) does not support
-# the +sme modifier in -march flags that GGML_CPU_ALL_VARIANTS triggers for
-# the armv9.2 SME backend variant.
+# gcc-14: Ubuntu 24.04 ships gcc-13 by default; gcc-14 is used for
+# consistency across all builder stages and better C++23 support.
 RUN apt-get install -y --no-install-recommends \
         python3.11-dev \
         cmake build-essential ninja-build git \
@@ -42,7 +43,19 @@ RUN /usr/bin/python3.11 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
 ENV CC=gcc-14 CXX=g++-14
-ENV CMAKE_ARGS="-DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON"
+# Note: GGML_BACKEND_DL=ON + GGML_CPU_ALL_VARIANTS=ON would be ideal (builds
+# per-SIMD .so files selected at runtime), but llama-cpp-python's CMakeLists.txt
+# only calls llama_cpp_python_install_target(ggml-cpu), a single target.
+# With ALL_VARIANTS, cmake creates ggml-cpu-{sandybridge,haswell,...} targets
+# *instead* of ggml-cpu, so that install call is a no-op and none of the variant
+# .so files end up in the wheel. arm64 variants are not covered at all.
+# Tracked upstream: https://github.com/abetlen/llama-cpp-python/issues/2069
+# Until fixed, we compile a single backend with explicit SIMD flags; each path
+# is guarded by ggml_cpu_has_*() and selected at runtime.
+# GGML_CPU_ARM_ARCH: sets -march for arm64 only; ignored on x86_64.
+ENV CMAKE_ARGS="-DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF \
+    -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_AVX512=ON -DGGML_FMA=ON -DGGML_F16C=ON \
+    -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16"
 
 RUN /opt/venv/bin/python -m pip wheel \
     --no-cache-dir \
@@ -80,7 +93,10 @@ ENV CC=gcc-14 CXX=g++-14
 
 # Real cubins for all shipping GPU generations through Blackwell (sm_100),
 # plus one forward-compatible PTX target to keep wheel size manageable.
-ENV CMAKE_ARGS="-DGGML_CUDA=ON -DGGML_CUDA_FORCE_MMQ=ON -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON \
+# GGML_CPU_ARM_ARCH is ignored on x86_64
+ENV CMAKE_ARGS="-DGGML_CUDA=ON -DGGML_CUDA_FORCE_MMQ=ON -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF \
+    -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_AVX512=ON -DGGML_FMA=ON -DGGML_F16C=ON \
+    -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16 \
     -DCMAKE_CUDA_ARCHITECTURES=70-real;75-real;80-real;86-real;89-real;90-real;100-real;100-virtual"
 
 RUN /opt/venv/bin/python -m pip wheel \
@@ -115,7 +131,9 @@ RUN /usr/bin/python3.11 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
 ENV CC=gcc-14 CXX=g++-14
-ENV CMAKE_ARGS="-DGGML_VULKAN=ON -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON"
+ENV CMAKE_ARGS="-DGGML_VULKAN=ON -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF \
+    -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_AVX512=ON -DGGML_FMA=ON -DGGML_F16C=ON \
+    -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16"
 
 RUN /opt/venv/bin/python -m pip wheel \
     --no-cache-dir \
