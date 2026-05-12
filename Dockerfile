@@ -97,6 +97,7 @@ ENV CC=gcc-14 CXX=g++-14
 ENV CMAKE_ARGS="-DGGML_CUDA=ON -DGGML_CUDA_FORCE_MMQ=ON -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF \
     -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_AVX512=ON -DGGML_FMA=ON -DGGML_F16C=ON \
     -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16 \
+    -DCMAKE_EXE_LINKER_FLAGS=-Wl,-rpath-link,/usr/local/cuda/lib64/stubs \
     -DCMAKE_CUDA_ARCHITECTURES=70-real;75-real;80-real;86-real;89-real;90-real;100-real;100-virtual"
 
 RUN /opt/venv/bin/python -m pip wheel \
