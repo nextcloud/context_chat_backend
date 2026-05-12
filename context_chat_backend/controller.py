@@ -50,7 +50,25 @@ if mp.current_process().name == 'MainProcess' and APP_ROLE in (AppRole.NORMAL, A
 	ensure_config_file()
 
 logger = logging.getLogger('ccb.controller')
-app_config = get_config(os.environ['CC_CONFIG_PATH'])
+
+_max_config_wait_time = 20 * 60  # 20 mins
+_config_path = os.environ['CC_CONFIG_PATH']
+if APP_ROLE not in (AppRole.NORMAL, AppRole.REQUEST_PROC) and not os.path.exists(_config_path):
+	logger.info('Config file not found at %s, waiting for requestproc role to create it...', _config_path)
+	_waited_for = 0
+	while not os.path.exists(_config_path) and _waited_for <= _max_config_wait_time:
+		time.sleep(5)
+		_waited_for += 5
+
+	if not os.path.exists(_config_path):
+		raise Exception(
+			f'Config file not found at {_config_path} after waiting {_max_config_wait_time}s. '
+			'Ensure the main app (requestproc role) has started and shared storage is accessible.'
+		)
+
+	logger.info('Config file found at %s, continuing startup', _config_path)
+
+app_config = get_config(_config_path)
 __download_models_from_hf = os.environ.get('CC_DOWNLOAD_MODELS_FROM_HF', 'true').lower() in ('1', 'true', 'yes')
 
 models_to_fetch = {
