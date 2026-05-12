@@ -87,8 +87,10 @@ RUN apt-get install -y --no-install-recommends \
 RUN /usr/bin/python3.11 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Make the CUDA compat stub visible to the linker so cuMem* symbols resolve
-ENV LD_LIBRARY_PATH="/usr/local/cuda/compat:${LD_LIBRARY_PATH}"
+# Make the CUDA compat stub visible to the linker for both executables and shared libs
+RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/lib/libcuda.so \
+    && ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/lib/libcuda.so.1
+ENV LD_LIBRARY_PATH="/usr/local/lib:/usr/local/cuda/lib64:/usr/local/cuda/lib64/stubs:${LD_LIBRARY_PATH}"
 ENV CC=gcc-14 CXX=g++-14
 
 # Real cubins for all shipping GPU generations through Blackwell (sm_100),
@@ -96,9 +98,7 @@ ENV CC=gcc-14 CXX=g++-14
 # GGML_CPU_ARM_ARCH is ignored on x86_64
 ENV CMAKE_ARGS="-DGGML_CUDA=ON -DGGML_CUDA_FORCE_MMQ=ON -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF \
     -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_AVX512=ON -DGGML_FMA=ON -DGGML_F16C=ON \
-    -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16 \
-    -DCMAKE_EXE_LINKER_FLAGS=-Wl,-rpath-link,/usr/local/cuda/lib64/stubs \
-    -DCMAKE_CUDA_ARCHITECTURES=70-real;75-real;80-real;86-real;89-real;90-real;100-real;100-virtual"
+    -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16"
 
 RUN /opt/venv/bin/python -m pip wheel \
     --no-cache-dir \
@@ -155,7 +155,6 @@ ENV CCB_DB_NAME=${CCB_DB_NAME}
 ENV CCB_DB_USER=${CCB_DB_USER}
 ENV CCB_DB_PASS=${CCB_DB_PASS}
 ENV DEBIAN_FRONTEND=noninteractive
-ENV AA_DOCKER_ENV=1
 
 WORKDIR /app
 
@@ -212,7 +211,6 @@ ENV CCB_DB_PASS=${CCB_DB_PASS}
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute
-ENV AA_DOCKER_ENV=1
 
 WORKDIR /app
 
@@ -230,6 +228,10 @@ ADD dockerfile_scripts/entrypoint.sh dockerfile_scripts/entrypoint.sh
 ENV DEBIAN_FRONTEND=dialog
 
 # Install llama_cpp_python from the CUDA builder wheel
+RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/lib/libcuda.so \
+    && ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/lib/libcuda.so.1
+ENV LD_LIBRARY_PATH="/usr/local/lib:/usr/local/cuda/lib64:/usr/local/cuda/lib64/stubs:${LD_LIBRARY_PATH}"
+
 COPY --from=llama-builder-cuda /wheels /wheels
 RUN /usr/bin/python3.11 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
@@ -269,7 +271,6 @@ ENV CCB_DB_NAME=${CCB_DB_NAME}
 ENV CCB_DB_USER=${CCB_DB_USER}
 ENV CCB_DB_PASS=${CCB_DB_PASS}
 ENV DEBIAN_FRONTEND=noninteractive
-ENV AA_DOCKER_ENV=1
 
 WORKDIR /app
 
