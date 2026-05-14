@@ -13,10 +13,9 @@ ARG CUDA_RUNTIME_IMAGE=nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSIO
 # CPU / ARM builder
 # Builds llama_cpp_python for x86_64 and arm64.
 #
-# x86_64: explicit SSE4.2 -> AVX -> AVX2 -> AVX-512 code paths compiled in;
-#   each path is guarded by ggml_cpu_has_*() and selected at runtime, so
-#   the same binary runs on anything from Atom/Silvermont (SSE4.2 only,
-#   e.g. older Synology NAS) up to modern Xeons with AVX-512.
+# x86_64: AVX2 is the compiled-in SIMD baseline (Haswell / Excavator, ~2013).
+#   ggml_cpu_has_*() are compile-time constants, not runtime CPUID checks, so
+#   every flag baked in becomes a hard CPU requirement.
 # arm64:  GGML_CPU_ARM_ARCH targets armv8.2-a+dotprod+fp16, covering
 #   Graviton2+, Cortex-A55+, Ampere Altra, Apple M-series (dev machines).
 #   All arm64 CPUs with those extensions since ~2019 are included.
@@ -50,11 +49,10 @@ ENV CC=gcc-14 CXX=g++-14
 # *instead* of ggml-cpu, so that install call is a no-op and none of the variant
 # .so files end up in the wheel. arm64 variants are not covered at all.
 # Tracked upstream: https://github.com/abetlen/llama-cpp-python/issues/2069
-# Until fixed, we compile a single backend with explicit SIMD flags; each path
-# is guarded by ggml_cpu_has_*() and selected at runtime.
+# Until fixed, we compile a single backend with AVX2 as the x86_64 baseline.
 # GGML_CPU_ARM_ARCH: sets -march for arm64 only; ignored on x86_64.
 ENV CMAKE_ARGS="-DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF \
-    -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_AVX512=ON -DGGML_FMA=ON -DGGML_F16C=ON \
+    -DGGML_AVX=ON -DGGML_AVX2=ON \
     -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16"
 
 RUN /opt/venv/bin/python -m pip wheel \
@@ -95,9 +93,8 @@ ENV CC=gcc-14 CXX=g++-14
 
 # Real cubins for all shipping GPU generations through Blackwell (sm_100),
 # plus one forward-compatible PTX target to keep wheel size manageable.
-# GGML_CPU_ARM_ARCH is ignored on x86_64
 ENV CMAKE_ARGS="-DGGML_CUDA=ON -DGGML_CUDA_FORCE_MMQ=ON -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF \
-    -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_AVX512=ON -DGGML_FMA=ON -DGGML_F16C=ON \
+    -DGGML_AVX=ON -DGGML_AVX2=ON \
     -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16"
 
 RUN /opt/venv/bin/python -m pip wheel \
@@ -133,7 +130,7 @@ RUN /usr/bin/python3.11 -m venv /opt/venv \
 
 ENV CC=gcc-14 CXX=g++-14
 ENV CMAKE_ARGS="-DGGML_VULKAN=ON -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF \
-    -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_AVX512=ON -DGGML_FMA=ON -DGGML_F16C=ON \
+    -DGGML_AVX=ON -DGGML_AVX2=ON \
     -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16"
 
 RUN /opt/venv/bin/python -m pip wheel \
