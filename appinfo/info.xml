@@ -34,7 +34,7 @@ Setup background job workers as described here: https://docs.nextcloud.com/serve
 	<external-app>
 		<docker-install>
 			<registry>ghcr.io</registry>
-			<image>nextcloud/context_chat_backend</image>
+			<image>nextcloud-releases/context_chat_backend</image>
 			<image-tag>5.3.0</image-tag>
 		</docker-install>
 		<routes>

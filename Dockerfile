@@ -1,42 +1,61 @@
-# SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
+# SPDX-FileCopyrightText: 2026 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-ARG CPU_IMAGE=ubuntu:22.04
-ARG CUDA_DEVEL_IMAGE=nvidia/cuda:12.4.1-devel-ubuntu22.04
-ARG CUDA_RUNTIME_IMAGE=nvidia/cuda:12.4.1-runtime-ubuntu22.04
-ARG LLAMA_CPP_PYTHON_VERSION=0.3.20
+ARG UBUNTU_VERSION=24.04
+ARG CUDA_VERSION=12.8.2
+ARG LLAMA_CPP_PYTHON_VERSION=0.3.22
+
+ARG BASE_IMAGE=ubuntu:${UBUNTU_VERSION}
+ARG CUDA_DEVEL_IMAGE=nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION}
+ARG CUDA_RUNTIME_IMAGE=nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION}
 
 # ============================================================
 # CPU / ARM builder
-# Builds llama_cpp_python for any x86_64 (AVX+, Sandy Bridge 2011+)
-# and for arm64 (NEON always available).
-# ubuntu:22.04 is a multi-arch image so this stage covers both.
+# Builds llama_cpp_python for x86_64 and arm64.
 #
-# GGML_NATIVE=OFF: no -march=native; the host build machine's SIMD
-# capabilities are not baked in.  AVX/AVX2/FMA/F16C default to ON in
-# llama.cpp cmake and are used when the CPU supports them at runtime
-# (the ggml_cpu_has_*() guards).  On arm64 those x86 flags are never
-# emitted by cmake, so NEON/SVE detection remains intact.
+# x86_64: AVX2 is the compiled-in SIMD baseline (Haswell / Excavator, ~2013).
+#   ggml_cpu_has_*() are compile-time constants, not runtime CPUID checks, so
+#   every flag baked in becomes a hard CPU requirement.
+# arm64:  GGML_CPU_ARM_ARCH targets armv8.2-a+dotprod+fp16, covering
+#   Graviton2+, Cortex-A55+, Ampere Altra, Apple M-series (dev machines).
+#   All arm64 CPUs with those extensions since ~2019 are included.
+#
+# GGML_NATIVE=OFF: no -march=native; host SIMD is not baked in.
 # ============================================================
-FROM ubuntu:22.04 AS llama-builder-cpu
+FROM ${BASE_IMAGE} AS llama-builder-cpu
 ARG LLAMA_CPP_PYTHON_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /build
 ADD dockerfile_scripts/install_py11.sh dockerfile_scripts/install_py11.sh
 RUN ./dockerfile_scripts/install_py11.sh
-# install_py11.sh leaves apt lists in place – install build tools in one layer
+# gcc-14: Ubuntu 24.04 ships gcc-13 by default; gcc-14 is used for
+# consistency across all builder stages and better C++23 support.
 RUN apt-get install -y --no-install-recommends \
         python3.11-dev \
         cmake build-essential ninja-build git \
+        gcc-14 g++-14 \
         libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN /usr/bin/python3.11 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
-ENV CMAKE_ARGS="-DGGML_NATIVE=OFF"
+ENV CC=gcc-14 CXX=g++-14
+# Note: GGML_BACKEND_DL=ON + GGML_CPU_ALL_VARIANTS=ON would be ideal (builds
+# per-SIMD .so files selected at runtime), but llama-cpp-python's CMakeLists.txt
+# only calls llama_cpp_python_install_target(ggml-cpu), a single target.
+# With ALL_VARIANTS, cmake creates ggml-cpu-{sandybridge,haswell,...} targets
+# *instead* of ggml-cpu, so that install call is a no-op and none of the variant
+# .so files end up in the wheel. arm64 variants are not covered at all.
+# Tracked upstream: https://github.com/abetlen/llama-cpp-python/issues/2069
+# Until fixed, we compile a single backend with AVX2 as the x86_64 baseline.
+# GGML_CPU_ARM_ARCH: sets -march for arm64 only; ignored on x86_64.
+ENV CMAKE_ARGS="-DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF \
+    -DGGML_AVX=ON -DGGML_AVX2=ON \
+    -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16"
 
-RUN python3.11 -m pip wheel \
+RUN /opt/venv/bin/python -m pip wheel \
     --no-cache-dir \
     --no-binary llama-cpp-python \
     --wheel-dir=/wheels \
@@ -45,8 +64,9 @@ RUN python3.11 -m pip wheel \
 # ============================================================
 # CUDA (NVIDIA) builder
 # Builds llama_cpp_python with CUDA support.
-# sm_90 is the maximum compute capability supported by CUDA 12.4
-# (Hopper / H100).  Blackwell sm_100 requires CUDA 12.8+.
+# CUDA 12.8 supports up to sm_100 (Blackwell / B100, B200).
+# gcc-14 is used for consistency with the other build stages and
+# because CUDA 12.6+ accepts gcc-14 natively on Ubuntu 24.04.
 # ============================================================
 FROM ${CUDA_DEVEL_IMAGE} AS llama-builder-cuda
 ARG LLAMA_CPP_PYTHON_VERSION
@@ -55,29 +75,29 @@ ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /build
 ADD dockerfile_scripts/install_py11.sh dockerfile_scripts/install_py11.sh
 RUN ./dockerfile_scripts/install_py11.sh
-# gcc-12 is required: Ubuntu 22.04 ships gcc-11 by default which CUDA 12.4
-# treats as "unsupported"; we pin gcc-12 to match the official CI workflow.
 RUN apt-get install -y --no-install-recommends \
         python3.11-dev \
         cmake build-essential ninja-build git \
-        gcc-12 g++-12 \
+        gcc-14 g++-14 \
         libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-ENV CC=/usr/bin/gcc-12
-ENV CXX=/usr/bin/g++-12
-ENV CUDAHOSTCXX=/usr/bin/g++-12
+RUN /usr/bin/python3.11 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
-RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
+# Make the CUDA compat stub visible to the linker for both executables and shared libs
+RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/lib/libcuda.so \
+    && ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/lib/libcuda.so.1
+ENV LD_LIBRARY_PATH="/usr/local/lib:/usr/local/cuda/lib64:/usr/local/cuda/lib64/stubs:${LD_LIBRARY_PATH}"
+ENV CC=gcc-14 CXX=g++-14
 
-# Architecture list aligned with the official llama-cpp-python CUDA CI workflow:
-#   https://github.com/abetlen/llama-cpp-python/blob/main/.github/workflows/build-wheels-cuda.yaml
-ENV CMAKE_ARGS="-DGGML_CUDA=ON -DGGML_CUDA_FORCE_MMQ=ON -DGGML_NATIVE=OFF \
-    -DCMAKE_CUDA_ARCHITECTURES=70-real;75-real;80-real;86-real;89-real;90-real;90-virtual \
-    -DCMAKE_CUDA_FLAGS=--allow-unsupported-compiler \
-    -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-12"
+# Real cubins for all shipping GPU generations through Blackwell (sm_100),
+# plus one forward-compatible PTX target to keep wheel size manageable.
+ENV CMAKE_ARGS="-DGGML_CUDA=ON -DGGML_CUDA_FORCE_MMQ=ON -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF \
+    -DGGML_AVX=ON -DGGML_AVX2=ON \
+    -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16"
 
-RUN python3.11 -m pip wheel \
+RUN /opt/venv/bin/python -m pip wheel \
     --no-cache-dir \
     --no-binary llama-cpp-python \
     --wheel-dir=/wheels \
@@ -88,26 +108,32 @@ RUN python3.11 -m pip wheel \
 # Builds llama_cpp_python with Vulkan compute backend.
 # Works on RDNA1/2/3, GCN, Intel Arc, and more.
 # ============================================================
-FROM ubuntu:22.04 AS llama-builder-vulkan
+FROM ${BASE_IMAGE} AS llama-builder-vulkan
 ARG LLAMA_CPP_PYTHON_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /build
 ADD dockerfile_scripts/install_py11.sh dockerfile_scripts/install_py11.sh
 RUN ./dockerfile_scripts/install_py11.sh
-# Vulkan headers + glslang (shader compiler) are build-time only
-RUN apt-get install -y --no-install-recommends \
+# Vulkan headers + glslc (shader compiler) are build-time only
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
         python3.11-dev \
         cmake build-essential ninja-build git \
+        gcc-14 g++-14 \
         libgomp1 \
-        libvulkan-dev glslang-tools \
+        libvulkan-dev glslc spirv-headers \
     && rm -rf /var/lib/apt/lists/*
 
-RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN /usr/bin/python3.11 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
-ENV CMAKE_ARGS="-DGGML_VULKAN=ON -DGGML_NATIVE=OFF"
+ENV CC=gcc-14 CXX=g++-14
+ENV CMAKE_ARGS="-DGGML_VULKAN=ON -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF \
+    -DGGML_AVX=ON -DGGML_AVX2=ON \
+    -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16"
 
-RUN python3.11 -m pip wheel \
+RUN /opt/venv/bin/python -m pip wheel \
     --no-cache-dir \
     --no-binary llama-cpp-python \
     --wheel-dir=/wheels \
@@ -116,7 +142,7 @@ RUN python3.11 -m pip wheel \
 # ============================================================
 # CPU / ARM runtime
 # ============================================================
-FROM ubuntu:22.04 AS runtime-cpu
+FROM ${BASE_IMAGE} AS runtime-cpu
 
 ARG CCB_DB_NAME=ccb
 ARG CCB_DB_USER=ccbuser
@@ -126,7 +152,6 @@ ENV CCB_DB_NAME=${CCB_DB_NAME}
 ENV CCB_DB_USER=${CCB_DB_USER}
 ENV CCB_DB_PASS=${CCB_DB_PASS}
 ENV DEBIAN_FRONTEND=noninteractive
-ENV AA_DOCKER_ENV=1
 
 WORKDIR /app
 
@@ -145,16 +170,17 @@ ENV DEBIAN_FRONTEND=dialog
 
 # Install llama_cpp_python from the CPU builder wheel
 COPY --from=llama-builder-cpu /wheels /wheels
-RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel \
-    && python3 -m pip install --no-cache-dir --no-index --find-links=/wheels llama-cpp-python \
-    && python3 -m pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+RUN /usr/bin/python3.11 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --no-index --find-links=/wheels llama-cpp-python \
+    && /opt/venv/bin/python -m pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
     && rm -rf /wheels \
-    && pip cache purge
+    && /opt/venv/bin/python -m pip cache purge
 
 COPY requirements.txt .
 RUN sed -i '/^llama_cpp_python/d' requirements.txt \
-    && python3 -m pip install --no-cache-dir -r requirements.txt \
-    && python3 -m pip cache purge
+    && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt \
+    && /opt/venv/bin/python -m pip cache purge
 
 COPY context_chat_backend context_chat_backend
 COPY main.py .
@@ -182,7 +208,6 @@ ENV CCB_DB_PASS=${CCB_DB_PASS}
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute
-ENV AA_DOCKER_ENV=1
 
 WORKDIR /app
 
@@ -200,16 +225,21 @@ ADD dockerfile_scripts/entrypoint.sh dockerfile_scripts/entrypoint.sh
 ENV DEBIAN_FRONTEND=dialog
 
 # Install llama_cpp_python from the CUDA builder wheel
+RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/lib/libcuda.so \
+    && ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/lib/libcuda.so.1
+ENV LD_LIBRARY_PATH="/usr/local/lib:/usr/local/cuda/lib64:/usr/local/cuda/lib64/stubs:${LD_LIBRARY_PATH}"
+
 COPY --from=llama-builder-cuda /wheels /wheels
-RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel \
-    && python3 -m pip install --no-cache-dir --no-index --find-links=/wheels llama-cpp-python \
+RUN /usr/bin/python3.11 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --no-index --find-links=/wheels llama-cpp-python \
     && rm -rf /wheels \
-    && pip cache purge
+    && /opt/venv/bin/python -m pip cache purge
 
 COPY requirements.txt .
 RUN sed -i '/^llama_cpp_python/d' requirements.txt \
-    && python3 -m pip install --no-cache-dir -r requirements.txt \
-    && python3 -m pip cache purge
+    && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt \
+    && /opt/venv/bin/python -m pip cache purge
 
 COPY context_chat_backend context_chat_backend
 COPY main.py .
@@ -228,7 +258,7 @@ ENTRYPOINT ["supervisord", "-c", "/etc/supervisor/supervisord.conf"]
 # The RADV Mesa driver (mesa-vulkan-drivers) is included and covers
 # GCN, RDNA1/2/3 and newer AMD GPUs out of the box.
 # ============================================================
-FROM ubuntu:22.04 AS runtime-vulkan
+FROM ${BASE_IMAGE} AS runtime-vulkan
 
 ARG CCB_DB_NAME=ccb
 ARG CCB_DB_USER=ccbuser
@@ -238,7 +268,6 @@ ENV CCB_DB_NAME=${CCB_DB_NAME}
 ENV CCB_DB_USER=${CCB_DB_USER}
 ENV CCB_DB_PASS=${CCB_DB_PASS}
 ENV DEBIAN_FRONTEND=noninteractive
-ENV AA_DOCKER_ENV=1
 
 WORKDIR /app
 
@@ -263,15 +292,16 @@ ENV DEBIAN_FRONTEND=dialog
 
 # Install llama_cpp_python from the Vulkan builder wheel
 COPY --from=llama-builder-vulkan /wheels /wheels
-RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel \
-    && python3 -m pip install --no-cache-dir --no-index --find-links=/wheels llama-cpp-python \
+RUN /usr/bin/python3.11 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --no-index --find-links=/wheels llama-cpp-python \
     && rm -rf /wheels \
-    && pip cache purge
+    && /opt/venv/bin/python -m pip cache purge
 
 COPY requirements.txt .
 RUN sed -i '/^llama_cpp_python/d' requirements.txt \
-    && python3 -m pip install --no-cache-dir -r requirements.txt \
-    && python3 -m pip cache purge
+    && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt \
+    && /opt/venv/bin/python -m pip cache purge
 
 COPY context_chat_backend context_chat_backend
 COPY main.py .

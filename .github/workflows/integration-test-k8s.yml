@@ -178,7 +178,7 @@ jobs:
 
       - name: Install k3s
         run: |
-          curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --disable servicelb --kubelet-arg=container-log-max-size=0" sh -
+          curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --disable servicelb --kubelet-arg=container-log-max-size=50Mi" sh -
           sudo chmod 644 /etc/rancher/k3s/k3s.yaml
           echo "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> $GITHUB_ENV
 
@@ -287,6 +287,16 @@ jobs:
             --info-xml context_chat_backend/appinfo/info.xml \
             --env EXTERNAL_DB="postgresql+psycopg://root:rootpassword@${{ env.NODE_IP }}:4445/nextcloud" \
             --wait-finish
+
+      - name: Stream ExApp pod logs to files
+        run: |
+          mkdir -p /tmp/ccb-logs
+          for role in indexing updatesproc requestproc; do
+            ( kubectl logs -n nextcloud-exapps -f --tail=-1 --prefix --all-containers=true \
+                -l app=nc-app-context-chat-backend-$role \
+                > /tmp/ccb-logs/$role.log 2>&1 ) &
+            echo "Streaming $role (pid $!)"
+          done
 
       - name: Run cron jobs
         run: |
@@ -404,20 +414,25 @@ jobs:
         run: |
           docker logs appapi-harp
 
+      - name: Show running pods
+        if: always()
+        run: |
+          kubectl get pods -n nextcloud-exapps -o wide --show-labels
+
       - name: Show main app indexing logs
         if: always()
         run: |
-          kubectl logs -n nextcloud-exapps -l app=nc-app-context-chat-backend-indexing --prefix --tail=-1 --ignore-errors
+          sudo cat /tmp/ccb-logs/indexing.log || echo "No indexing logs collected"
 
       - name: Show main app updates processing logs
         if: always()
         run: |
-          kubectl logs -n nextcloud-exapps -l app=nc-app-context-chat-backend-updatesproc --prefix --tail=-1 --ignore-errors
+          sudo cat /tmp/ccb-logs/updatesproc.log || echo "No updatesproc logs collected"
 
       - name: Show main app request processing logs
         if: always()
         run: |
-          kubectl logs -n nextcloud-exapps -l app=nc-app-context-chat-backend-requestproc --prefix --tail=-1 --ignore-errors
+          sudo cat /tmp/ccb-logs/requestproc.log || echo "No requestproc logs collected"
 
       - name: Upload database dumps
         uses: actions/upload-artifact@v4

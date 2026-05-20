@@ -1,0 +1,111 @@
+# This workflow is provided via the organization template repository
+#
+# https://github.com/nextcloud/.github
+# https://docs.github.com/en/actions/learn-github-actions/sharing-workflows-with-your-organization
+#
+# SPDX-FileCopyrightText: 2026 Nextcloud GmbH and Nextcloud contributors
+# SPDX-License-Identifier: MIT
+
+name: Docker build and publish
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - '**'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-build-publish-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  build_and_publish:
+    runs-on: ubuntu-24.04
+    strategy:
+      # do not stop on another job's failure
+      fail-fast: false
+      matrix:
+        target: [ 'runtime-cpu', 'runtime-cuda', 'runtime-vulkan' ]
+
+    # Only allowed to be run on nextcloud-releases repositories
+    if: ${{ github.repository_owner == 'nextcloud-releases' }}
+
+    steps:
+      - name: Maximize build space
+        if: matrix.target != 'runtime-cpu'
+        uses: easimon/maximize-build-space@fc881a613ad2a34aca9c9624518214ebc21dfc0c # v10
+        with:
+          root-reserve-mb: 4096
+          swap-size-mb: 1024
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+          build-mount-path: /docker-data
+
+      - name: Checkout app
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+
+      - name: Get app ID
+        run: |
+          echo "APP_ID=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
+
+      - name: Get app version
+        id: appinfo
+        uses: skjnldsv/xpath-action@f5b036e9d973f42c86324833fd00be90665fbf77 # v1.0.0
+        with:
+          filename: appinfo/info.xml
+          expression: "/info/version/text()"
+
+      - name: Configure Docker data root
+        if: matrix.target != 'runtime-cpu'
+        run: |
+          sudo systemctl stop docker
+          sudo mkdir -p /etc/docker
+          echo '{"data-root": "/docker-data"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl start docker
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+        with:
+          cache-image: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tag suffix
+        run: |
+          case "${{ matrix.target }}" in
+            runtime-cpu)    echo "TAG_SUFFIX=" >> $GITHUB_ENV ;;
+            runtime-cuda)   echo "TAG_SUFFIX=-cuda" >> $GITHUB_ENV ;;
+            runtime-vulkan) echo "TAG_SUFFIX=-rocm" >> $GITHUB_ENV ;;
+          esac
+
+      - name: Build and push image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
+        with:
+          context: .
+          push: true
+          # cuda/arm takes too long with qemu, maybe setup dedicated arm builders in the future
+          platforms: ${{ matrix.target == 'runtime-cuda' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          tags: |
+            ghcr.io/nextcloud-releases/${{ env.APP_ID }}:latest${{ env.TAG_SUFFIX }}
+            ghcr.io/nextcloud-releases/${{ env.APP_ID }}:${{ fromJson(steps.appinfo.outputs.result).version }}${{ env.TAG_SUFFIX }}
+          target: ${{ matrix.target }}
+          # Registry cache keyed by target suffix
+          cache-from: type=registry,ref=ghcr.io/nextcloud-releases/${{ env.APP_ID }}:buildcache${{ env.TAG_SUFFIX }}
+          cache-to: type=registry,ref=ghcr.io/nextcloud-releases/${{ env.APP_ID }}:buildcache${{ env.TAG_SUFFIX }},mode=max
