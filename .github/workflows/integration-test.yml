@@ -94,16 +94,15 @@ jobs:
     steps:
       - name: Enable PostgreSQL slow query logging and auto_explain
         run: |
-          PG_CONTAINER=$(docker ps -q --filter "ancestor=pgvector/pgvector:pg17")
-          docker exec $PG_CONTAINER bash -c "\
+          docker exec postgres bash -c "\
             cat >> /var/lib/postgresql/data/postgresql.conf <<EOF
 
           # slow query logging
-          log_min_duration_statement = 10
+          log_min_duration_statement = 20
 
           # auto_explain for slow queries
           session_preload_libraries = 'auto_explain'
-          auto_explain.log_min_duration = '10ms'
+          auto_explain.log_min_duration = '20ms'
           auto_explain.log_analyze = on
           auto_explain.log_buffers = on
           auto_explain.log_nested_statements = on
@@ -116,12 +115,17 @@ jobs:
           log_file_mode = 0644
           EOF"
 
-          docker exec $PG_CONTAINER psql -U root -d nextcloud -c "SELECT pg_reload_conf();"
-          sleep 2
+          # create the log directory and set ownership for postgres user (logging_collector needs it)
+          docker exec postgres bash -c "mkdir -p /var/log/pg_log && chown -R postgres:postgres /var/log/pg_log"
+
+          # logging_collector requires a restart to take effect
+          docker restart postgres
+          # wait for postgres to be ready again (max 60 seconds)
+          timeout 60 bash -c 'until docker exec postgres pg_isready -U root; do sleep 1; done' || { echo "Error: PostgreSQL did not become ready within 60 seconds"; docker logs postgres --tail 50; exit 1; }
 
           # verify the config has been loaded
-          docker exec $PG_CONTAINER psql -U root -d nextcloud -c "SHOW log_min_duration_statement;"
-          docker exec $PG_CONTAINER psql -U root -d nextcloud -c "SHOW session_preload_libraries;"
+          docker exec postgres psql -U root -d nextcloud -c "SHOW log_min_duration_statement;"
+          docker exec postgres psql -U root -d nextcloud -c "SHOW session_preload_libraries;"
 
       - name: Checkout server
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -412,8 +416,7 @@ jobs:
       - name: Show PostgreSQL slow query logs
         if: always()
         run: |
-          PG_CONTAINER=$(docker ps -q --filter "ancestor=pgvector/pgvector:pg17")
-          docker exec $PG_CONTAINER cat /var/log/pg_log/postgresql.log
+          docker exec postgres cat /var/log/pg_log/postgresql.log
 
       - name: Final stats log
         if: always()
