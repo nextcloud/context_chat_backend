@@ -124,10 +124,10 @@ v2.1.0 introduces repair steps. These run on app startup.
 
 `repair2001_date20240412153300.py` removes the existing config.yaml in the persistent storage for the
 hardware detection to run and place a suitable config (based on accelerator detected) in its place.  
-To skip this step (or steps in the future), populate the `repair.info` file with the repair file name(s).  
+To skip this step (or steps in the future), add the repair filename(s) to `repair.info` in the persistent storage, one filename per line.  
 Use the below command inside the container or add the repair filename manually in the repair.info file inside the docker container at `/nc_app_context_chat_backend_data`
 
-`echo repair2001_date20240412153300.py > "$APP_PERSISTENT_STORAGE/repair.info"`
+`echo repair2001_date20240412153300.py >> "$APP_PERSISTENT_STORAGE/repair.info"`
 
 #### How to generate a repair step file
 `APP_VERSION` should at least be incremented at the minor level (MAJOR.MINOR.PATCH)
