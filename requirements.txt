@@ -10,7 +10,7 @@ niquests>=3.17.0
 # langchain is stuck at <1.0.0 due to langhchain-unstructured not being updated yet
 langchain==0.3.27
 langchain-community==0.3.21
-langchain-postgres==0.0.16
+langchain-postgres==0.0.17
 langchain-unstructured==0.1.6
 llama_cpp_python>=0.3.16
 msg-parser>=1.2.0
