@@ -97,6 +97,10 @@ class AccessListStore(Base):
 			'source_id',
 			unique=True,
 		),
+		sa.Index(
+			'idx_access_list_source_id',
+			'source_id',
+		)
 	)
 
 	@classmethod

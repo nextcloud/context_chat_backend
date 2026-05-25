@@ -92,6 +92,41 @@ jobs:
         options: --health-cmd pg_isready --health-interval 5s --health-timeout 2s --health-retries 5 --name postgres --hostname postgres
 
     steps:
+      - name: Enable PostgreSQL slow query logging and auto_explain
+        run: |
+          docker exec postgres bash -c "\
+            cat >> /var/lib/postgresql/data/postgresql.conf <<EOF
+
+          # slow query logging
+          log_min_duration_statement = 20
+
+          # auto_explain for slow queries
+          session_preload_libraries = 'auto_explain'
+          auto_explain.log_min_duration = '20ms'
+          auto_explain.log_analyze = on
+          auto_explain.log_buffers = on
+          auto_explain.log_nested_statements = on
+          auto_explain.log_verbose = on
+
+          # file-based logging
+          logging_collector = on
+          log_directory = '/var/log/pg_log'
+          log_filename = 'postgresql.log'
+          log_file_mode = 0644
+          EOF"
+
+          # create the log directory and set ownership for postgres user (logging_collector needs it)
+          docker exec postgres bash -c "mkdir -p /var/log/pg_log && chown -R postgres:postgres /var/log/pg_log"
+
+          # logging_collector requires a restart to take effect
+          docker restart postgres
+          # wait for postgres to be ready again (max 60 seconds)
+          timeout 60 bash -c 'until docker exec postgres pg_isready -U root; do sleep 1; done' || { echo "Error: PostgreSQL did not become ready within 60 seconds"; docker logs postgres --tail 50; exit 1; }
+
+          # verify the config has been loaded
+          docker exec postgres psql -U root -d nextcloud -c "SHOW log_min_duration_statement;"
+          docker exec postgres psql -U root -d nextcloud -c "SHOW session_preload_libraries;"
+
       - name: Checkout server
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
@@ -377,6 +412,11 @@ jobs:
           path: |
             /tmp/0_pgdump_nextcloud
             /tmp/1_pgdump_nextcloud
+
+      - name: Show PostgreSQL slow query logs
+        if: always()
+        run: |
+          docker exec postgres cat /var/log/pg_log/postgresql.log
 
       - name: Final stats log
         if: always()
