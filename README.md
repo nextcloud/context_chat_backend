@@ -19,10 +19,10 @@
 
 Install the given apps for Context Chat to work as desired **in the given order**:
 - [AppAPI from the Apps page](https://apps.nextcloud.com/apps/app_api)
-- [Context Chat Backend (same major and minor version as Context Chat app below) from the External Apps page](https://apps.nextcloud.com/apps/context_chat_backend)
 - [Context Chat (same major and minor version as the backend) from the Apps page](https://apps.nextcloud.com/apps/context_chat)
+- [Context Chat Backend (same major and minor version as Context Chat app) from the Apps page](https://apps.nextcloud.com/apps/context_chat_backend)
 - [Assistant from the Apps page](https://apps.nextcloud.com/apps/assistant). The OCS API or the `occ` commands can also be used to interact with this app but it recommended to do that through a Task Processing OCP API consumer like the Assistant app, which is also the officially supported universal UI for all the AI providers.
-- Text2Text Task Processing Provider like [llm2 from the External Apps page](https://apps.nextcloud.com/apps/llm2) or [integration_openai from the Apps page](https://apps.nextcloud.com/apps/integration_openai)
+- Text2Text Task Processing Provider, any one of https://docs.nextcloud.com/server/latest/admin_manual/ai/overview.html#backend-apps
 
 > [!NOTE]
 > See [AppAPI's deploy daemon configuration](#configure-the-appapis-deploy-daemon)
@@ -30,7 +30,7 @@ Install the given apps for Context Chat to work as desired **in the given order*
 > For GPU Support: enable gpu support in the Deploy Daemon's configuration (Admin settings -> AppAPI)
 
 > [!IMPORTANT]
-> To avoid task processing execution delay, setup at 4 background job workers in the main server (where Nextcloud is installed). The setup process is documented here: https://docs.nextcloud.com/server/latest/admin_manual/ai/overview.html#improve-ai-task-pickup-speed
+> To avoid task processing execution delay, setup 4 background job workers in the main server (where Nextcloud is installed). The setup process is documented here: https://docs.nextcloud.com/server/latest/admin_manual/ai/overview.html#improve-ai-task-pickup-speed
 
 ## Dev Install (without docker)
 
@@ -73,8 +73,8 @@ If nextcloud is inside a container, `--add-host` option would be required by you
 **2. Register the app using the deploy daemon (be mindful of the port number and the app's version):**
 ```
 occ app_api:app:register context_chat_backend manual_install --json-info \
-"{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"5.3.0\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system_app\":0}" \
---force-scopes --wait-finish
+"{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"5.3.0\",\"secret\":\"12345\",\"port\":10034}" \
+--wait-finish
 ```
 The command to unregister is given below (force is used to also remove apps whose container has been removed)
 ```
@@ -108,7 +108,7 @@ The logs of the embedding server are written to `logs/embedding_server_[date].lo
 ## Configuration
 Configuration resides inside the persistent storage as `config.yaml`. The location is `$APP_PERSISTENT_STORAGE`. By default it would be at `/nc_app_context_chat_backend_data/config.yaml` inside the container.
 
-All the options in the top of the file can be changed normally but for the sections `vectordb`, `embedding`, and `llm`, only the first key from the list is used. The rest is ignored.
+All the options in the top of the file can be changed normally but for the sections `vectordb`, and `llm`, only the first key from the list is used. The rest is ignored.
 Some of the possible options for the loaders/adaptors in the special sections can be found in the provided example config files itself. The rest of the options can be found in langchain's documentation.
 For llm->llama as an example, they can be found here: https://api.python.langchain.com/en/latest/llms/langchain_community.llms.llamacpp.LlamaCpp.html
 
@@ -231,7 +231,6 @@ sudo -u www-data php occ app_api:app:register \
                   \"version\":\"5.3.0\",\
                   \"secret\":\"12345\",\
                   \"port\":10034}" \
-    --force-scopes \
     --wait-finish
 ```
 
