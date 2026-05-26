@@ -9,6 +9,23 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 
+## 5.4.0-beta0 - 2026-05-26
+
+### Added
+- add network embedding batching (#276) @fcharlaix-opendsi
+- add kubernetes support and reverse content/indexing flow (#284) @kyteinsky @marcelklehr
+- add gh workflows for docker builds and do separate cpu, cuda and rocm (vulkan) images (#295) @kyteinsky
+
+### Changed
+- update readme according to the latest changes (#300) @kyteinsky
+- bump llama_cpp_python to 0.3.23 (#301) @kyteinsky
+
+### Fixed
+- improve loadSources error handling (#288) @kyteinsky
+- fix(pgvector): add chunking to prevent long list of args in queries (#290) @kyteinsky
+- fix(pgvector): make doc deletion query faster (#289) @kyteinsky
+
+
 ## 5.3.0 - 2026-02-23
 
 ### Added
