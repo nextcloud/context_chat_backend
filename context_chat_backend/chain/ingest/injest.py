@@ -257,7 +257,7 @@ def _sources_to_indocuments(
 
 		metadata = {
 			'source': source.reference,
-			'title': _decode_latin_1(source.title),
+			'title': source.title,
 			'type': source.type,
 		}
 		doc = Document(page_content=content, metadata=metadata)
@@ -271,7 +271,7 @@ def _sources_to_indocuments(
 
 		indocuments[db_id] = InDocument(
 			documents=split_docs,
-			userIds=list(map(_decode_latin_1, source.userIds)),
+			userIds=source.userIds,
 			source_id=source.reference,
 			provider=source.provider,
 			modified=source.modified,  # pyright: ignore[reportArgumentType]
@@ -299,7 +299,7 @@ def _increase_access_for_existing_sources(
 		try:
 			vectordb.update_access(
 				UpdateAccessOp.ALLOW,
-				list(map(_decode_latin_1, source.userIds)),
+				source.userIds,
 				source.reference,
 			)
 			results[db_id] = None
@@ -390,14 +390,6 @@ def _process_sources(
 	return source_proc_results
 
 
-def _decode_latin_1(s: str) -> str:
-	try:
-		return s.encode('latin-1').decode('utf-8')
-	except UnicodeDecodeError:
-		logger.error('Failed to decode latin-1: %s', s)
-		return s
-
-
 def embed_sources(
 	vectordb_loader: VectorDBLoader,
 	config: TConfig,
@@ -405,7 +397,7 @@ def embed_sources(
 ) -> Mapping[int, IndexingError | None]:
 	logger.debug('Embedding sources:', extra={
 		'source_ids': [
-			f'{source.reference} ({_decode_latin_1(source.title)})'
+			f'{source.reference} ({source.title})'
 			for source in sources.values()
 		],
 		'len(source_ids)': len(sources),
