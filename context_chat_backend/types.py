@@ -6,10 +6,18 @@ import re
 from collections.abc import Mapping
 from enum import Enum
 from io import BytesIO
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 import niquests
-from pydantic import AfterValidator, BaseModel, Discriminator, computed_field, field_validator, model_validator
+from pydantic import (
+	AfterValidator,
+	BaseModel,
+	Discriminator,
+	ValidationError,
+	computed_field,
+	field_validator,
+	model_validator,
+)
 
 from .mimetype_list import SUPPORTED_MIMETYPES
 from .vectordb.types import UpdateAccessOp
@@ -236,9 +244,37 @@ class SourceItem(CommonSourceItem):
 		arbitrary_types_allowed = True
 
 
+class ItemValidationError(BaseModel):
+	'''Wraps a per-item Pydantic validation failure so the rest of the batch can still be processed.'''
+	error: str
+	raw: Any
+
+
 class FilesQueueItems(BaseModel):
-	files: Mapping[int, ReceivedFileItem]  # [db id]: FileItem
-	content_providers: Mapping[int, SourceItem]  # [db id]: SourceItem
+	files: Mapping[int, ReceivedFileItem | ItemValidationError]  # db id as the key
+	content_providers: Mapping[int, SourceItem | ItemValidationError]  # db id as the key
+
+	# so the FilesQueueItems validation does not fail altogether only for one item being invalid
+	@model_validator(mode='before')
+	@classmethod
+	def validate_items_individually(cls, data: Any) -> Any:
+		if not isinstance(data, dict):
+			return data
+		for collection_key, item_cls in (
+			('files', ReceivedFileItem),
+			('content_providers', SourceItem),
+		):
+			if not isinstance(data.get(collection_key), dict):
+				continue
+			result: dict = {}
+			for k, v in data[collection_key].items():
+				try:
+					item_cls.model_validate(v)
+					result[k] = v
+				except (ValidationError, ValueError) as e:
+					result[k] = {'error': str(e), 'raw': v}
+			data[collection_key] = result
+		return data
 
 
 class IndexingException(Exception):
