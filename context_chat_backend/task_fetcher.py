@@ -32,6 +32,7 @@ from .types import (
 	EmbeddingException,
 	FilesQueueItems,
 	IndexingError,
+	ItemValidationError,
 	LoaderException,
 	ReceivedFileItem,
 	SourceItem,
@@ -169,22 +170,38 @@ def files_indexing_thread(app_config: TConfig, get_enabled_state) -> None:
 				sleep(POLLING_COOLDOWN)
 				continue
 
-			files_result = {}
-			providers_result = {}
+			# separate valid items from per-item pydantic validation errors
+			valid_files: dict[int, ReceivedFileItem] = {}
+			valid_providers: dict[int, SourceItem] = {}
+			files_result: dict[int, IndexingError | None] = {}
+			providers_result: dict[int, IndexingError | None] = {}
+
+			for db_id, item in q_items.files.items():
+				if isinstance(item, ItemValidationError):
+					files_result[db_id] = IndexingError(error=item.error, retryable=False)
+				else:
+					valid_files[db_id] = item
+			for db_id, item in q_items.content_providers.items():
+				if isinstance(item, ItemValidationError):
+					providers_result[db_id] = IndexingError(error=item.error, retryable=False)
+				else:
+					valid_providers[db_id] = item
+
+			if not valid_files and not valid_providers:
+				LOGGER.warning('No valid files or providers found in the current batch.')
+				sleep(POLLING_COOLDOWN)
+				continue
 
 			# chunk file parsing for better file operation parallelism
-			file_chunk_size = max(MIN_FILES_PER_CPU, math.ceil(len(q_items.files) / file_parsing_cpu_count))
+			file_chunk_size = max(MIN_FILES_PER_CPU, math.ceil(len(valid_files) / file_parsing_cpu_count))
 			file_chunks = [
-				dict(list(q_items.files.items())[i:i+file_chunk_size])
-				for i in range(0, len(q_items.files), file_chunk_size)
+				dict(list(valid_files.items())[i:i+file_chunk_size])
+				for i in range(0, len(valid_files), file_chunk_size)
 			]
-			provider_chunk_size = max(
-				MIN_FILES_PER_CPU,
-				math.ceil(len(q_items.content_providers) / file_parsing_cpu_count),
-			)
+			provider_chunk_size = max(MIN_FILES_PER_CPU, math.ceil(len(valid_providers) / file_parsing_cpu_count))
 			provider_chunks = [
-				dict(list(q_items.content_providers.items())[i:i+provider_chunk_size])
-				for i in range(0, len(q_items.content_providers), provider_chunk_size)
+				dict(list(valid_providers.items())[i:i+provider_chunk_size])
+				for i in range(0, len(valid_providers), provider_chunk_size)
 			]
 
 			with ThreadPoolExecutor(

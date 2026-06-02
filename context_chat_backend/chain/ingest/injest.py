@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 import asyncio
+import json
 import logging
 import re
 from collections.abc import Mapping
@@ -12,6 +13,7 @@ from time import perf_counter_ns
 import niquests
 from langchain.schema import Document
 from nc_py_api import AsyncNextcloudApp
+from nc_py_api._exceptions import NextcloudException
 
 from ...dyn_loader import VectorDBLoader
 from ...types import IndexingError, IndexingException, ReceivedFileItem, SourceItem, TConfig
@@ -24,6 +26,21 @@ from .doc_splitter import get_splitter_for
 logger = logging.getLogger('ccb.injest')
 
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB, all loaded in RAM at once
+
+
+async def __try_parse_ocs_response(response: niquests.AsyncResponse | None, e: Exception) -> dict | str:  # pyright: ignore[reportArgumentType]
+	if response is None or (await response.text) is None:
+		return str(e)
+
+	res_text = await response.text or str(e)
+	try:
+		ocs_response = json.loads(res_text)
+		ocs_data = ocs_response.get("ocs", {}).get("data")
+		if not ocs_data:
+			return res_text
+		return ocs_data
+	except json.JSONDecodeError:
+		return str(e)
 
 
 async def __fetch_file_content(
@@ -52,6 +69,7 @@ async def __fetch_file_content(
 			fp.seek(0)
 			return fp
 		except niquests.exceptions.RequestException as e:
+			# this path is probably moot since the exceptions would be re-raised as NextcloudException
 			if e.response is None:
 				raise
 
@@ -75,6 +93,16 @@ async def __fetch_file_content(
 			raise
 		except IndexingException:
 			raise
+		except NextcloudException as e:
+			err_msg = await __try_parse_ocs_response(e.response, e)  # pyright: ignore[reportArgumentType]
+			if e.status_code == 404:
+				# see context_chat's `/files/{fileId}` endpoint
+				raise IndexingException(f'File fetch from Nextcloud server failed: {err_msg}') from e
+
+			raise IndexingException(
+				f'Network error encountered fetching content for file id {file_id}, user id {user_id}: {err_msg}',
+				retryable=True,
+			) from e
 		except Exception as e:
 			logger.error(f'Error fetching content for file id {file_id}, user id {user_id}: {e}', exc_info=e)
 			raise IndexingException(f'Error fetching content for file id {file_id}, user id {user_id}: {e}') from e
