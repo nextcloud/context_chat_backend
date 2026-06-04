@@ -346,6 +346,103 @@ jobs:
           echo "$OUT2" | grep -q "If all of these points are met, we give a Green label." || exit 1
           echo ::endgroup::
 
+      - name: Wait for files queue to drain to zero
+        run: |
+          echo "::group::Waiting up to 5 minutes for documents queue to reach zero"
+          for i in {1..30}; do
+            stats=$(./occ context_chat:stats --json)
+            scheduled=$(echo "$stats" | jq '[.queued_documents_counts | to_entries[].value] | add // 0')
+            echo "Attempt $i: queued_documents=$scheduled"
+            if [ "$scheduled" = "0" ]; then
+              echo "Queue is empty"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "Timeout: queue did not drain to zero (queued_documents=$scheduled)"
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "::endgroup::"
+
+      - name: Check if the empty files get identified, not indexed and don't cause any issues with the batch
+        run: |
+          NEW_FILES_COUNT=5
+
+          echo "::group::Stats before the empty files are added"
+          prev_stats=$(./occ context_chat:stats --json)
+          echo "$prev_stats"
+          prev_scheduled=$(echo "$prev_stats" | jq '.queued_documents_counts.files__default // 0')
+          prev_eligible=$(echo "$prev_stats" | jq '.eligible_files_count')
+          prev_indexed=$(echo "$prev_stats"  | jq '.vectordb_document_counts.files__default // 0')
+          echo "queued_documents_counts.files__default before scan: $prev_scheduled"
+          echo "::endgroup::"
+
+          # create empty markdown files in admin's home folder
+          for i in $(seq 1 $NEW_FILES_COUNT); do
+            touch "data/admin/files/test_empty_$i.md"
+          done
+
+          # create one new file with content
+          echo "hello world" > "data/admin/files/test_filled.md"
+
+          # run files scan so Nextcloud registers the new files
+          ./occ files:scan admin
+
+          echo "::group::Confirming new files appear in the queue after scan"
+          stats=$(./occ context_chat:stats --json)
+          echo "$stats"
+          scheduled=$(echo "$stats" | jq '.queued_documents_counts.files__default // 0')
+          echo "queued_documents_counts.files__default after scan: $scheduled"
+          expected_scheduled=$((prev_scheduled + NEW_FILES_COUNT + 1))  # +1 non-empty file
+          if [ "$scheduled" -ne "$expected_scheduled" ]; then
+            echo "Error: expected exactly $expected_scheduled files in the queue (prev=$prev_scheduled + new=$NEW_FILES_COUNT), got $scheduled"
+            exit 1
+          fi
+          echo "::endgroup::"
+
+          echo "::group::Waiting up to 5 minutes for queue to drain to zero again"
+          for i in {1..30}; do
+            stats=$(./occ context_chat:stats --json)
+            scheduled=$(echo "$stats" | jq '[.queued_documents_counts | to_entries[].value] | add // 0')
+            locked=$(echo "$stats"    | jq '[.queued_documents_locked_counts | to_entries[].value] | add // 0')
+            echo "Attempt $i: queued_documents=$scheduled locked=$locked"
+            if [ "$scheduled" = "0" ]; then
+              echo "Queue drained"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "Timeout: queue did not drain to zero (queued_documents=$scheduled)"
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "::endgroup::"
+
+          # locked must be zero
+          if [ "$locked" != "0" ]; then
+            echo "Error: expected locked count to be 0, got $locked"
+            exit 1
+          fi
+          echo "Locked count is 0 as expected"
+
+          # StorageService#countFiles filters size > 0, so empty files are NOT counted as eligible.
+          # Only the 1 non-empty file is both eligible and indexed, so the gap must stay the same (diff=0).
+          eligible=$(echo "$stats" | jq '.eligible_files_count')
+          indexed=$(echo "$stats"  | jq '.vectordb_document_counts.files__default // 0')
+          echo "prev: eligible=$prev_eligible  indexed=$prev_indexed"
+          echo "eligible_files_count=$eligible  vectordb_document_counts.files__default=$indexed"
+
+          prev_gap=$((prev_eligible - prev_indexed))
+          curr_gap=$((eligible - indexed))
+          gap_diff=$((curr_gap - prev_gap))
+          echo "gap before=$prev_gap  gap after=$curr_gap  difference=$gap_diff  expected=0"
+          if [ "$gap_diff" -ne "0" ]; then
+            echo "Error: expected the eligible-indexed gap to stay the same (empty files are excluded from eligible_files_count by the size > 0 filter), got diff=$gap_diff"
+            exit 1
+          fi
+          echo "PASS: empty files excluded from eligible_files_count (size > 0 filter) and absent from vectordb_document_counts"
+
       - name: Check python memory usage
         run: |
           ps -p $(cat pid.txt) -o pid,cmd,%mem,rss --sort=-%mem
