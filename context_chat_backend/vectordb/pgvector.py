@@ -134,6 +134,13 @@ class VectorDB(BaseVectorDB):
 			# tried to create the tables but it was already created in another process
 			# init the client again to detect it already exists, and continue from there
 			self.client = PGVector(embedding, collection_name=COLLECTION_NAME, **kwargs)
+		except sa.exc.ProgrammingError as pe:  # pyright: ignore[reportAttributeAccessIssue]
+			if not isinstance(pe.orig, psycopg.errors.DuplicateTable):
+				raise
+
+			# multiple processes raced to CREATE TABLE, all but one lost so tables now exist, retry
+			# may not be necessary now since initial tables creation happens in main.py now
+			self.client = PGVector(embedding, collection_name=COLLECTION_NAME, **kwargs)
 
 	def get_instance(self) -> VectorStore:
 		return self.client
