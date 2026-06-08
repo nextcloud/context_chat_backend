@@ -16,6 +16,7 @@ from context_chat_backend.types import TConfig  # isort: skip
 from context_chat_backend.controller import app  # isort: skip
 from context_chat_backend.logger import get_logging_config, setup_logging  # isort: skip
 from context_chat_backend.utils import is_k8s_env, redact_config  # isort: skip
+from context_chat_backend.dyn_loader import VectorDBLoader  # isort: skip
 
 LOGGER_CONFIG_NAME = 'logger_config.yaml'
 LOGGER_K8S_CONFIG_NAME = 'logger_config.k8s.yaml'
@@ -63,6 +64,10 @@ if __name__ == '__main__':
 		'numpy',
 		'sqlalchemy',
 	])
+
+	# init the vectordb in the main process before workers are forked so that
+	# no two worker processes race to CREATE TABLE at the same time
+	VectorDBLoader(app_config).load()
 
 	print(f'CPU count: {cpu_count()}, Memory: {psutil.virtual_memory()}')
 	print('App config:\n' + redact_config(app_config).model_dump_json(indent=2), flush=True)
