@@ -168,12 +168,12 @@ async def __fetch_files_content(
 					}
 				)
 			except ValidationError as e:
-				logger.debug(
+				logger.info(
 					f'Found empty content for db id {db_id}, file id {file.file_id}, reference {file.reference}'
 					f': {e}',
 				)
 				error_items[db_id] = IndexingError(
-					error=str(result),
+					error=f'Found empty content: {e}',
 					retryable=False,
 				)
 		elif isinstance(result, IndexingException):
