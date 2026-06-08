@@ -122,6 +122,7 @@ def files_indexing_thread(app_config: TConfig, get_enabled_state) -> None:
 				error=f'{e.__class__.__name__}: {e}',
 				retryable=True,
 			)
+			# todo: to retry or not to retry?
 			LOGGER.error(
 				'embed_sources subprocess raised a %s error for %d sources, marking all as retryable',
 				e.__class__.__name__, len(source_refs), exc_info=e, extra={
@@ -189,8 +190,7 @@ def files_indexing_thread(app_config: TConfig, get_enabled_state) -> None:
 
 			if not valid_files and not valid_providers:
 				LOGGER.warning('No valid files or providers found in the current batch.')
-				sleep(POLLING_COOLDOWN)
-				continue
+				# do not short the loop here since the invalid items need to be deleted at the end
 
 			# chunk file parsing for better file operation parallelism
 			file_chunk_size = max(MIN_FILES_PER_CPU, math.ceil(len(valid_files) / file_parsing_cpu_count))

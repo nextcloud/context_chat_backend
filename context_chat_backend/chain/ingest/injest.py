@@ -14,6 +14,7 @@ import niquests
 from langchain.schema import Document
 from nc_py_api import AsyncNextcloudApp
 from nc_py_api._exceptions import NextcloudException
+from pydantic import ValidationError
 
 from ...dyn_loader import VectorDBLoader
 from ...types import IndexingError, IndexingException, ReceivedFileItem, SourceItem, TConfig
@@ -159,12 +160,22 @@ async def __fetch_files_content(
 	results = await asyncio.gather(*tasks, return_exceptions=True)
 	for (db_id, file), result in zip(task_sources.items(), results, strict=True):
 		if isinstance(result, str) or isinstance(result, BytesIO):
-			source_items[db_id] = SourceItem(
-				**{
-					**file.model_dump(),
-					'content': result,
-				}
-			)
+			try:
+				source_items[db_id] = SourceItem(
+					**{
+						**file.model_dump(),
+						'content': result,
+					}
+				)
+			except ValidationError as e:
+				logger.debug(
+					f'Found empty content for db id {db_id}, file id {file.file_id}, reference {file.reference}'
+					f': {e}',
+				)
+				error_items[db_id] = IndexingError(
+					error=str(result),
+					retryable=False,
+				)
 		elif isinstance(result, IndexingException):
 			logger.error(
 				f'Error fetching content for db id {db_id}, file id {file.file_id}, reference {file.reference}'
