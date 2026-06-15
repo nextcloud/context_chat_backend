@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - add gh workflows for docker builds and do separate cpu, cuda and rocm (vulkan) images (#295) @kyteinsky
 
 ### Changed
+- rotate the internal PostgreSQL logs into one file per weekday instead of a single ever-growing logfile (#312) @sanzakicesarr
 - update readme according to the latest changes (#300) @kyteinsky
 - bump llama_cpp_python to 0.3.23 (#301) @kyteinsky
 
