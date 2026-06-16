@@ -47,8 +47,11 @@ jobs:
               - 'project.toml'
               - 'requirements.txt'
               - 'logger_config.k8s.yaml'
+              - 'logger_config_em.yaml'
               - 'supervisord.conf'
               - '.github/workflows/integration-test-k8s.yml'
+              - 'Dockerfile'
+              - 'dockerfile_scripts/**'
 
   integration:
     runs-on: ubuntu-24.04
@@ -60,9 +63,10 @@ jobs:
       # do not stop on another job's failure
       fail-fast: false
       matrix:
+        # todo: support NC 35
         php-versions: [ '8.2' ]
         databases: [ 'pgsql' ]
-        server-versions: [ 'master' ]
+        server-versions: [ 'stable34' ]
 
     name: Integration test k8s on ${{ matrix.server-versions }} php@${{ matrix.php-versions }}
 
