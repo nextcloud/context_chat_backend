@@ -145,6 +145,8 @@ async def lifespan(app: FastAPI):
 		# k8s' rp role pulls tasks
 		set_handlers(app, enabled_handler, models_to_fetch=models_to_fetch)
 
+	# If the threads were previously stopped, we start them again
+	# otherwise the lifecycle handler has already started them
 	start_bg_threads(app_config, get_enabled_state)
 	logger.info(f'App enable state at startup: {get_enabled_state()}')
 	yield

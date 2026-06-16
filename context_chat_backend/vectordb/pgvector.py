@@ -159,6 +159,7 @@ class VectorDB(BaseVectorDB):
 				raise DbException('Error: getting a list of all users from access list') from e
 
 	def add_indocuments(self, indocuments: Mapping[int, InDocument]) -> Mapping[int, IndexingError | None]:
+		# todo: find out why mypy doesn't like this and isort adds it to the list of ignored imports
 		"""
 		Raises
 			EmbeddingException: if the embedding request definitively fails
