@@ -119,14 +119,11 @@ def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
 				task_type='context_chat:context_chat',
 				expected_runtime=30,
 			)
-			nc.providers.task_processing.register(provider)
-					app_enabled.set()
+						nc.providers.task_processing.register(provider)
+			app_enabled.set()
 			if THREAD_STOP_EVENT.is_set():
-				# Clear the stop event before starting threads so threads do not
-				# immediately exit. start_bg_threads also calls clear(), but doing
-				# it here makes the intent explicit and guards against races.
-				THREAD_STOP_EVENT.clear()
-			start_bg_threads(app_config, get_enabled_state)
+				# Threads were previously stopped; clear the stop event and restart.
+				start_bg_threads(app_config, get_enabled_state)
 		else:
 			app_enabled.clear()
 			wait_for_bg_threads()
