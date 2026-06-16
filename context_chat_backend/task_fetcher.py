@@ -731,40 +731,46 @@ def start_bg_threads(app_config: TConfig, get_enabled_state):
 	THREAD_STOP_EVENT.clear()
 
 	if APP_ROLE == AppRole.INDEXING or APP_ROLE == AppRole.NORMAL:
-		if ThreadType.FILES_INDEXING in THREADS:
+		if ThreadType.FILES_INDEXING in THREADS and THREADS[ThreadType.FILES_INDEXING].is_alive():
 			LOGGER.info('Indexing background threads are already up, skipping start')
-			return
-
-		THREADS[ThreadType.FILES_INDEXING] = Thread(
-			target=files_indexing_thread,
-			args=(app_config,get_enabled_state),
-			name='FilesIndexingThread',
-		)
-		THREADS[ThreadType.FILES_INDEXING].start()
+		else:
+			if ThreadType.FILES_INDEXING in THREADS:
+				LOGGER.warning('Indexing background thread was found dead, restarting it')
+				THREADS.pop(ThreadType.FILES_INDEXING)
+			THREADS[ThreadType.FILES_INDEXING] = Thread(
+				target=files_indexing_thread,
+				args=(app_config,get_enabled_state),
+				name='FilesIndexingThread',
+			)
+			THREADS[ThreadType.FILES_INDEXING].start()
 
 	if APP_ROLE == AppRole.UPDATES_PROC or APP_ROLE == AppRole.NORMAL:
-		if ThreadType.UPDATES_PROCESSING in THREADS:
+		if ThreadType.UPDATES_PROCESSING in THREADS and THREADS[ThreadType.UPDATES_PROCESSING].is_alive():
 			LOGGER.info('Updates processing background threads are already up, skipping start')
-			return
-
-		THREADS[ThreadType.UPDATES_PROCESSING] = Thread(
-			target=updates_processing_thread,
-			args=(app_config,get_enabled_state),
-			name='UpdatesProcessingThread',
-		)
-		THREADS[ThreadType.UPDATES_PROCESSING].start()
+		else:
+			if ThreadType.UPDATES_PROCESSING in THREADS:
+				LOGGER.warning('Updates processing background thread was found dead, restarting it')
+				THREADS.pop(ThreadType.UPDATES_PROCESSING)
+			THREADS[ThreadType.UPDATES_PROCESSING] = Thread(
+				target=updates_processing_thread,
+				args=(app_config,get_enabled_state),
+				name='UpdatesProcessingThread',
+			)
+			THREADS[ThreadType.UPDATES_PROCESSING].start()
 
 	if APP_ROLE == AppRole.REQUEST_PROC or APP_ROLE == AppRole.NORMAL:
-		if ThreadType.REQUEST_PROCESSING in THREADS:
+		if ThreadType.REQUEST_PROCESSING in THREADS and THREADS[ThreadType.REQUEST_PROCESSING].is_alive():
 			LOGGER.info('Request processing background threads are already up, skipping start')
-			return
-
-		THREADS[ThreadType.REQUEST_PROCESSING] = Thread(
-			target=request_processing_thread,
-			args=(app_config,get_enabled_state),
-			name='RequestProcessingThread',
-		)
-		THREADS[ThreadType.REQUEST_PROCESSING].start()
+		else:
+			if ThreadType.REQUEST_PROCESSING in THREADS:
+				LOGGER.warning('Request processing background thread was found dead, restarting it')
+				THREADS.pop(ThreadType.REQUEST_PROCESSING)
+			THREADS[ThreadType.REQUEST_PROCESSING] = Thread(
+				target=request_processing_thread,
+				args=(app_config,get_enabled_state),
+				name='RequestProcessingThread',
+			)
+			THREADS[ThreadType.REQUEST_PROCESSING].start()
 
 
 def wait_for_bg_threads():

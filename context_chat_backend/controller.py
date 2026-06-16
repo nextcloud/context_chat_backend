@@ -120,12 +120,13 @@ def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
 				expected_runtime=30,
 			)
 			nc.providers.task_processing.register(provider)
-			app_enabled.set()
+					app_enabled.set()
 			if THREAD_STOP_EVENT.is_set():
-				# If the threads were previously stopped, we start them again
-				# otherwise the lifecycle handler has already started them
-				start_bg_threads(app_config, get_enabled_state)
+				# Clear the stop event before starting threads so threads do not
+				# immediately exit. start_bg_threads also calls clear(), but doing
+				# it here makes the intent explicit and guards against races.
 				THREAD_STOP_EVENT.clear()
+			start_bg_threads(app_config, get_enabled_state)
 		else:
 			app_enabled.clear()
 			wait_for_bg_threads()
