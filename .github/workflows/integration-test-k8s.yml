@@ -47,8 +47,11 @@ jobs:
               - 'project.toml'
               - 'requirements.txt'
               - 'logger_config.k8s.yaml'
+              - 'logger_config_em.yaml'
               - 'supervisord.conf'
               - '.github/workflows/integration-test-k8s.yml'
+              - 'Dockerfile'
+              - 'dockerfile_scripts/**'
 
   integration:
     runs-on: ubuntu-24.04
