@@ -163,16 +163,6 @@ k8s_env = is_k8s_env()
 vectordb_loader = VectorDBLoader(app_config)
 
 
-# locks and semaphores
-
-# sequential prompt processing for in-house LLMs (non-nc_texttotext)
-llm_lock = threading.Lock()
-
-# lock to update the sources dict currently being processed
-index_lock = threading.Lock()
-_indexing = {}
-
-
 # middlewares
 
 if not app_config.disable_aaa:
