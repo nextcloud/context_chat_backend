@@ -1,0 +1,352 @@
+# SPDX-FileCopyrightText: 2026 Nextcloud GmbH and Nextcloud contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: RAG Benchmark
+
+on:
+  workflow_dispatch:
+  schedule:
+    # every 14th day of the month at 04:00 UTC
+    - cron: '0 4 */14 * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rag-benchmark-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        benchmark: [ 'multihop-rag', 'frames' ]
+
+    name: RAG Benchmark - ${{ matrix.benchmark }}
+
+    env:
+      PGSQL_PORT: 4445
+      CCB_DB_URL: postgresql+psycopg://root:rootpassword@localhost:4445/nextcloud
+      NC_SERVER_VERSION: stable34
+      NC_PHP_VERSION: '8.2'
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        ports:
+          - 4445:5432/tcp
+        env:
+          POSTGRES_USER: root
+          POSTGRES_PASSWORD: rootpassword
+          POSTGRES_DB: nextcloud
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 2s --health-retries 5 --name postgres --hostname postgres
+
+    steps:
+      - name: Checkout server
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          repository: nextcloud/server
+          ref: ${{ env.NC_SERVER_VERSION }}
+          submodules: 'recursive'
+          persist-credentials: false
+
+      - name: Set up php ${{ env.NC_PHP_VERSION }}
+        uses: shivammathur/setup-php@9e72090525849c5e82e596468b86eb55e9cc5401 # v2
+        with:
+          php-version: ${{ env.NC_PHP_VERSION }}
+          tools: phpunit
+          extensions: mbstring, iconv, fileinfo, intl, sqlite, pdo_mysql, pdo_sqlite, pgsql, pdo_pgsql, gd, zip
+
+      - name: Checkout context_chat php app
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          repository: nextcloud/context_chat
+          path: apps/context_chat
+          persist-credentials: false
+
+      - name: Checkout backend
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          path: context_chat_backend/
+          persist-credentials: false
+
+      - name: Checkout app_api
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          repository: nextcloud/app_api
+          ref: ${{ env.NC_SERVER_VERSION }}
+          path: apps/app_api
+          persist-credentials: false
+
+      - name: Get app version
+        id: appinfo
+        uses: skjnldsv/xpath-action@7e6a7c379d0e9abc8acaef43df403ab4fc4f770c # master
+        with:
+          filename: context_chat_backend/appinfo/info.xml
+          expression: "/info/version/text()"
+
+      - name: Set up Nextcloud
+        run: |
+          sleep 25
+          mkdir data
+          ./occ maintenance:install \
+            --verbose \
+            --database=pgsql \
+            --database-name=nextcloud \
+            --database-host=127.0.0.1 \
+            --database-port=$PGSQL_PORT \
+            --database-user=root \
+            --database-pass=rootpassword \
+            --admin-user admin \
+            --admin-pass password
+          composer run serve &
+
+      - name: Enable context_chat, app_api and testing
+        run: ./occ app:enable -vvv -f context_chat app_api testing
+
+      - name: Setup python 3.11
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: |
+            context_chat_backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: |
+          cd context_chat_backend
+          pip install --upgrade pip setuptools wheel
+          # use the cpu version of torch to save runner disk space
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          sed -i '/torch(vision)?/d' requirements.txt
+          pip install -r requirements.txt
+          pip install datasets huggingface_hub
+
+      - name: Download and prepare MultiHop-RAG corpus and queries
+        if: matrix.benchmark == 'multihop-rag'
+        run: |
+          python3 - <<'EOF'
+          import json, pathlib
+          from datasets import load_dataset
+
+          out = pathlib.Path('benchmark_data')
+          out.mkdir(exist_ok=True)
+
+          # MultiHop-RAG: corpus is the "corpus" split, eval set has query + evidence_list
+          corpus = load_dataset('yixuantt/MultiHopRAG', 'corpus', split='train', trust_remote_code=True)
+          queries = load_dataset('yixuantt/MultiHopRAG', 'MultiHopRAG', split='train', trust_remote_code=True)
+
+          # Write one .txt file per corpus article
+          docs_dir = out / 'docs'
+          docs_dir.mkdir(exist_ok=True)
+          for row in corpus:
+              doc_id = row['idx']
+              title  = row.get('title') or str(doc_id)
+              body   = row.get('body')  or ''
+              (docs_dir / f'{doc_id}.txt').write_text(f'{title}\n\n{body}', encoding='utf-8')
+
+          # Write queries JSON: [{query, evidence_list:[idx,...]}]
+          records = []
+          for row in queries:
+              records.append({
+                  'query': row['query'],
+                  'evidence_list': [e['idx'] for e in row['evidences']],
+              })
+          (out / 'queries.json').write_text(json.dumps(records, indent=2), encoding='utf-8')
+          print(f'Corpus size: {len(corpus)}  Queries: {len(records)}')
+          EOF
+
+      - name: Download and prepare FRAMES corpus and queries
+        if: matrix.benchmark == 'frames'
+        run: |
+          python3 - <<'EOF'
+          import json, hashlib, pathlib
+          from datasets import load_dataset
+
+          out = pathlib.Path('benchmark_data')
+          out.mkdir(exist_ok=True)
+
+          # FRAMES: each row has prompt + wiki_links (supporting passages) + answer
+          ds = load_dataset('google/frames-benchmark', split='test', trust_remote_code=True)
+
+          docs_dir = out / 'docs'
+          docs_dir.mkdir(exist_ok=True)
+
+          seen_docs = {}
+          records = []
+          for row in ds:
+              evidence_ids = []
+              for passage in row.get('wiki_links') or []:
+                  doc_id = hashlib.md5(passage.encode()).hexdigest()
+                  if doc_id not in seen_docs:
+                      seen_docs[doc_id] = True
+                      (docs_dir / f'{doc_id}.txt').write_text(passage, encoding='utf-8')
+                  evidence_ids.append(doc_id)
+              records.append({
+                  'query': row['Prompt'],
+                  'answer': row['Answer'],
+                  'evidence_list': evidence_ids,
+              })
+
+          (out / 'queries.json').write_text(json.dumps(records, indent=2), encoding='utf-8')
+          print(f'Corpus size: {len(seen_docs)}  Queries: {len(records)}')
+          EOF
+
+      - name: Upload benchmark corpus to Nextcloud
+        run: |
+          mkdir -p data/admin/files/benchmark
+          cp -r benchmark_data/docs/. data/admin/files/benchmark/
+          ./occ files:scan admin
+
+      - name: Start backend
+        run: |
+          cd context_chat_backend
+          cp example.env .env
+          echo "NEXTCLOUD_URL=http://localhost:8080" >> .env
+          python3 -u ./main_em.py > em_backend_logs 2>&1 &
+          python3 -u ./main.py > backend_logs 2>&1 &
+          echo $! > ../pid.txt
+          sleep 60
+
+      - name: Register backend
+        run: |
+          timeout 10 ./occ app_api:daemon:register --net host manual_install "Manual Install" manual-install http localhost http://localhost:8080
+          timeout 120 ./occ app_api:app:register context_chat_backend manual_install \
+            --json-info "{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"${{ fromJson(steps.appinfo.outputs.result).version }}\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system_app\":0}" \
+            --force-scopes --wait-finish
+
+      - name: Run cron jobs to populate indexing queue
+        run: |
+          while true; do php cron.php; sleep 10; done &
+          sleep 30
+
+      - name: Wait for indexing to complete (up to 30 minutes)
+        run: |
+          success=0
+          for i in {1..180}; do
+            stats=$(./occ context_chat:stats --json 2>/dev/null || echo '{}')
+            total=$(echo "$stats" | jq '.eligible_files_count // 0')
+            indexed=$(echo "$stats" | jq '.vectordb_document_counts.files__default // 0')
+            queued=$(echo "$stats" | jq '[.queued_documents_counts | to_entries[].value] | add // 0')
+            echo "Attempt $i: eligible=$total indexed=$indexed queued=$queued"
+
+            diff=$((total - indexed))
+            threshold=$((total * 3 / 100))
+            if [ "$total" -gt 0 ] && [ "$queued" -eq 0 ] && [ "$diff" -le "$threshold" ]; then
+              echo "Indexing complete (diff=$diff, threshold=$threshold)"
+              success=1
+              break
+            fi
+
+            sleep 10
+          done
+
+          if [ $success -ne 1 ]; then
+            echo "Indexing did not complete within 30 minutes"
+            exit 1
+          fi
+
+      # TODO: add MRR (Mean Reciprocal Rank) metric to the evaluation loop below
+      # TODO: add LLM-as-judge answer correctness eval using llama.cpp (local, no external API key needed)
+      #         spin up a llama.cpp server with a small model
+      #         prompt it with the query + retrieved context + ground-truth answer, score pass/fail
+      - name: Run benchmark queries and compute Recall@k
+        run: |
+          ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' > worker_logs 2>&1 &
+
+          python3 - <<'EOF'
+          import json, subprocess, sys
+
+          RECALL_AT_K = [1, 5, 10]
+          OCC = './occ'
+          USER = 'admin'
+
+          queries = json.loads(open('benchmark_data/queries.json').read())
+
+          hits = {k: 0 for k in RECALL_AT_K}
+          total = len(queries)
+
+          for i, q in enumerate(queries):
+              result = subprocess.run(
+                  [OCC, 'context_chat:prompt', USER, q['query'], '--json'],
+                  capture_output=True, text=True,
+              )
+              try:
+                  data = json.loads(result.stdout)
+              except json.JSONDecodeError:
+                  print(f'[{i+1}/{total}] JSON parse error, skipping: {result.stdout[:200]}')
+                  continue
+
+              # sources is a list of source_id strings; the file name (doc_id) is after the last "/"
+              returned_ids = []
+              for src in (data.get('sources') or []):
+                  # source_id format: files__default: <fileid>  — we match on filename stem
+                  fname = src.get('title', '').split('/')[-1]
+                  stem = fname.rsplit('.', 1)[0]
+                  returned_ids.append(stem)
+
+              evidence = set(str(e) for e in q['evidence_list'])
+
+              for k in RECALL_AT_K:
+                  if evidence & set(returned_ids[:k]):
+                      hits[k] += 1
+
+              if (i + 1) % 50 == 0:
+                  print(f'Progress: {i+1}/{total}')
+
+          print('\n=== Benchmark Results ===')
+          for k in RECALL_AT_K:
+              recall = hits[k] / total if total else 0
+              print(f'Recall@{k}: {recall:.4f} ({hits[k]}/{total})')
+
+          results = {f'recall_at_{k}': hits[k] / total if total else 0 for k in RECALL_AT_K}
+          results['total_queries'] = total
+          with open('benchmark_results.json', 'w') as f:
+              json.dump(results, f, indent=2)
+          EOF
+
+      - name: Show benchmark results
+        if: always()
+        run: |
+          echo "=== ${{ matrix.benchmark }} results ==="
+          cat benchmark_results.json 2>/dev/null || echo "No results file"
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results-${{ matrix.benchmark }}
+          path: benchmark_results.json
+
+      - name: Show backend logs
+        if: always()
+        run: |
+          cat context_chat_backend/backend_logs || echo "No main backend logs"
+
+      - name: Show embedding server logs
+        if: always()
+        run: |
+          cat context_chat_backend/em_backend_logs || echo "No embedding backend logs"
+
+      - name: Show task processing worker logs
+        if: always()
+        run: |
+          cat worker_logs || echo "No worker logs"
+
+  summary:
+    permissions:
+      contents: none
+    runs-on: ubuntu-latest-low
+    needs: benchmark
+
+    if: always()
+
+    name: rag-benchmark
+
+    steps:
+      - name: Summary status
+        run: if ${{ needs.benchmark.result != 'success' }}; then exit 1; fi
