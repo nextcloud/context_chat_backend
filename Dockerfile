@@ -64,7 +64,7 @@ RUN /opt/venv/bin/python -m pip wheel \
 # ============================================================
 # CUDA (NVIDIA) builder
 # Builds llama_cpp_python with CUDA support.
-# CUDA 12.8 supports up to sm_100 (Blackwell / B100, B200).
+# CUDA 12.8 supports up to sm_120 (consumer Blackwell / RTX 5090).
 # gcc-14 is used for consistency with the other build stages and
 # because CUDA 12.6+ accepts gcc-14 natively on Ubuntu 24.04.
 # ============================================================
@@ -91,8 +91,12 @@ RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/lib/libcuda.so \
 ENV LD_LIBRARY_PATH="/usr/local/lib:/usr/local/cuda/lib64:/usr/local/cuda/lib64/stubs:${LD_LIBRARY_PATH}"
 ENV CC=gcc-14 CXX=g++-14
 
-# Real cubins for all shipping GPU generations through Blackwell (sm_100),
-# plus one forward-compatible PTX target to keep wheel size manageable.
+# CMAKE_CUDA_ARCHITECTURES is intentionally not set here. llama.cpp's CMake
+# selects sensible defaults based on the detected CUDA toolkit version:
+# with CUDA 12.8 this yields real cubins for sm_50..sm_89, sm_90, sm_120a
+# (all shipping GPU generations through consumer Blackwell / RTX 5090) plus
+# PTX virtual targets for forward compatibility. See:
+# https://github.com/ggml-org/llama.cpp/blob/master/ggml/src/ggml-cuda/CMakeLists.txt
 ENV CMAKE_ARGS="-DGGML_CUDA=ON -DGGML_CUDA_FORCE_MMQ=ON -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF \
     -DGGML_AVX=ON -DGGML_AVX2=ON \
     -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16"
