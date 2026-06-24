@@ -411,12 +411,12 @@ jobs:
             scheduled=$(echo "$stats" | jq '[.queued_documents_counts | to_entries[].value] | add // 0')
             locked=$(echo "$stats"    | jq '[.queued_documents_locked_counts | to_entries[].value] | add // 0')
             echo "Attempt $i: queued_documents=$scheduled locked=$locked"
-            if [ "$scheduled" = "0" ]; then
+            if [ "$scheduled" = "0" ] && [ "$locked" = "0" ]; then
               echo "Queue drained"
               break
             fi
             if [ "$i" = "30" ]; then
-              echo "Timeout: queue did not drain to zero (queued_documents=$scheduled)"
+              echo "Timeout: queue did not drain to zero (queued_documents=$scheduled locked=$locked)"
               exit 1
             fi
             sleep 10
