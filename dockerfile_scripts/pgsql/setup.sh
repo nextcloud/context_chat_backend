@@ -11,7 +11,7 @@ source "$(dirname $(realpath $0))/env"
 
 if [ x"$1" == "xstop" ]; then
     echo -n Stopping PostgreSQL...
-    sudo -u postgres ${PG_BIN}/pg_ctl -D "$DATA_DIR" -l "${DATA_DIR}/logfile" -o "-p ${PG_PORT}" stop
+    sudo -u postgres ${PG_BIN}/pg_ctl -D "$DATA_DIR" -o "-p ${PG_PORT}" stop
     exit 0
 fi
 
@@ -47,8 +47,19 @@ if [ ! -d "$DATA_DIR/base" ]; then
     sudo -u postgres ${PG_BIN}/initdb -D "$DATA_DIR" -E UTF8
 fi
 
+# Rotate the internal PostgreSQL logs with the built-in logging collector: one
+# file per weekday (postgresql-Mon.log ... postgresql-Sun.log) under
+# "$DATA_DIR/log". The collector overwrites a weekday file only on time-based
+# rotation, not on startup, so a frequently-restarted container would otherwise
+# append to last week's same-named file. Before starting, drop the pre-rotation
+# single logfile and any weekday log at least six days old (find -mtime +5), so
+# last week's file is always gone before its name is reused. See #303.
+rm -f "${DATA_DIR}/logfile"
+find "${DATA_DIR}/log" -maxdepth 1 -type f -name 'postgresql-*.log' -mtime +5 -delete 2>/dev/null || true
+PG_LOG_OPTS="-c logging_collector=on -c log_directory=log -c log_filename=postgresql-%a.log -c log_rotation_age=1d -c log_rotation_size=0 -c log_truncate_on_rotation=on"
+
 echo "Starting PostgreSQL..."
-sudo -u postgres ${PG_BIN}/pg_ctl -D "$DATA_DIR" -l "${DATA_DIR}/logfile" -o "-p ${PG_PORT}" start
+sudo -u postgres ${PG_BIN}/pg_ctl -D "$DATA_DIR" -o "-p ${PG_PORT} ${PG_LOG_OPTS}" start
 
 echo "Waiting for PostgreSQL to start..."
 until sudo -u postgres ${PG_SQL} -c "SELECT 1" > /dev/null 2>&1; do
