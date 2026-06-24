@@ -9,6 +9,36 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 
+## 5.4.0 - 2026-06-24
+
+### Highlights
+- The indexing direction has been reversed now. Instead of the context_chat PHP app sending documents to the context_chat_backend ExApp, the ExApp downloads the documents from the server according to a list obtained from the PHP app. This also means that the `occ context_chat:scan` command serves no purpose and has been removed. Indexing should be smoother and run continuously now.
+- Kubernetes support to scale the CPU computation
+- Separate docker images for CPU, CUDA and ROCM (uses Vulkan) instead of one heavy CUDA/CPU image
+- CUDA 12.8 is shipped in the CUDA image so the host drivers should be updated to this at the minimum.
+
+### Added
+- add network embedding batching (#276) @fcharlaix-opendsi
+- add kubernetes support and reverse content/indexing flow (#284) @kyteinsky @marcelklehr
+- add gh workflows for docker builds and do separate cpu, cuda and rocm (vulkan) images (#295) @kyteinsky
+
+### Changed
+- update readme according to the latest changes (#300) @kyteinsky
+- bump llama_cpp_python to 0.3.23 (#301) @kyteinsky
+- move task types to the backend (#321) @kyteinsky
+- adjust comment in Dockerfile regarding RTX5090 support (#316) @kyteinsky
+
+### Fixed
+- improve loadSources error handling (#288) @kyteinsky
+- fix(pgvector): add chunking to prevent long list of args in queries (#290) @kyteinsky
+- fix(pgvector): make doc deletion query faster (#289) @kyteinsky
+- drop latin-1 decode in source title and userIds (#306) @kyteinsky
+- handle validation errors of files and content providers individually (#308) @kyteinsky
+- prevent race condition in vectordb tables creation (#308) @kyteinsky
+- pass actual error in the error object (#308) @kyteinsky
+- add container hostname to /etc/hosts to silence sudo warning (#311) @sanzakicesarr
+
+
 ## 5.4.0-beta0 - 2026-05-26
 
 ### Added
