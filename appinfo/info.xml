@@ -8,7 +8,8 @@
 	<name>Context Chat Backend</name>
 	<summary>Python backend for Context Chat</summary>
 	<description>
-	<![CDATA[This is the Python backend for Context Chat.  
+	<![CDATA[This is the Python backend for Context Chat.
+
 Context Chat is useful for people who want to ask questions from a large language model but using their documents as context.
 
 Install the given apps for Context Chat to work as desired **in the given order**:
@@ -29,7 +30,7 @@ Setup background job workers as described here: https://docs.nextcloud.com/serve
 	<bugs>https://github.com/nextcloud/context_chat_backend/issues</bugs>
 	<repository type="git">https://github.com/nextcloud/context_chat_backend.git</repository>
 	<dependencies>
-		<nextcloud min-version="32" max-version="34"/>
+		<nextcloud min-version="32" max-version="35"/>
 	</dependencies>
 	<external-app>
 		<docker-install>

@@ -63,10 +63,9 @@ jobs:
       # do not stop on another job's failure
       fail-fast: false
       matrix:
-        # todo: support NC 35
-        php-versions: [ '8.2' ]
+        php-versions: [ '8.3' ]
         databases: [ 'pgsql' ]
-        server-versions: [ 'stable34' ]
+        server-versions: [ 'master' ]
 
     name: Integration test k8s on ${{ matrix.server-versions }} php@${{ matrix.php-versions }}
 
