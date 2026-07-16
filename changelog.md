@@ -9,6 +9,15 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 
+## 5.4.1 - 2026-07-16
+
+### Changed
+- NC 35 support (#328) @kyteinsky
+
+### Fixed
+- fix(pgvector): drop "id" column from access_list (#329) @kyteinsky
+
+
 ## 5.4.0 - 2026-06-24
 
 ### Highlights
