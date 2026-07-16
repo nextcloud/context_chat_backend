@@ -79,8 +79,6 @@ class AccessListStore(Base):
 
 	__tablename__ = ACCESS_LIST_TABLE_NAME
 
-	id: orm.Mapped[int] = orm.mapped_column(primary_key=True, autoincrement=True)
-
 	uid: orm.Mapped[str] = orm.mapped_column(nullable=False)
 	source_id: orm.Mapped[str] = orm.mapped_column(
 		sa.ForeignKey(
@@ -91,16 +89,15 @@ class AccessListStore(Base):
 	)
 
 	__table_args__ = (
-		sa.Index(
-			'uid_chunk_id_idx',
+		sa.PrimaryKeyConstraint(
 			'uid',
 			'source_id',
-			unique=True,
+			name='access_list_pkey',
 		),
 		sa.Index(
 			'idx_access_list_source_id',
 			'source_id',
-		)
+		),
 	)
 
 	@classmethod
@@ -348,7 +345,7 @@ class VectorDB(BaseVectorDB):
 						}
 						for user_id in batched_uids
 					])
-					.on_conflict_do_nothing(index_elements=['uid', 'source_id'])
+					.on_conflict_do_nothing(constraint='access_list_pkey')
 				)
 				session.execute(stmt)
 
@@ -402,7 +399,7 @@ class VectorDB(BaseVectorDB):
 								}
 								for user_id in batched_uids
 							])
-							.on_conflict_do_nothing(index_elements=['uid', 'source_id'])
+							.on_conflict_do_nothing(constraint='access_list_pkey')
 						)
 						session.execute(stmt)
 					session.commit()
