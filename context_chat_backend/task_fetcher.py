@@ -513,8 +513,16 @@ def request_processing_thread(app_config: TConfig, get_enabled_state) -> None:
 			# Fetch pending task
 			try:
 				response = nc.providers.task_processing.next_task(
-					['context_chat-context_chat', 'context_chat-context_chat_search'],
-					['context_chat:context_chat', 'context_chat:context_chat_search'],
+					[
+						'context_chat-context_chat',
+						'context_chat-context_chat_search',
+						'context_chat-context_chat_multi',
+					],
+					[
+						'context_chat:context_chat',
+						'context_chat:context_chat_search',
+						'context_chat:context_chat_multi',
+					],
 				)
 				if not response:
 					wait_for_tasks()
@@ -547,6 +555,14 @@ def request_processing_thread(app_config: TConfig, get_enabled_state) -> None:
 					# Return result to Nextcloud
 					success = return_result_to_nextcloud(task['id'], userId, {
 						'sources': enrich_sources(search_result, userId),
+					})
+				elif task['type'] == 'context_chat:context_chat_multi':
+					multi_result = process_multi_task(task, vectordb_loader, llm, app_config)
+					# Return result to Nextcloud
+					success = return_result_to_nextcloud(task['id'], userId, {
+						'questions': multi_result['questions'],
+						'answers': multi_result['answers'],
+						'sources': enrich_sources(multi_result['sources'], userId),
 					})
 				else:
 					LOGGER.error(f'Unknown task type {task["type"]}')
@@ -692,6 +708,82 @@ def process_normal_task(
 			app_config.llm[1].get('template'),
 		)
 	)
+
+# Keep in sync with MAX_MULTI_QUESTIONS in controller.py
+MAX_MULTI_QUESTIONS = 20
+
+
+def _split_questions(raw_prompt: str) -> list[str]:
+	"""Split a multi-line prompt into individual, non-empty questions."""
+	questions = [line.strip() for line in (raw_prompt or '').splitlines()]
+	questions = [q for q in questions if q]
+	return questions[:MAX_MULTI_QUESTIONS]
+
+
+def process_multi_task(
+	task: dict[str, Any],
+	vectordb_loader: VectorDBLoader,
+	llm: LLM,
+	app_config: TConfig,
+) -> dict[str, Any]:
+	"""
+	Process a task containing several questions (one per line), answering each
+	sequentially against the same scope, and collecting all results.
+
+	Args:
+		task: Task dictionary from fetch_query_tasks_from_nextcloud
+		vectordb_loader: Vector database loader instance
+		llm: Language model instance
+		app_config: Application configuration
+
+	Returns:
+		dict with 'questions' (as asked), 'answers' (in the same order) and 'sources' (deduplicated across all answers)
+
+	Raises:
+		ValueError: if no valid question was found in the prompt
+		Various exceptions from query execution
+	"""
+	user_id = task['userId']
+	task_input = task['input']
+	if task_input.get('scopeType') == 'none':
+		task_input['scopeType'] = None
+
+	questions = _split_questions(task_input.get('prompt'))
+	if not questions:
+		raise ValueError('No questions found. Please provide at least one question, one per line.')
+
+	answers: list[str] = []
+	all_sources: list[SearchResult] = []
+	seen_sources: set[str] = set()
+
+	for question in questions:
+		result: LLMOutput = exec_in_proc(target=process_context_query,
+			args=(
+				user_id,
+				vectordb_loader,
+				llm,
+				app_config,
+				question,
+				CONTEXT_LIMIT,
+				task_input.get('scopeType'),
+				task_input.get('scopeList'),
+				app_config.llm[1].get('template'),
+			)
+		)
+		answers.append(result['output'])
+		for source in result['sources']:
+			# avoid duplicate sources across answers while preserving order
+			key = getattr(source, 'id', None) or str(source)
+			if key not in seen_sources:
+				seen_sources.add(key)
+				all_sources.append(source)
+
+	return {
+		'questions': questions,
+		'answers': answers,
+		'sources': all_sources,
+	}
+
 
 def process_search_task(
 	task: dict[str, Any],
