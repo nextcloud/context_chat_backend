@@ -558,11 +558,22 @@ def request_processing_thread(app_config: TConfig, get_enabled_state) -> None:
 					})
 				elif task['type'] == 'context_chat:context_chat_multi':
 					multi_result = process_multi_task(task, vectordb_loader, llm, app_config)
+					# enrich every source in a single API call, then regroup the
+					# enriched results back into one list per question
+					sources_per_question = multi_result['sources_per_question']
+					counts = [len(group) for group in sources_per_question]
+					flat_sources = [source for group in sources_per_question for source in group]
+					enriched_flat = enrich_sources(flat_sources, userId)
+					grouped_sources: list[str] = []
+					i = 0
+					for count in counts:
+						grouped_sources.append('[' + ','.join(enriched_flat[i:i + count]) + ']')
+						i += count
 					# Return result to Nextcloud
 					success = return_result_to_nextcloud(task['id'], userId, {
 						'questions': multi_result['questions'],
 						'answers': multi_result['answers'],
-						'sources': enrich_sources(multi_result['sources'], userId),
+						'sources': grouped_sources,
 					})
 				else:
 					LOGGER.error(f'Unknown task type {task["type"]}')
@@ -713,12 +724,11 @@ def process_normal_task(
 MAX_MULTI_QUESTIONS = 20
 
 
-def _split_questions(raw_prompt: str) -> list[str]:
-	"""Split a multi-line prompt into individual, non-empty questions."""
-	questions = [line.strip() for line in (raw_prompt or '').splitlines()]
+def _normalize_questions(raw_questions: list[str] | None) -> list[str]:
+	"""Clean up a list of questions: strip whitespace, drop empty entries, cap the count."""
+	questions = [q.strip() for q in (raw_questions or [])]
 	questions = [q for q in questions if q]
 	return questions[:MAX_MULTI_QUESTIONS]
-
 
 def process_multi_task(
 	task: dict[str, Any],
@@ -748,13 +758,12 @@ def process_multi_task(
 	if task_input.get('scopeType') == 'none':
 		task_input['scopeType'] = None
 
-	questions = _split_questions(task_input.get('prompt'))
+	questions = _normalize_questions(task_input.get('questions'))
 	if not questions:
-		raise ValueError('No questions found. Please provide at least one question, one per line.')
+		raise ValueError('No questions found. Please provide at least one questione.')
 
 	answers: list[str] = []
-	all_sources: list[SearchResult] = []
-	seen_sources: set[str] = set()
+	sources_per_question: list[list[SearchResult]] = []
 
 	for question in questions:
 		result: LLMOutput = exec_in_proc(target=process_context_query,
@@ -771,19 +780,21 @@ def process_multi_task(
 			)
 		)
 		answers.append(result['output'])
+		# de-duplicate sources within this single question's own answer
+		seen_sources: set[str] = set()
+		question_sources: list[SearchResult] = []
 		for source in result['sources']:
-			# avoid duplicate sources across answers while preserving order
 			key = getattr(source, 'id', None) or str(source)
 			if key not in seen_sources:
 				seen_sources.add(key)
-				all_sources.append(source)
+				question_sources.append(source)
+		sources_per_question.append(question_sources)
 
 	return {
 		'questions': questions,
 		'answers': answers,
-		'sources': all_sources,
+		'sources_per_question': sources_per_question,
 	}
-
 
 def process_search_task(
 	task: dict[str, Any],

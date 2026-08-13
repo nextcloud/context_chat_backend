@@ -217,12 +217,12 @@ def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
 			multi_tasktype = TaskType(
 				id=MULTI_TASKTYPE_ID,
 				name='Context Chat Multi',
-				description='Ask several questions about your data at once, one per line.',
+				description='Ask several questions about your data at once.',
 				input_shape=[
 					ShapeDescriptor(
-						name='prompt',
-						description='Ask one or more questions about your documents, files and more. Put each question on its own line.',
-						shape_type=ShapeType.TEXT,
+						name='questions',
+						description='Ask one or more questions about your documents, files and more.',
+						shape_type=ShapeType.LIST_OF_TEXTS,
 					),
 					ShapeDescriptor(
 						name='scopeType',
@@ -253,7 +253,7 @@ def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
 					),
 					ShapeDescriptor(
 						name='sources',
-						description='The sources referenced across all answers',
+						description='The sources referenced to generate this answer',
 						shape_type=ShapeType.LIST_OF_TEXTS,
 					),
 				],
