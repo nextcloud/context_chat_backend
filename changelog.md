@@ -9,6 +9,17 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 
+## 5.5.0-beta0 - 2026-08-17
+
+### Changed
+- include patch versions to repair filenames (#333) @kyteinsky
+
+### Fixed
+- run all repairs when version.info file is absent from persistent storage (#333) @kyteinsky
+- output unique sources in context chat output (#334) @kyteinsky
+- use the limit var passed in the context chat search task (#334) @kyteinsky
+
+
 ## 5.4.1 - 2026-07-16
 
 ### Changed
