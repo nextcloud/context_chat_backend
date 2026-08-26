@@ -221,7 +221,7 @@ def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
 				input_shape=[
 					ShapeDescriptor(
 						name='questions',
-						description='Ask one or more questions about your documents, files and more.',
+						description='Ask questions about your documents, files and more.',
 						shape_type=ShapeType.LIST_OF_TEXTS,
 					),
 					ShapeDescriptor(
