@@ -22,7 +22,7 @@ from pydantic import ValidationError
 from .chain.context import do_doc_search
 from .chain.ingest.injest import embed_sources
 from .chain.one_shot import process_context_query
-from .chain.types import ContextException, EnrichedSourceList, LLMOutput, ScopeList, SearchResult
+from .chain.types import ContextException, EnrichedSourceList, LLMOutput, MultiOutput, ScopeList, SearchResult
 from .dyn_loader import LLMModelLoader, VectorDBLoader
 from .network_em import NetworkEmbeddings
 from .types import (
@@ -735,7 +735,7 @@ def process_multi_task(
 	vectordb_loader: VectorDBLoader,
 	llm: LLM,
 	app_config: TConfig,
-) -> dict[str, Any]:
+) -> MultiOutput:
 	"""
 	Process a task containing several questions (one per line), answering each
 	sequentially against the same scope, and collecting all results.

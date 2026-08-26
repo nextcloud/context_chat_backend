@@ -12,6 +12,7 @@ __all__ = [
 	'ContextException',
 	'InDocument',
 	'LLMOutput',
+	'MultiOutput',
 	'ScopeType',
 ]
 
@@ -41,6 +42,12 @@ class SearchResult(TypedDict):
 class LLMOutput(TypedDict):
 	output: str
 	sources: list[SearchResult]
+
+
+class MultiOutput(TypedDict):
+	questions: list[str]
+	answers: list[str]
+	sources_per_question: list[list[SearchResult]]
 
 
 class EnrichedSource(BaseModel):
