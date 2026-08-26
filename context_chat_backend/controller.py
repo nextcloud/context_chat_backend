@@ -264,6 +264,9 @@ def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
 				task_type=MULTI_TASKTYPE_ID,
 				# multiple sequential LLM calls, so allow more time than a single question
 				expected_runtime=30 * MAX_MULTI_QUESTIONS,
+				input_shape_defaults={
+					'maxQuestions': MAX_MULTI_QUESTIONS,
+				},
 			)
 			nc.providers.task_processing.register(multi_provider, multi_tasktype)
 
