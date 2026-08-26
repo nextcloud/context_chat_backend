@@ -62,6 +62,7 @@ TP_CHECK_INTERVAL = 5
 TP_CHECK_INTERVAL_WITH_TRIGGER = 5 * 60
 TP_CHECK_INTERVAL_ON_ERROR = 15
 CONTEXT_LIMIT = 30
+MAX_MULTI_QUESTIONS = 20
 
 
 class ThreadType(Enum):
@@ -720,8 +721,7 @@ def process_normal_task(
 		)
 	)
 
-# Keep in sync with MAX_MULTI_QUESTIONS in controller.py
-MAX_MULTI_QUESTIONS = 20
+
 
 
 def _normalize_questions(raw_questions: list[str] | None) -> list[str]:

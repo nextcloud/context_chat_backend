@@ -37,7 +37,7 @@ from .dyn_loader import VectorDBLoader
 from .models.types import LlmException
 from nc_py_api.ex_app import AppAPIAuthMiddleware
 from .utils import JSONResponse, exec_in_proc, get_app_role, is_k8s_env
-from .task_fetcher import THREAD_STOP_EVENT, start_bg_threads, trigger_handler, wait_for_bg_threads
+from .task_fetcher import MAX_MULTI_QUESTIONS, THREAD_STOP_EVENT, start_bg_threads, trigger_handler, wait_for_bg_threads
 from .vectordb.service import count_documents_by_provider
 
 # setup
@@ -101,7 +101,6 @@ def get_enabled_state() -> bool:
 		return app_enabled.is_set()
 
 
-MAX_MULTI_QUESTIONS = 20
 
 
 def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
