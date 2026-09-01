@@ -23,6 +23,9 @@ from .types import (
 
 logger = logging.getLogger('ccb.nextwork_em')
 TCP_CONNECT_TIMEOUT = 2.0  # seconds
+# instruct task for e5 models (https://huggingface.co/intfloat/multilingual-e5-large-instruct),
+# including the bundled default model multilingual-e5-large-instruct
+E5_QUERY_INSTRUCT = 'Given a web search query, retrieve relevant passages that answer the query'
 
 # Copied from llama_cpp/llama_types.py
 
@@ -176,4 +179,5 @@ class NetworkEmbeddings(Embeddings):
 		return results
 
 	def embed_query(self, text: str) -> list[float]:
-		return self._get_embedding(text)  # pyright: ignore[reportReturnType]
+		# e5 models expect queries in the "Instruct: ...\nQuery: ..." format; documents are embedded raw
+		return self._get_embedding(f'Instruct: {E5_QUERY_INSTRUCT}\nQuery: {text}')  # pyright: ignore[reportReturnType]
