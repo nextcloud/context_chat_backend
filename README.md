@@ -7,8 +7,6 @@
 [![REUSE status](https://api.reuse.software/badge/github.com/nextcloud/context_chat_backend)](https://api.reuse.software/info/github.com/nextcloud/context_chat_backend)
 
 > [!NOTE]
-> Be mindful to install the backend before the Context Chat php app (Context Chat php app would sends all the user-accessible files to the backend for indexing in the background. It is not an issue even if the request fails to an uninitialised backend since those files would be tried again in the next background job run.)
->
 > The HTTP request timeout is 50 minutes for all requests and can be changed with the `request_timeout` app config for the php app `context_chat` using the occ command (`occ config:app:set context_chat request_timeout --value=3000`, value is in seconds). The same also needs to be done for docker socket proxy. See [Slow responding ExApps](https://github.com/cloud-py-api/docker-socket-proxy?tab=readme-ov-file#slow-responding-exapps)
 >
 > An end-to-end example for dev setups on how to build and register the backend manually (with CUDA) is at the end of this readme
@@ -17,12 +15,7 @@
 
 ## Install
 
-Install the given apps for Context Chat to work as desired **in the given order**:
-- [AppAPI from the Apps page](https://apps.nextcloud.com/apps/app_api)
-- [Context Chat (same major and minor version as the backend) from the Apps page](https://apps.nextcloud.com/apps/context_chat)
-- [Context Chat Backend (same major and minor version as Context Chat app) from the Apps page](https://apps.nextcloud.com/apps/context_chat_backend)
-- [Assistant from the Apps page](https://apps.nextcloud.com/apps/assistant). The OCS API or the `occ` commands can also be used to interact with this app but it recommended to do that through a Task Processing OCP API consumer like the Assistant app, which is also the officially supported universal UI for all the AI providers.
-- Text2Text Task Processing Provider, any one of https://docs.nextcloud.com/server/latest/admin_manual/ai/overview.html#backend-apps
+See [the Admin docs](https://docs.nextcloud.com/server/latest/admin_manual/ai/app_context_chat.html) for installation steps and requirements.
 
 > [!NOTE]
 > See [AppAPI's deploy daemon configuration](#configure-the-appapis-deploy-daemon)
