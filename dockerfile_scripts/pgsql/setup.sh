@@ -22,7 +22,9 @@ if [ -n "${EXTERNAL_DB}" ]; then
         exit 1
     fi
 
-    echo "Using EXTERNAL_DB, CCB_DB_URL is set to: $EXTERNAL_DB"
+    # the password must not reach the container log
+    redacted_db_url=$(printf '%s' "$EXTERNAL_DB" | sed -E 's#(://[^:/@]*):[^/]*@#\1:***@#')
+    echo "Using EXTERNAL_DB, CCB_DB_URL is set to: $redacted_db_url"
 
     if ! grep -q "^export EXTERNAL_DB=" /etc/environment; then
         echo "export EXTERNAL_DB=\"$EXTERNAL_DB\"" >> /etc/environment
