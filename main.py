@@ -49,9 +49,15 @@ def _setup_log_levels(debug: bool):
 
 if __name__ == '__main__':
 	k8s_env = is_k8s_env()
-	logging_config = get_logging_config(LOGGER_K8S_CONFIG_NAME if k8s_env else LOGGER_CONFIG_NAME)
-	setup_logging(logging_config)
 	app_config: TConfig = app.extra['CONFIG']
+	logging_config = get_logging_config(LOGGER_K8S_CONFIG_NAME if k8s_env else LOGGER_CONFIG_NAME)
+	if app_config.debug:
+		# the file handler is already at DEBUG; without this the detail never reaches
+		# stderr, which is where a container deployment is read from
+		stderr_handler = logging_config.get('handlers', {}).get('stderr')
+		if stderr_handler is not None:
+			stderr_handler['level'] = 'DEBUG'
+	setup_logging(logging_config)
 	_setup_log_levels(app_config.debug)
 
 	# do forks from a clean process that doesn't have any threads or locks
