@@ -22,7 +22,7 @@ from pydantic import ValidationError
 from .chain.context import do_doc_search
 from .chain.ingest.injest import embed_sources
 from .chain.one_shot import process_context_query
-from .chain.types import ContextException, EnrichedSourceList, LLMOutput, ScopeList, SearchResult
+from .chain.types import ContextException, EnrichedSourceList, LLMOutput, MultiOutput, ScopeList, SearchResult
 from .dyn_loader import LLMModelLoader, VectorDBLoader
 from .network_em import NetworkEmbeddings
 from .types import (
@@ -62,6 +62,7 @@ TP_CHECK_INTERVAL = 5
 TP_CHECK_INTERVAL_WITH_TRIGGER = 5 * 60
 TP_CHECK_INTERVAL_ON_ERROR = 15
 CONTEXT_LIMIT = 30
+MAX_MULTI_QUESTIONS = 20
 
 
 class ThreadType(Enum):
@@ -513,8 +514,16 @@ def request_processing_thread(app_config: TConfig, get_enabled_state) -> None:
 			# Fetch pending task
 			try:
 				response = nc.providers.task_processing.next_task(
-					['context_chat-context_chat', 'context_chat-context_chat_search'],
-					['context_chat:context_chat', 'context_chat:context_chat_search'],
+					[
+						'context_chat-context_chat',
+						'context_chat-context_chat_search',
+						'context_chat-context_chat_multi',
+					],
+					[
+						'context_chat:context_chat',
+						'context_chat:context_chat_search',
+						'context_chat:context_chat_multi',
+					],
 				)
 				if not response:
 					wait_for_tasks()
@@ -547,6 +556,25 @@ def request_processing_thread(app_config: TConfig, get_enabled_state) -> None:
 					# Return result to Nextcloud
 					success = return_result_to_nextcloud(task['id'], userId, {
 						'sources': enrich_sources(search_result, userId),
+					})
+				elif task['type'] == 'context_chat:context_chat_multi':
+					multi_result = process_multi_task(task, vectordb_loader, llm, app_config)
+					# enrich every source in a single API call, then regroup the
+					# enriched results back into one list per question
+					sources_per_question = multi_result['sources_per_question']
+					counts = [len(group) for group in sources_per_question]
+					flat_sources = [source for group in sources_per_question for source in group]
+					enriched_flat = enrich_sources(flat_sources, userId)
+					grouped_sources: list[str] = []
+					i = 0
+					for count in counts:
+						grouped_sources.append('[' + ','.join(enriched_flat[i:i + count]) + ']')
+						i += count
+					# Return result to Nextcloud
+					success = return_result_to_nextcloud(task['id'], userId, {
+						'questions': multi_result['questions'],
+						'answers': multi_result['answers'],
+						'sources': grouped_sources,
 					})
 				else:
 					LOGGER.error(f'Unknown task type {task["type"]}')
@@ -692,6 +720,81 @@ def process_normal_task(
 			app_config.llm[1].get('template'),
 		)
 	)
+
+
+
+
+def _normalize_questions(raw_questions: list[str] | None) -> list[str]:
+	"""Clean up a list of questions: strip whitespace, drop empty entries, cap the count."""
+	questions = [q.strip() for q in (raw_questions or [])]
+	questions = [q for q in questions if q]
+	return questions[:MAX_MULTI_QUESTIONS]
+
+def process_multi_task(
+	task: dict[str, Any],
+	vectordb_loader: VectorDBLoader,
+	llm: LLM,
+	app_config: TConfig,
+) -> MultiOutput:
+	"""
+	Process a task containing several questions (one per line), answering each
+	sequentially against the same scope, and collecting all results.
+
+	Args:
+		task: Task dictionary from fetch_query_tasks_from_nextcloud
+		vectordb_loader: Vector database loader instance
+		llm: Language model instance
+		app_config: Application configuration
+
+	Returns:
+		dict with 'questions' (as asked), 'answers' (in the same order) and 'sources' (deduplicated across all answers)
+
+	Raises:
+		ValueError: if no valid question was found in the prompt
+		Various exceptions from query execution
+	"""
+	user_id = task['userId']
+	task_input = task['input']
+	if task_input.get('scopeType') == 'none':
+		task_input['scopeType'] = None
+
+	questions = _normalize_questions(task_input.get('questions'))
+	if not questions:
+		raise ValueError('No questions found. Please provide at least one questione.')
+
+	answers: list[str] = []
+	sources_per_question: list[list[SearchResult]] = []
+
+	for question in questions:
+		result: LLMOutput = exec_in_proc(target=process_context_query,
+			args=(
+				user_id,
+				vectordb_loader,
+				llm,
+				app_config,
+				question,
+				CONTEXT_LIMIT,
+				task_input.get('scopeType'),
+				task_input.get('scopeList'),
+				app_config.llm[1].get('template'),
+			)
+		)
+		answers.append(result['output'])
+		# de-duplicate sources within this single question's own answer
+		seen_sources: set[str] = set()
+		question_sources: list[SearchResult] = []
+		for source in result['sources']:
+			key = getattr(source, 'id', None) or str(source)
+			if key not in seen_sources:
+				seen_sources.add(key)
+				question_sources.append(source)
+		sources_per_question.append(question_sources)
+
+	return {
+		'questions': questions,
+		'answers': answers,
+		'sources_per_question': sources_per_question,
+	}
 
 def process_search_task(
 	task: dict[str, Any],
