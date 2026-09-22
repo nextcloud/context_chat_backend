@@ -23,6 +23,7 @@ from .types import (
 
 logger = logging.getLogger('ccb.nextwork_em')
 TCP_CONNECT_TIMEOUT = 2.0  # seconds
+HTTP_CONNECT_TIMEOUT = 15  # seconds
 
 # Copied from llama_cpp/llama_types.py
 
@@ -99,7 +100,10 @@ class NetworkEmbeddings(Embeddings):
 			response = niquests.post(
 				f'{emconf.base_url.removesuffix("/")}/embeddings',
 				json=data,
-				timeout=emconf.request_timeout,
+				timeout=niquests.TimeoutConfiguration(
+					connect=HTTP_CONNECT_TIMEOUT,
+					read=emconf.request_timeout,
+				),
 				auth=auth,
 				verify=self.app_config.verify_ssl,
 			)
