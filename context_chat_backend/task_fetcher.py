@@ -70,7 +70,7 @@ class ThreadType(Enum):
 	REQUEST_PROCESSING = 'request_processing'
 
 
-def files_indexing_thread(app_config: TConfig, get_enabled_state) -> None:
+def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 	try:
 		network_em = NetworkEmbeddings(app_config)
 		vectordb_loader = VectorDBLoader(app_config)
@@ -145,7 +145,7 @@ def files_indexing_thread(app_config: TConfig, get_enabled_state) -> None:
 			LOGGER.info('Files indexing thread is stopping due to stop event being set')
 			return
 
-		if not get_enabled_state():
+		if not app_enabled.is_set():
 			LOGGER.info('App is disabled, files indexing thread will sleep until next enabled state check')
 			sleep(POLLING_COOLDOWN)
 			continue
@@ -295,7 +295,7 @@ def files_indexing_thread(app_config: TConfig, get_enabled_state) -> None:
 
 
 
-def updates_processing_thread(app_config: TConfig, get_enabled_state) -> None:
+def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 	try:
 		vectordb_loader = VectorDBLoader(app_config)
 	except LoaderException as e:
@@ -308,7 +308,7 @@ def updates_processing_thread(app_config: TConfig, get_enabled_state) -> None:
 			LOGGER.info('Updates processing thread is stopping due to stop event being set')
 			return
 
-		if not get_enabled_state():
+		if not app_enabled.is_set():
 			LOGGER.info('App is disabled, updates processing thread will sleep until next enabled state check')
 			sleep(POLLING_COOLDOWN)
 			continue
@@ -481,7 +481,7 @@ def resolve_scope_list(source_ids: list[str], userId: str) -> list[str]:
 	return ScopeList.model_validate(data).source_ids
 
 
-def request_processing_thread(app_config: TConfig, get_enabled_state) -> None:
+def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 	LOGGER.info('Starting request processing thread')
 
 	try:
@@ -500,7 +500,7 @@ def request_processing_thread(app_config: TConfig, get_enabled_state) -> None:
 			LOGGER.info('Request processing thread is stopping due to stop event being set')
 			return
 
-		if not get_enabled_state():
+		if not app_enabled.is_set():
 			LOGGER.info('App is disabled, request processing thread will sleep until next enabled state check')
 			sleep(POLLING_COOLDOWN)
 			continue
@@ -727,7 +727,7 @@ def process_search_task(
 	)
 
 
-def start_bg_threads(app_config: TConfig, get_enabled_state):
+def start_bg_threads(app_config: TConfig, app_enabled: Event):
 	THREAD_STOP_EVENT.clear()
 
 	if APP_ROLE == AppRole.INDEXING or APP_ROLE == AppRole.NORMAL:
@@ -737,7 +737,7 @@ def start_bg_threads(app_config: TConfig, get_enabled_state):
 
 		THREADS[ThreadType.FILES_INDEXING] = Thread(
 			target=files_indexing_thread,
-			args=(app_config,get_enabled_state),
+			args=(app_config, app_enabled),
 			name='FilesIndexingThread',
 		)
 		THREADS[ThreadType.FILES_INDEXING].start()
@@ -749,7 +749,7 @@ def start_bg_threads(app_config: TConfig, get_enabled_state):
 
 		THREADS[ThreadType.UPDATES_PROCESSING] = Thread(
 			target=updates_processing_thread,
-			args=(app_config,get_enabled_state),
+			args=(app_config, app_enabled),
 			name='UpdatesProcessingThread',
 		)
 		THREADS[ThreadType.UPDATES_PROCESSING].start()
@@ -761,7 +761,7 @@ def start_bg_threads(app_config: TConfig, get_enabled_state):
 
 		THREADS[ThreadType.REQUEST_PROCESSING] = Thread(
 			target=request_processing_thread,
-			args=(app_config,get_enabled_state),
+			args=(app_config, app_enabled),
 			name='RequestProcessingThread',
 		)
 		THREADS[ThreadType.REQUEST_PROCESSING].start()

@@ -86,19 +86,6 @@ models_to_fetch = {
 
 
 app_enabled = threading.Event()
-last_enabled_check: float | None = None
-enabled_check_lock: threading.Lock = threading.Lock()
-def get_enabled_state() -> bool:
-	global last_enabled_check
-	with enabled_check_lock:
-		if last_enabled_check is None or time.time() - last_enabled_check > 30:
-			nc = NextcloudApp()
-			if nc.enabled_state:
-				app_enabled.set()
-			else:
-				app_enabled.clear()
-			last_enabled_check = time.time()
-		return app_enabled.is_set()
 
 
 def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
@@ -213,8 +200,7 @@ def enabled_handler(enabled: bool, nc: NextcloudApp | AsyncNextcloudApp) -> str:
 			if THREAD_STOP_EVENT.is_set():
 				# If the threads were previously stopped, we start them again
 				# otherwise the lifecycle handler has already started them
-				start_bg_threads(app_config, get_enabled_state)
-				THREAD_STOP_EVENT.clear()
+				start_bg_threads(app_config, app_enabled)
 		else:
 			app_enabled.clear()
 			nc.providers.task_processing.unregister(SEARCH_PROVIDER_ID)
@@ -237,8 +223,13 @@ async def lifespan(app: FastAPI):
 		# k8s' rp role pulls tasks
 		set_handlers(app, enabled_handler, models_to_fetch=models_to_fetch)
 
-	start_bg_threads(app_config, get_enabled_state)
-	logger.info(f'App enable state at startup: {get_enabled_state()}')
+	nc = NextcloudApp()
+	nc_app_enabled = nc.enabled_state
+	if nc_app_enabled:
+		app_enabled.set()
+
+	start_bg_threads(app_config, app_enabled)
+	logger.info(f'App enable state at startup: {nc_app_enabled}')
 	yield
 	vectordb_loader.offload()
 	wait_for_bg_threads()
@@ -316,7 +307,7 @@ def enabled_guard(app: FastAPI):
 		@wraps(func)
 		def wrapper(*args, **kwargs):
 			disable_aaa = app.extra['CONFIG'].disable_aaa
-			if not disable_aaa and not get_enabled_state():
+			if not disable_aaa and not app_enabled.is_set():
 				return JSONResponse('Context Chat is disabled, enable it from AppAPI to use it.', 503)
 
 			return func(*args, **kwargs)
@@ -337,7 +328,7 @@ def _(request: Request):
 
 @app.get('/enabled')
 def _():
-	return JSONResponse(content={'enabled': get_enabled_state()}, status_code=200)
+	return JSONResponse(content={'enabled': app_enabled.is_set()}, status_code=200)
 
 
 @app.post('/countIndexedDocuments')
