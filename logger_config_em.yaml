@@ -50,7 +50,7 @@ loggers:
     - file_json
 
   emserver:
-    level: DEBUG
+    level: INFO
     handlers:
     - stderr
     - file_json

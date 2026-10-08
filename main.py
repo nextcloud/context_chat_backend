@@ -21,38 +21,15 @@ from context_chat_backend.dyn_loader import VectorDBLoader  # isort: skip
 LOGGER_CONFIG_NAME = 'logger_config.yaml'
 LOGGER_K8S_CONFIG_NAME = 'logger_config.k8s.yaml'
 
-def _setup_log_levels(debug: bool):
-	'''
-	Set log levels for the modules at once for a cleaner usage later.
-	'''
-	if not debug:
-		# warning is the default level
-		return
-
-	LOGGERS = (
-		'ccb',
-		'ccb.chain',
-		'ccb.doc_loader',
-		'ccb.injest',
-		'ccb.models',
-		'ccb.vectordb',
-		'ccb.controller',
-		'ccb.dyn_loader',
-		'ccb.ocs_utils',
-		'ccb.utils',
-	)
-
-	for name in LOGGERS:
-		logger = logging.getLogger(name)
-		logger.setLevel(logging.DEBUG)
-
 
 if __name__ == '__main__':
 	k8s_env = is_k8s_env()
 	logging_config = get_logging_config(LOGGER_K8S_CONFIG_NAME if k8s_env else LOGGER_CONFIG_NAME)
 	setup_logging(logging_config)
 	app_config: TConfig = app.extra['CONFIG']
-	_setup_log_levels(app_config.debug)
+	if app_config.debug:
+		logger = logging.getLogger('ccb')
+		logger.setLevel(logging.DEBUG)
 
 	# do forks from a clean process that doesn't have any threads or locks
 	mp.set_start_method('forkserver')
