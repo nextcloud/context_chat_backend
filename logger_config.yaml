@@ -29,7 +29,7 @@ formatters:
 handlers:
   stderr:
     class: logging.StreamHandler
-    level: WARNING
+    level: DEBUG
     formatter: default
     stream: ext://sys.stderr
 
