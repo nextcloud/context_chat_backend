@@ -5,6 +5,7 @@ name: RAG Benchmark
 
 on:
   workflow_dispatch:
+  pull_request:
   schedule:
     # cron day-of-month steps restart every month, so this runs on the 1st, 15th and 29th at 04:00 UTC
     - cron: '0 4 */14 * *'
