@@ -25,6 +25,42 @@ T = TypeVar('T')
 _logger = logging.getLogger('ccb.utils')
 _MAX_STD_CAPTURE_CHARS = 64 * 1024
 
+# forkserver children re-import without __main__, so setup_logging() (guarded by
+# `if __name__ == "__main__"` in main.py) never runs in them and child loggers lose their
+# handlers (upstream #319). Relay child `ccb.*` records to the parent's real handlers via a single
+# QueueListener (one writer -> no rotation race); a QueueHandler is installed per child below.
+import logging.handlers  # noqa: E402
+
+_log_queue = None
+_log_listener = None
+
+
+def _ensure_log_listener():
+	"""Lazily start a QueueListener bound to the parent's real `ccb` handlers. Returns the queue
+	(or None if setup_logging hasn't configured any handlers yet)."""
+	global _log_queue, _log_listener
+	if _log_listener is not None:
+		return _log_queue
+	ccb_logger = logging.getLogger('ccb')
+	handlers = list(ccb_logger.handlers) or list(logging.getLogger().handlers)
+	if not handlers:
+		return None
+	_log_queue = mp.Queue()
+	_log_listener = logging.handlers.QueueListener(_log_queue, *handlers, respect_handler_level=True)
+	_log_listener.start()
+	return _log_queue
+
+
+def _setup_child_logging(queue):
+	"""Install a QueueHandler on the child's `ccb` logger so its records reach the parent listener."""
+	if queue is None:
+		return
+	qh = logging.handlers.QueueHandler(queue)
+	ccb = logging.getLogger('ccb')
+	ccb.handlers = [qh]
+	ccb.setLevel(logging.DEBUG)
+	ccb.propagate = False
+
 
 def not_none(value: T | None) -> TypeGuard[T]:
 	return value is not None
@@ -112,12 +148,14 @@ def _truncate_capture(text: str) -> str:
 	)
 
 
-def exception_wrap(fun: Callable | None, *args, resconn: Connection, stdconn: Connection, **kwargs):
+def exception_wrap(fun: Callable | None, *args, resconn: Connection, stdconn: Connection, _log_queue=None, **kwargs):
 	# ignore SIGINT and SIGTERM in child processes these signals don't immediately stop these processes
 	# the handling is done in the fastapi lifetime to do a graceful shutdown
 	# SIGKILL is not ignored
 	signal.signal(signal.SIGINT, signal.SIG_IGN)
 	signal.signal(signal.SIGTERM, signal.SIG_IGN)
+
+	_setup_child_logging(_log_queue)
 
 	# Preserve real stderr FD for faulthandler before we redirect sys.stderr.
 	_faulthandler_fd = os.dup(2)
@@ -174,6 +212,7 @@ def exec_in_proc(group=None, target=None, name=None, args=(), kwargs=None, *, da
 	std_pconn, std_cconn = mp.Pipe()
 	kwargs['resconn'] = cconn
 	kwargs['stdconn'] = std_cconn
+	kwargs['_log_queue'] = _ensure_log_listener()
 	p = mp.Process(
 		group=group,
 		target=partial(exception_wrap, target),
