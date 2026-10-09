@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import csv
 import hashlib
 import json
 import random
@@ -27,7 +28,14 @@ import urllib.request
 from collections import defaultdict
 from pathlib import Path
 
-from datasets import load_dataset
+# The datasets library is deliberately not used: it pulls in pyarrow, whose wheels
+# declare no numpy bound but require numpy >= 2 at runtime, which conflicts with the
+# numpy 1.x resolved for the backend's own requirements. Both datasets are published
+# as plain JSON/TSV, so the stdlib is enough.
+HF_BASE = 'https://huggingface.co/datasets'
+MULTIHOP_CORPUS_URL = f'{HF_BASE}/yixuantt/MultiHopRAG/resolve/main/corpus.json'
+MULTIHOP_QUERIES_URL = f'{HF_BASE}/yixuantt/MultiHopRAG/resolve/main/MultiHopRAG.json'
+FRAMES_URL = f'{HF_BASE}/google/frames-benchmark/resolve/main/test.tsv'
 
 WIKI_API = 'https://en.wikipedia.org/w/api.php'
 USER_AGENT = 'nextcloud-context-chat-benchmark/1.0 (https://github.com/nextcloud/context_chat_backend)'
@@ -36,6 +44,20 @@ USER_AGENT = 'nextcloud-context-chat-benchmark/1.0 (https://github.com/nextcloud
 WIKI_BATCH = 20
 WIKI_RETRIES = 4
 SEED = 42
+
+
+def http_get(url: str) -> bytes:
+	"""Fetch a URL with retries, following HF's CDN redirects."""
+	request = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})  # noqa: S310 - fixed https hosts
+	last_error: Exception | None = None
+	for attempt in range(WIKI_RETRIES):
+		try:
+			with urllib.request.urlopen(request, timeout=120) as response:  # noqa: S310
+				return response.read()
+		except (urllib.error.URLError, TimeoutError) as error:
+			last_error = error
+			time.sleep(2 ** attempt)
+	raise RuntimeError(f'Failed to download {url}') from last_error
 
 
 def doc_id_for(value: str) -> str:
@@ -94,8 +116,9 @@ def finish(out: Path, documents: dict[str, str], records: list[dict], limit: int
 
 
 def build_multihop(out: Path, limit: int) -> None:
-	corpus = load_dataset('yixuantt/MultiHopRAG', 'corpus', split='train')
-	queries = load_dataset('yixuantt/MultiHopRAG', 'MultiHopRAG', split='train')
+	print('Downloading MultiHop-RAG corpus and queries')
+	corpus = json.loads(http_get(MULTIHOP_CORPUS_URL).decode('utf-8'))
+	queries = json.loads(http_get(MULTIHOP_QUERIES_URL).decode('utf-8'))
 
 	documents: dict[str, str] = {}
 	by_url: dict[str, str] = {}
@@ -215,7 +238,11 @@ def title_from_link(link: str) -> str:
 
 
 def build_frames(out: Path, limit: int) -> None:
-	dataset = load_dataset('google/frames-benchmark', split='test')
+	print('Downloading FRAMES benchmark')
+	# csv module default field size cap is too small for the wiki_links column
+	csv.field_size_limit(10 * 1024 * 1024)
+	text = http_get(FRAMES_URL).decode('utf-8')
+	dataset = list(csv.DictReader(text.splitlines(), delimiter='\t'))
 
 	# wiki_links is a *string* holding a Python list literal, not a list
 	rows = []

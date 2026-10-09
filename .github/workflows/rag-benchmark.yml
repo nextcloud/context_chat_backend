@@ -166,7 +166,6 @@ jobs:
           # extended regex: the BRE form leaves these lines in place and pulls in the CUDA wheels
           sed -Ei '/^torch(vision)?[[:space:]]*[><=~!]/d' requirements.txt
           pip install -r requirements.txt
-          pip install datasets
 
       - name: Download and prepare corpus and queries
         run: |
