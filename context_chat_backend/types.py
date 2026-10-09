@@ -4,7 +4,7 @@
 #
 import re
 from collections.abc import Mapping
-from enum import Enum
+from enum import StrEnum
 from io import BytesIO
 from typing import Annotated, Any, Literal, Self
 
@@ -161,7 +161,7 @@ class DocErrorEmbeddingException(EmbeddingException):
 	"""
 
 
-class AppRole(str, Enum):
+class AppRole(StrEnum):
 	NORMAL = 'normal'
 	INDEXING = 'indexing'
 	REQUEST_PROC = 'requestproc'
@@ -338,7 +338,7 @@ class ActionPayloadUpdateAccessDeclSourceId(BaseModel):
 	sourceId: Annotated[str, AfterValidator(_validate_source_id)]
 
 
-class ActionType(str, Enum):
+class ActionType(StrEnum):
 	DELETE_SOURCE_IDS = 'delete_source_ids'
 	DELETE_PROVIDER_ID = 'delete_provider_id'
 	DELETE_USER_ID = 'delete_user_id'
