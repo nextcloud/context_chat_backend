@@ -22,10 +22,11 @@ embedding:
   # embedding service config
   # for external embedding service, set CC_EM_BASE_URL and CC_EM_APIKEY env vars during deployment
   # if the env vars are set, this config is ignored
-  # request_timeout is always respected even for remote service
+  # connect_timeout and request_timeout are always respected even for remote service
   base_url: http://localhost:5000/v1
   workers: 1
-  request_timeout: 1800 # in seconds
+  connect_timeout: 15   # in seconds
+  request_timeout: 1750 # in seconds
   # batch_size: 100 # max texts per embedding API request, 0 = no batching
   # only for external embedding service
   # remote_service: true

@@ -77,7 +77,8 @@ def get_config(file_path: str) -> TConfig:
 				auth=auth,
 				remote_service=True,
 				workers=0,
-				request_timeout=embedding.get('request_timeout', 1800) if embedding else 1800,
+				connect_timeout=embedding.get('connect_timeout', 15) if embedding else 15,
+				request_timeout=embedding.get('request_timeout', 1750) if embedding else 1750,
 				batch_size=int(os.getenv('CC_EM_BATCH_SIZE', 100)),
 			)
 		except Exception as e:

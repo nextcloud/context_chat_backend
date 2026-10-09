@@ -37,7 +37,7 @@ loggers:
     - stderr
 
   ccb:
-    level: WARNING
+    level: INFO
     handlers:
     - stderr
     propagate: false

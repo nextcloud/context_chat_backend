@@ -144,7 +144,7 @@ if __name__ == '__main__':
 			'model_files',
 			em_conf.llama['model'],
 		)
-		logger.debug(f'Trying model path: {em_conf.llama["model"]}')
+		logger.info(f'Trying model path: {em_conf.llama["model"]}')
 
 		# if the model file is still not found, raise an error
 		if not os.path.isfile(em_conf.llama['model']):

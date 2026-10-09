@@ -104,6 +104,7 @@ class TEmbeddingAuthBasic(BaseModel):
 class TEmbeddingConfig(BaseModel):
 	base_url: str = 'http://localhost:5000/v1'
 	workers: int = 1
+	connect_timeout: int = 15
 	request_timeout: int = 1750
 	model_name: str | None = DEFAULT_EM_MODEL_ALIAS
 	auth: TEmbeddingAuthApiKey | TEmbeddingAuthBasic | None = None
