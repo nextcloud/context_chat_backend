@@ -99,7 +99,10 @@ class NetworkEmbeddings(Embeddings):
 			response = niquests.post(
 				f'{emconf.base_url.removesuffix("/")}/embeddings',
 				json=data,
-				timeout=emconf.request_timeout,
+				timeout=niquests.TimeoutConfiguration(
+					connect=emconf.connect_timeout,
+					read=emconf.request_timeout,
+				),
 				auth=auth,
 				verify=self.app_config.verify_ssl,
 			)
