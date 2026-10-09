@@ -43,6 +43,7 @@ jobs:
               - 'appinfo/**'
               - 'example.env'
               - 'requirements.txt'
+              - 'benchmark/**'
               - '.github/workflows/rag-benchmark.yml'
 
   benchmark:
@@ -169,7 +170,7 @@ jobs:
 
       - name: Download and prepare corpus and queries
         run: |
-          python3 context_chat_backend/.github/benchmark/prepare_dataset.py \
+          python3 context_chat_backend/benchmark/prepare_dataset.py \
             ${{ matrix.benchmark }} \
             --out benchmark_data \
             --limit ${{ env.BENCHMARK_QUERY_LIMIT }}
@@ -237,7 +238,7 @@ jobs:
         run: |
           ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' > worker_logs 2>&1 &
 
-          python3 context_chat_backend/.github/benchmark/run_benchmark.py \
+          python3 context_chat_backend/benchmark/run_benchmark.py \
             --queries benchmark_data/queries.json \
             --results benchmark_results.json \
             --occ ./occ \
