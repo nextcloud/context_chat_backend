@@ -3,16 +3,32 @@
 # SPDX-FileCopyrightText: 2026 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-"""Run retrieval queries against Context Chat and compute Recall@k and MRR.
+"""Run retrieval queries against Context Chat and compute retrieval metrics.
 
 Uses ``occ context_chat:search``, which runs the vector search alone. The
 ``context_chat:prompt`` path would additionally invoke a text2text provider per query,
 which costs minutes per query and measures the LLM rather than retrieval.
 
-``--limit`` is deliberately not passed: occ forwards options as strings and Nextcloud
-validates the Number slot with ``is_numeric`` without casting, so the backend would
-receive ``"10"`` and compute ``ctx_limit * 2 == "1010"``. The provider's registered
-default (int 10) is used instead, which fixes the maximum k at 10.
+Metrics follow the MultiHop-RAG paper (arXiv:2401.15391, section 2.3):
+
+hit_rate@k
+    Fraction of queries with *at least one* evidence document in the top-k. This is
+    the number that matters for Context Chat, which passes the whole retrieved set to
+    the LLM, so partial evidence is frequently enough to answer.
+evidence_recall@k
+    Fraction of a query's evidence documents present in the top-k, averaged over
+    queries. This is the paper's "Hits@K" and is the value comparable to its Table 5.
+map@k
+    Mean average precision at k; rewards ranking evidence documents highly.
+mrr
+    Reciprocal rank of the first evidence document.
+
+k=30 matches the ``CONTEXT_LIMIT`` the backend uses when feeding the LLM, so it
+reflects the production operating point; 1/5/10 are the values the published
+benchmarks report.
+
+Each query requests ``--limit`` documents, defaulting to the largest scored cutoff so
+every k is measured against a full result set.
 """
 
 from __future__ import annotations
@@ -25,7 +41,7 @@ import sys
 import time
 from pathlib import Path
 
-RECALL_AT_K = (1, 5, 10)
+DEFAULT_K_VALUES = (1, 5, 10, 30)
 # matches "  0 => '...'," entries emitted by var_export(), honouring escaped quotes
 VAR_EXPORT_ITEM = re.compile(r"^\s*\d+\s*=>\s*'((?:[^'\\]|\\.)*)',?\s*$", re.MULTILINE)
 
@@ -61,10 +77,10 @@ def doc_ids_from_labels(labels: list[str]) -> list[str]:
 	return ordered
 
 
-def run_query(occ: str, user: str, query: str, timeout: int) -> tuple[list[str], str | None]:
+def run_query(occ: str, user: str, query: str, timeout: int, limit: int) -> tuple[list[str], str | None]:
 	try:
 		result = subprocess.run(  # noqa: S603 - fixed argv, no shell
-			[occ, 'context_chat:search', user, query],
+			[occ, 'context_chat:search', user, query, '--limit', str(limit)],
 			capture_output=True, text=True, timeout=timeout, check=False,
 		)
 	except subprocess.TimeoutExpired:
@@ -90,14 +106,42 @@ def main() -> int:
 	parser.add_argument('--query-timeout', type=int, default=120)
 	parser.add_argument('--budget-seconds', type=int, default=3600, help='wall-clock cap for the whole run')
 	parser.add_argument('--max-error-rate', type=float, default=0.05)
+	parser.add_argument(
+		'--k-values',
+		type=lambda v: tuple(sorted({int(x) for x in v.split(',') if x.strip()})),
+		default=DEFAULT_K_VALUES,
+		help='comma-separated cutoffs to score at (default: 1,5,10,30)',
+	)
+	parser.add_argument(
+		'--limit',
+		type=int,
+		default=None,
+		help='documents to request per query (default: the largest --k-values entry)',
+	)
 	args = parser.parse_args()
+
+	if not args.k_values:
+		print('--k-values must contain at least one cutoff', file=sys.stderr)
+		return 1
 
 	queries = json.loads(args.queries.read_text(encoding='utf-8'))
 	if not queries:
 		print('No queries to evaluate', file=sys.stderr)
 		return 1
 
-	hits = dict.fromkeys(RECALL_AT_K, 0)
+	k_values = args.k_values
+	# retrieve deep enough to score the largest cutoff
+	retrieval_limit = args.limit if args.limit is not None else max(k_values)
+	if retrieval_limit < max(k_values):
+		print(
+			f'--limit {retrieval_limit} is below the largest k ({max(k_values)}); '
+			'deeper cutoffs will be truncated',
+			file=sys.stderr,
+		)
+
+	hits = dict.fromkeys(k_values, 0)
+	evidence_recall = dict.fromkeys(k_values, 0.0)
+	average_precision = dict.fromkeys(k_values, 0.0)
 	reciprocal_rank = 0.0
 	evaluated = 0
 	errors: list[str] = []
@@ -111,7 +155,7 @@ def main() -> int:
 			truncated = True
 			break
 
-		returned, error = run_query(args.occ, args.user, item['query'], args.query_timeout)
+		returned, error = run_query(args.occ, args.user, item['query'], args.query_timeout, retrieval_limit)
 		if error is not None:
 			errors.append(f'[{index}] {error}')
 			# a handful of failures is tolerable; a broken contract is not
@@ -124,9 +168,26 @@ def main() -> int:
 		evaluated += 1
 		evidence = set(item['evidence_list'])
 
-		for k in RECALL_AT_K:
-			if evidence & set(returned[:k]):
+		for k in k_values:
+			top_k = returned[:k]
+			found = evidence & set(top_k)
+
+			# hit_rate@k: at least one evidence doc retrieved
+			if found:
 				hits[k] += 1
+
+			# evidence_recall@k: share of this query's evidence that was retrieved
+			evidence_recall[k] += len(found) / len(evidence)
+
+			# average precision@k: precision at each rank holding an evidence doc,
+			# normalised by the number of evidence docs reachable within k
+			relevant_seen = 0
+			precision_sum = 0.0
+			for rank, doc_id in enumerate(top_k, start=1):
+				if doc_id in evidence:
+					relevant_seen += 1
+					precision_sum += relevant_seen / rank
+			average_precision[k] += precision_sum / min(len(evidence), k)
 
 		for rank, doc_id in enumerate(returned, start=1):
 			if doc_id in evidence:
@@ -149,12 +210,20 @@ def main() -> int:
 		'truncated': truncated,
 		'elapsed_seconds': round(time.monotonic() - started, 1),
 		'mrr': round(reciprocal_rank / evaluated, 4),
-		**{f'recall_at_{k}': round(hits[k] / evaluated, 4) for k in RECALL_AT_K},
+		**{f'hit_rate_at_{k}': round(hits[k] / evaluated, 4) for k in k_values},
+		**{f'evidence_recall_at_{k}': round(evidence_recall[k] / evaluated, 4) for k in k_values},
+		**{f'map_at_{k}': round(average_precision[k] / evaluated, 4) for k in k_values},
 	}
 
 	print('\n=== Benchmark results ===')
-	for k in RECALL_AT_K:
-		print(f'Recall@{k}: {results[f"recall_at_{k}"]:.4f} ({hits[k]}/{evaluated})')
+	width = max(len(str(k)) for k in k_values)
+	print(f'{"k":>{width}}  {"hit_rate":>9}  {"evid_recall":>11}  {"MAP":>7}')
+	for k in k_values:
+		print(
+			f'{k:>{width}}  {results[f"hit_rate_at_{k}"]:>9.4f}'
+			f'  {results[f"evidence_recall_at_{k}"]:>11.4f}'
+			f'  {results[f"map_at_{k}"]:>7.4f}'
+		)
 	print(f'MRR: {results["mrr"]:.4f}')
 	print(f'Evaluated {evaluated}/{len(queries)} queries with {len(errors)} failures')
 	if errors:

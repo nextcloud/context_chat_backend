@@ -229,11 +229,10 @@ jobs:
           fi
 
       # Retrieval-only: context_chat:search runs the vector search without invoking a
-      # text2text provider, which is what Recall@k and MRR actually measure.
-      # TODO: add LLM-as-judge answer correctness eval using llama.cpp (local, no external API key needed)
-      #         spin up a llama.cpp server with a small model
-      #         prompt it with the query + retrieved context + ground-truth answer, score pass/fail
-      - name: Run benchmark queries and compute Recall@k and MRR
+      # text2text provider, which is what the retrieval metrics actually measure.
+      # maybe add LLM-as-judge answer correctness eval using llm2 + a very small model
+      # prompt it with the query + retrieved context + ground-truth answer, score pass/fail
+      - name: Run benchmark queries and compute retrieval metrics
         run: |
           ./occ background-job:worker 'OC\TaskProcessing\SynchronousBackgroundJob' > worker_logs 2>&1 &
 
