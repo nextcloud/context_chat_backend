@@ -45,6 +45,8 @@ jobs:
               - 'requirements.txt'
               - 'benchmark/**'
               - '.github/workflows/rag-benchmark.yml'
+              - 'Dockerfile'
+              - 'dockerfile_scripts/**'
 
   benchmark:
     runs-on: ubuntu-24.04
@@ -149,24 +151,27 @@ jobs:
       - name: Enable context_chat, app_api and testing
         run: ./occ app:enable -vvv -f context_chat app_api testing
 
-      - name: Setup python 3.11
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3
+
+      - name: Build the context_chat_backend cpu image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
         with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: |
-            context_chat_backend/requirements.txt
+          context: context_chat_backend
+          push: false
+          platforms: linux/amd64
+          # use local tag so image is not pulled from remote
+          tags: ghcr.io/ccb-benchmark:local
+          target: runtime-cpu
+          load: true
+          # the gha backend keys on scope, not on the tag, and the default scope
+          # ("buildkit") is shared with the integration tests, whose builds would
+          # otherwise overwrite this one's cache on every run
+          cache-from: type=gha,scope=rag-benchmark
+          cache-to: type=gha,mode=max,scope=rag-benchmark
 
-      - name: Install backend dependencies
-        run: |
-          cd context_chat_backend
-          pip install --upgrade pip setuptools wheel
-          # use the cpu version of torch to save runner disk space
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          # extended regex: the BRE form leaves these lines in place and pulls in the CUDA wheels
-          sed -Ei '/^torch(vision)?[[:space:]]*[><=~!]/d' requirements.txt
-          pip install -r requirements.txt
-
+      # the preparation scripts only use the standard library, so the runner's
+      # default python is enough and no backend dependencies are needed here
       - name: Download and prepare corpus and queries
         run: |
           python3 context_chat_backend/benchmark/prepare_dataset.py \
@@ -180,20 +185,26 @@ jobs:
           cp -r benchmark_data/docs/. data/admin/files/benchmark/
           ./occ files:scan admin
 
-      - name: Start backend
+      - name: Start backend container
         run: |
           cd context_chat_backend
-          cp example.env .env
-          echo "NEXTCLOUD_URL=http://localhost:8080" >> .env
-          python3 -u ./main_em.py > em_backend_logs 2>&1 &
-          python3 -u ./main.py > backend_logs 2>&1 &
-          echo $! > ../pid.txt
-          sleep 60
+          echo "NEXTCLOUD_URL=http://localhost:8080" >> example.env
+          cd ..
+          # create it up front so the bind mount is not root-owned-only and the log
+          # files stay readable from the runner after the job
+          mkdir -p context_chat_backend/persistent_storage/logs
+          chmod -R 777 context_chat_backend/persistent_storage
+          docker run --net host --name context_chat_backend \
+            --env-file context_chat_backend/example.env \
+            -v $(pwd)/context_chat_backend/persistent_storage:/app/persistent_storage \
+            -e APP_PERSISTENT_STORAGE=/app/persistent_storage \
+            -e EXTERNAL_DB="$CCB_DB_URL" \
+            -d ghcr.io/ccb-benchmark:local
 
       - name: Register backend
         run: |
           timeout 10 ./occ app_api:daemon:register --net host manual_install "Manual Install" manual-install http localhost http://localhost:8080
-          timeout 120 ./occ app_api:app:register context_chat_backend manual_install \
+          timeout 180 ./occ app_api:app:register context_chat_backend manual_install \
             --json-info "{\"appid\":\"context_chat_backend\",\"name\":\"Context Chat Backend\",\"daemon_config_name\":\"manual_install\",\"version\":\"${{ fromJson(steps.appinfo.outputs.result).version }}\",\"secret\":\"12345\",\"port\":10034,\"scopes\":[],\"system_app\":0}" \
             --force-scopes --wait-finish
 
@@ -218,6 +229,15 @@ jobs:
               echo "Indexing complete (diff=$diff, threshold=$threshold)"
               success=1
               break
+            fi
+
+            # Check if backend is still alive; inspect prints exactly "true"/"false"
+            # and nothing at all when the container is gone
+            ccb_alive=$(docker inspect -f '{{.State.Running}}' context_chat_backend 2>/dev/null || true)
+            if [ "$ccb_alive" != "true" ]; then
+              echo "Error: Context Chat Backend container is not running. Exiting."
+              docker logs --tail 50 context_chat_backend 2>&1 || true
+              exit 1
             fi
 
             sleep 10
@@ -257,15 +277,22 @@ jobs:
           path: benchmark_results.json
           if-no-files-found: warn
 
-      - name: Show backend logs
+      - name: Show container logs
         if: always()
         run: |
-          cat context_chat_backend/backend_logs || echo "No main backend logs"
+          # supervisord routes both the main app and the embedding server to the
+          # container's stdout/stderr, so this covers each of them
+          docker logs context_chat_backend || echo "No container logs"
 
-      - name: Show embedding server logs
+      - name: Show main app JSON logs
         if: always()
         run: |
-          cat context_chat_backend/em_backend_logs || echo "No embedding backend logs"
+          sudo tail -v -n +1 context_chat_backend/persistent_storage/logs/ccb.log* || echo "No logs in logs directory"
+
+      - name: Show embedding server JSON logs
+        if: always()
+        run: |
+          sudo tail -v -n +1 context_chat_backend/persistent_storage/logs/em_server.log* || echo "No logs in logs directory"
 
       - name: Show task processing worker logs
         if: always()
