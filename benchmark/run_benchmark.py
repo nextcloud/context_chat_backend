@@ -128,7 +128,7 @@ def main() -> int:
 		'--k-values',
 		type=lambda v: tuple(sorted({int(x) for x in v.split(',') if x.strip()})),
 		default=DEFAULT_K_VALUES,
-		help='comma-separated cutoffs to score at (default: 1,5,10,30)',
+		help='comma-separated cutoffs to score at (default: 1,4,5,10,30)',
 	)
 	parser.add_argument(
 		'--limit',
