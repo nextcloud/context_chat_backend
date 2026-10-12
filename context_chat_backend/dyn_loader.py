@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 import torch
-from langchain.llms.base import LLM
+from langchain_core.language_models.llms import LLM
 
 from .models.loader import init_model
 from .network_em import NetworkEmbeddings

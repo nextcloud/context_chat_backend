@@ -5,7 +5,7 @@
 import logging
 from os import getenv, path
 
-from langchain_community.llms.huggingface_pipeline import HuggingFacePipeline
+from langchain_huggingface import HuggingFacePipeline
 
 logger = logging.getLogger('ccb.models')
 

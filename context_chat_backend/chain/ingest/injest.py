@@ -11,7 +11,7 @@ from io import BytesIO
 from time import perf_counter_ns
 
 import niquests
-from langchain.schema import Document
+from langchain_core.documents import Document
 from nc_py_api import AsyncNextcloudApp
 from nc_py_api._exceptions import NextcloudException
 from pydantic import ValidationError

@@ -14,7 +14,7 @@ from time import sleep
 from typing import Any
 
 import niquests
-from langchain.llms.base import LLM
+from langchain_core.language_models.llms import LLM
 from nc_py_api import NextcloudApp, NextcloudException
 from niquests import JSONDecodeError, RequestException
 from pydantic import ValidationError
