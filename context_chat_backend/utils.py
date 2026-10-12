@@ -15,22 +15,21 @@ from contextlib import suppress
 from functools import partial, wraps
 from multiprocessing.connection import Connection
 from time import perf_counter_ns
-from typing import Any, TypeGuard, TypeVar
+from typing import Any, TypeGuard
 
 from fastapi.responses import JSONResponse as FastAPIJSONResponse
 
 from .types import AppRole, TConfig, TEmbeddingAuthApiKey, TEmbeddingAuthBasic, TEmbeddingConfig
 
-T = TypeVar('T')
 _logger = logging.getLogger('ccb.utils')
 _MAX_STD_CAPTURE_CHARS = 64 * 1024
 
 
-def not_none(value: T | None) -> TypeGuard[T]:
+def not_none[T](value: T | None) -> TypeGuard[T]:
 	return value is not None
 
 
-def value_of(value: T, default: T | None = None) -> T | None:
+def value_of[T](value: T, default: T | None = None) -> T | None:
 	if value is None:
 		return default
 

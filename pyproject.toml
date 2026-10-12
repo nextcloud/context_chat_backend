@@ -3,7 +3,7 @@
 [project]
 name = "context_chat_backend"
 version = "5.5.0-beta1"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 authors = [
 	{ name = "Anupam Kumar", email = "kyteinsky@gmail.com" }
 ]
@@ -22,7 +22,7 @@ pythonpath = ["."]
 addopts = "-ra --strict-markers --strict-config"
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py313"
 include = ["context_chat_backend/**/*.py", "main.py", "tests/**/*.py"]
 line-length = 120
 fix = true
@@ -51,7 +51,7 @@ fixable = [
 
 [tool.pyright]
 include = ["context_chat_backend/**/*.py", "main.py", "main_em.py", "tests/**/*.py"]
-pythonVersion = "3.11"
+pythonVersion = "3.13"
 pythonPlatform = "Linux"
 
 [tool.isort]

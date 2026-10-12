@@ -13,9 +13,9 @@ import sqlalchemy as sa
 import sqlalchemy.dialects.postgresql as postgresql_dialects
 import sqlalchemy.orm as orm
 from dotenv import load_dotenv
-from langchain.schema import Document
-from langchain.vectorstores import VectorStore
+from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
+from langchain_core.vectorstores import VectorStore
 from langchain_postgres.vectorstores import Base, PGVector
 
 from ..chain.types import InDocument, ScopeType

@@ -5,8 +5,8 @@
 from collections.abc import Callable
 from importlib import import_module
 
-from langchain.llms.base import LLM
-from langchain.schema.embeddings import Embeddings
+from langchain_core.embeddings import Embeddings
+from langchain_core.language_models.llms import LLM
 
 _llm_models = ["nc_texttotext", "llama", "hugging_face", "ctransformer"]
 

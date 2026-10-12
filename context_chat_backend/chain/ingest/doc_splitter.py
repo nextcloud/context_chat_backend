@@ -4,7 +4,7 @@
 #
 from functools import lru_cache
 
-from langchain.text_splitter import MarkdownTextSplitter, RecursiveCharacterTextSplitter, TextSplitter
+from langchain_text_splitters import MarkdownTextSplitter, RecursiveCharacterTextSplitter, TextSplitter
 
 
 @lru_cache(maxsize=32)

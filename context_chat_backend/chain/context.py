@@ -4,7 +4,7 @@
 #
 import logging
 
-from langchain.schema import Document
+from langchain_core.documents import Document
 
 from ..dyn_loader import VectorDBLoader
 from ..vectordb.base import BaseVectorDB

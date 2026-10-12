@@ -3,7 +3,16 @@
 #
 ARG UBUNTU_VERSION=24.04
 ARG CUDA_VERSION=12.8.2
-ARG LLAMA_CPP_PYTHON_VERSION=0.3.23
+ARG LLAMA_CPP_PYTHON_VERSION=0.3.36
+# torch comes from a per-flavour index, so requirements.txt's torch lines are
+# dropped in the runtime stages. TORCH_VERSION matches requirements.txt; the cu128
+# index has nothing newer than CUDA_TORCH_VERSION.
+ARG TORCH_VERSION=2.14.1
+ARG TORCHVISION_VERSION=0.29.1
+ARG CUDA_TORCH_VERSION=2.11.0
+ARG CUDA_TORCHVISION_VERSION=0.26.0
+ARG CUDA_TORCH_INDEX=cu128
+ARG ROCM_TORCH_INDEX=rocm7.14
 
 ARG BASE_IMAGE=ubuntu:${UBUNTU_VERSION}
 ARG CUDA_DEVEL_IMAGE=nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION}
@@ -27,18 +36,18 @@ ARG LLAMA_CPP_PYTHON_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /build
-ADD dockerfile_scripts/install_py11.sh dockerfile_scripts/install_py11.sh
-RUN ./dockerfile_scripts/install_py11.sh
+ADD dockerfile_scripts/install_py.sh dockerfile_scripts/install_py.sh
+RUN ./dockerfile_scripts/install_py.sh
 # gcc-14: Ubuntu 24.04 ships gcc-13 by default; gcc-14 is used for
 # consistency across all builder stages and better C++23 support.
 RUN apt-get install -y --no-install-recommends \
-        python3.11-dev \
+        python3.13-dev \
         cmake build-essential ninja-build git \
         gcc-14 g++-14 \
         libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN /usr/bin/python3.11 -m venv /opt/venv \
+RUN /usr/bin/python3.13 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
 ENV CC=gcc-14 CXX=g++-14
@@ -73,16 +82,16 @@ ARG LLAMA_CPP_PYTHON_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /build
-ADD dockerfile_scripts/install_py11.sh dockerfile_scripts/install_py11.sh
-RUN ./dockerfile_scripts/install_py11.sh
+ADD dockerfile_scripts/install_py.sh dockerfile_scripts/install_py.sh
+RUN ./dockerfile_scripts/install_py.sh
 RUN apt-get install -y --no-install-recommends \
-        python3.11-dev \
+        python3.13-dev \
         cmake build-essential ninja-build git \
         gcc-14 g++-14 \
         libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN /usr/bin/python3.11 -m venv /opt/venv \
+RUN /usr/bin/python3.13 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Make the CUDA compat stub visible to the linker for both executables and shared libs
@@ -117,19 +126,19 @@ ARG LLAMA_CPP_PYTHON_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /build
-ADD dockerfile_scripts/install_py11.sh dockerfile_scripts/install_py11.sh
-RUN ./dockerfile_scripts/install_py11.sh
+ADD dockerfile_scripts/install_py.sh dockerfile_scripts/install_py.sh
+RUN ./dockerfile_scripts/install_py.sh
 # Vulkan headers + glslc (shader compiler) are build-time only
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        python3.11-dev \
+        python3.13-dev \
         cmake build-essential ninja-build git \
         gcc-14 g++-14 \
         libgomp1 \
         libvulkan-dev glslc spirv-headers \
     && rm -rf /var/lib/apt/lists/*
 
-RUN /usr/bin/python3.11 -m venv /opt/venv \
+RUN /usr/bin/python3.13 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
 ENV CC=gcc-14 CXX=g++-14
@@ -147,6 +156,8 @@ RUN /opt/venv/bin/python -m pip wheel \
 # CPU / ARM runtime
 # ============================================================
 FROM ${BASE_IMAGE} AS runtime-cpu
+ARG TORCH_VERSION
+ARG TORCHVISION_VERSION
 
 ARG CCB_DB_NAME=ccb
 ARG CCB_DB_USER=ccbuser
@@ -161,28 +172,31 @@ WORKDIR /app
 
 ADD dockerfile_scripts/install_deps.sh dockerfile_scripts/install_deps.sh
 RUN ./dockerfile_scripts/install_deps.sh
-ADD dockerfile_scripts/install_py11.sh dockerfile_scripts/install_py11.sh
-RUN ./dockerfile_scripts/install_py11.sh
+ADD dockerfile_scripts/install_py.sh dockerfile_scripts/install_py.sh
+RUN ./dockerfile_scripts/install_py.sh
 ADD dockerfile_scripts/pgsql dockerfile_scripts/pgsql
 RUN ./dockerfile_scripts/pgsql/install.sh
 ADD dockerfile_scripts/install_frpc.sh dockerfile_scripts/install_frpc.sh
 RUN ./dockerfile_scripts/install_frpc.sh
-RUN apt-get autoclean
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get autoclean \
+    && rm -rf /var/lib/apt/lists/*
 ADD dockerfile_scripts/entrypoint.sh dockerfile_scripts/entrypoint.sh
 
 ENV DEBIAN_FRONTEND=dialog
 
 # Install llama_cpp_python from the CPU builder wheel
 COPY --from=llama-builder-cpu /wheels /wheels
-RUN /usr/bin/python3.11 -m venv /opt/venv \
+RUN /usr/bin/python3.13 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
     && /opt/venv/bin/python -m pip install --no-cache-dir --no-index --find-links=/wheels llama-cpp-python \
-    && /opt/venv/bin/python -m pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+    && /opt/venv/bin/python -m pip install --no-cache-dir "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}" --index-url https://download.pytorch.org/whl/cpu \
     && rm -rf /wheels \
     && /opt/venv/bin/python -m pip cache purge
 
 COPY requirements.txt .
-RUN sed -i '/^llama_cpp_python/d' requirements.txt \
+RUN sed -Ei '/^(llama_cpp_python|torch|torchvision)[[:space:]]*[><=~!]/d' requirements.txt \
     && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt \
     && /opt/venv/bin/python -m pip cache purge
 
@@ -201,6 +215,9 @@ ENTRYPOINT ["supervisord", "-c", "/etc/supervisor/supervisord.conf"]
 # CUDA (NVIDIA GPU) runtime
 # ============================================================
 FROM ${CUDA_RUNTIME_IMAGE} AS runtime-cuda
+ARG CUDA_TORCH_VERSION
+ARG CUDA_TORCHVISION_VERSION
+ARG CUDA_TORCH_INDEX
 
 ARG CCB_DB_NAME=ccb
 ARG CCB_DB_USER=ccbuser
@@ -217,13 +234,16 @@ WORKDIR /app
 
 ADD dockerfile_scripts/install_deps.sh dockerfile_scripts/install_deps.sh
 RUN ./dockerfile_scripts/install_deps.sh
-ADD dockerfile_scripts/install_py11.sh dockerfile_scripts/install_py11.sh
-RUN ./dockerfile_scripts/install_py11.sh
+ADD dockerfile_scripts/install_py.sh dockerfile_scripts/install_py.sh
+RUN ./dockerfile_scripts/install_py.sh
 ADD dockerfile_scripts/pgsql dockerfile_scripts/pgsql
 RUN ./dockerfile_scripts/pgsql/install.sh
 ADD dockerfile_scripts/install_frpc.sh dockerfile_scripts/install_frpc.sh
 RUN ./dockerfile_scripts/install_frpc.sh
-RUN apt-get autoclean
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get autoclean \
+    && rm -rf /var/lib/apt/lists/*
 ADD dockerfile_scripts/entrypoint.sh dockerfile_scripts/entrypoint.sh
 
 ENV DEBIAN_FRONTEND=dialog
@@ -234,14 +254,17 @@ RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/lib/libcuda.so \
 ENV LD_LIBRARY_PATH="/usr/local/lib:/usr/local/cuda/lib64:/usr/local/cuda/lib64/stubs:${LD_LIBRARY_PATH}"
 
 COPY --from=llama-builder-cuda /wheels /wheels
-RUN /usr/bin/python3.11 -m venv /opt/venv \
+# torch from PyPI bundles CUDA 13 libraries, which need a newer driver than the
+# CUDA 12.8 base image targets, so it comes from CUDA_TORCH_INDEX instead
+RUN /usr/bin/python3.13 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
     && /opt/venv/bin/python -m pip install --no-cache-dir --no-index --find-links=/wheels llama-cpp-python \
+    && /opt/venv/bin/python -m pip install --no-cache-dir "torch==${CUDA_TORCH_VERSION}" "torchvision==${CUDA_TORCHVISION_VERSION}" --index-url "https://download.pytorch.org/whl/${CUDA_TORCH_INDEX}" \
     && rm -rf /wheels \
     && /opt/venv/bin/python -m pip cache purge
 
 COPY requirements.txt .
-RUN sed -i '/^llama_cpp_python/d' requirements.txt \
+RUN sed -Ei '/^(llama_cpp_python|torch|torchvision)[[:space:]]*[><=~!]/d' requirements.txt \
     && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt \
     && /opt/venv/bin/python -m pip cache purge
 
@@ -263,6 +286,10 @@ ENTRYPOINT ["supervisord", "-c", "/etc/supervisor/supervisord.conf"]
 # GCN, RDNA1/2/3 and newer AMD GPUs out of the box.
 # ============================================================
 FROM ${BASE_IMAGE} AS runtime-vulkan
+ARG TARGETARCH
+ARG TORCH_VERSION
+ARG TORCHVISION_VERSION
+ARG ROCM_TORCH_INDEX
 
 ARG CCB_DB_NAME=ccb
 ARG CCB_DB_USER=ccbuser
@@ -277,13 +304,16 @@ WORKDIR /app
 
 ADD dockerfile_scripts/install_deps.sh dockerfile_scripts/install_deps.sh
 RUN ./dockerfile_scripts/install_deps.sh
-ADD dockerfile_scripts/install_py11.sh dockerfile_scripts/install_py11.sh
-RUN ./dockerfile_scripts/install_py11.sh
+ADD dockerfile_scripts/install_py.sh dockerfile_scripts/install_py.sh
+RUN ./dockerfile_scripts/install_py.sh
 ADD dockerfile_scripts/pgsql dockerfile_scripts/pgsql
 RUN ./dockerfile_scripts/pgsql/install.sh
 ADD dockerfile_scripts/install_frpc.sh dockerfile_scripts/install_frpc.sh
 RUN ./dockerfile_scripts/install_frpc.sh
-RUN apt-get autoclean
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get autoclean \
+    && rm -rf /var/lib/apt/lists/*
 ADD dockerfile_scripts/entrypoint.sh dockerfile_scripts/entrypoint.sh
 
 # Install Vulkan runtime + AMD RADV open-source driver
@@ -296,14 +326,17 @@ ENV DEBIAN_FRONTEND=dialog
 
 # Install llama_cpp_python from the Vulkan builder wheel
 COPY --from=llama-builder-vulkan /wheels /wheels
-RUN /usr/bin/python3.11 -m venv /opt/venv \
+# ROCm torch is only published for x86_64; arm64 gets the CPU build
+RUN if [ "$TARGETARCH" = "amd64" ]; then TORCH_INDEX="$ROCM_TORCH_INDEX"; else TORCH_INDEX=cpu; fi \
+    && /usr/bin/python3.13 -m venv /opt/venv \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
     && /opt/venv/bin/python -m pip install --no-cache-dir --no-index --find-links=/wheels llama-cpp-python \
+    && /opt/venv/bin/python -m pip install --no-cache-dir "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}" --index-url "https://download.pytorch.org/whl/${TORCH_INDEX}" \
     && rm -rf /wheels \
     && /opt/venv/bin/python -m pip cache purge
 
 COPY requirements.txt .
-RUN sed -i '/^llama_cpp_python/d' requirements.txt \
+RUN sed -Ei '/^(llama_cpp_python|torch|torchvision)[[:space:]]*[><=~!]/d' requirements.txt \
     && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt \
     && /opt/venv/bin/python -m pip cache purge
 

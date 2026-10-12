@@ -6,8 +6,8 @@ import logging
 import os
 from sys import maxsize as SYS_MAXSIZE
 
-from langchain.llms.base import LLM
-from langchain.schema import Document
+from langchain_core.documents import Document
+from langchain_core.language_models.llms import LLM
 from transformers import GPT2Tokenizer
 
 from ..types import TConfig

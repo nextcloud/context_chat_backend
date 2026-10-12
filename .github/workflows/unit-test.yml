@@ -53,10 +53,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup python 3.11
+      - name: Setup python 3.13
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5
         with:
-          python-version: '3.11'
+          python-version: '3.13'
 
       # The repair runner only depends on the standard library, so the heavy
       # runtime requirements are deliberately not installed here.

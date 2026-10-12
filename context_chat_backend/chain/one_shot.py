@@ -4,7 +4,7 @@
 #
 import logging
 
-from langchain.llms.base import LLM
+from langchain_core.language_models.llms import LLM
 
 from ..dyn_loader import VectorDBLoader
 from ..types import TConfig
