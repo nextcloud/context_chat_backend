@@ -33,10 +33,18 @@ from pathlib import Path
 # numpy 1.x resolved for the backend's own requirements. Both datasets are published
 # as plain JSON/TSV, so the stdlib is enough.
 HF_BASE = 'https://huggingface.co/datasets'
-MULTIHOP_CORPUS_URL = f'{HF_BASE}/yixuantt/MultiHopRAG/resolve/main/corpus.json'
-MULTIHOP_QUERIES_URL = f'{HF_BASE}/yixuantt/MultiHopRAG/resolve/main/MultiHopRAG.json'
-FRAMES_URL = f'{HF_BASE}/google/frames-benchmark/resolve/main/test.tsv'
+# pinned to a revision so the query set cannot drift between scheduled runs; bump
+# these deliberately when picking up an upstream dataset change
+MULTIHOP_REVISION = '71ac0d0bd1f951d2d6b70311f7d2ae404e1ffa82'
+FRAMES_REVISION = '58d9fb6330f3ab1316d1eca12e5e8ef23dcc22ef'
+MULTIHOP_CORPUS_URL = f'{HF_BASE}/yixuantt/MultiHopRAG/resolve/{MULTIHOP_REVISION}/corpus.json'
+MULTIHOP_QUERIES_URL = f'{HF_BASE}/yixuantt/MultiHopRAG/resolve/{MULTIHOP_REVISION}/MultiHopRAG.json'
+FRAMES_URL = f'{HF_BASE}/google/frames-benchmark/resolve/{FRAMES_REVISION}/test.tsv'
 
+# The extracts API only allows the 20-title batch when restricted to lead sections
+# (exintro); whole-article extracts force exlimit=1. The bulk of the FRAMES corpus is
+# therefore fetched as lead sections, with full articles pulled only for the titles
+# the dataset links to a specific section - see the note in build_frames().
 WIKI_API = 'https://en.wikipedia.org/w/api.php'
 USER_AGENT = 'nextcloud-context-chat-benchmark/1.0 (https://github.com/nextcloud/context_chat_backend)'
 # the extracts API caps whole-article requests at one title per call, so we fetch
@@ -106,6 +114,20 @@ def finish(out: Path, documents: dict[str, str], records: list[dict], limit: int
 	write_corpus(out / 'docs', documents)
 	(out / 'queries.json').write_text(json.dumps(records, indent=2), encoding='utf-8')
 
+	# the Wikipedia extracts behind the FRAMES corpus are fetched live and change as
+	# articles are edited; recording a digest makes that drift visible when metrics
+	# move between runs
+	digest = hashlib.sha256()
+	for doc_id, content in sorted(documents.items()):
+		digest.update(doc_id.encode('utf-8'))
+		digest.update(content.encode('utf-8'))
+	corpus_hash = digest.hexdigest()[:16]
+	(out / 'corpus_info.json').write_text(
+		json.dumps({'corpus_documents': len(documents), 'corpus_sha256': corpus_hash}, indent=2),
+		encoding='utf-8',
+	)
+	print(f'Corpus digest: {corpus_hash}')
+
 	strata = defaultdict(int)
 	for record in records:
 		strata[record['stratum']] += 1
@@ -165,18 +187,21 @@ def build_multihop(out: Path, limit: int) -> None:
 	finish(out, documents, records, limit)
 
 
-def wiki_request(titles: list[str]) -> dict:
+def wiki_request(titles: list[str], intro_only: bool = True) -> dict:
 	params = {
 		'action': 'query',
 		'format': 'json',
 		'formatversion': '2',
 		'prop': 'extracts',
-		'exintro': '1',
 		'explaintext': '1',
-		'exlimit': str(WIKI_BATCH),
+		# whole-article extracts are capped at one title per request, lead sections
+		# allow the full batch
+		'exlimit': str(WIKI_BATCH) if intro_only else '1',
 		'redirects': '1',
 		'titles': '|'.join(titles),
 	}
+	if intro_only:
+		params['exintro'] = '1'
 	url = f'{WIKI_API}?{urllib.parse.urlencode(params)}'
 	request = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})  # noqa: S310 - fixed https host
 
@@ -233,11 +258,64 @@ def fetch_wiki_pages(titles: list[str]) -> dict[str, tuple[str, str]]:
 	return resolved
 
 
+def fetch_wiki_articles(titles: list[str]) -> dict[str, str]:
+	"""Fetch whole-article text, one request per title (the API caps exlimit at 1).
+
+	Used for titles that FRAMES links with a section fragment, whose supporting text
+	sits below the lead section.
+	"""
+	articles: dict[str, str] = {}
+
+	for index, title in enumerate(titles, start=1):
+		query = wiki_request([title], intro_only=False)
+
+		alias: dict[str, str] = {}
+		for entry in query.get('normalized', []):
+			alias[entry['from']] = entry['to']
+		for entry in query.get('redirects', []):
+			alias[entry['from']] = entry['to']
+
+		canonical = resolve_alias(title, alias)
+		for page in query.get('pages', []):
+			if page.get('missing'):
+				continue
+			extract = (page.get('extract') or '').strip()
+			# list-style articles are mostly tables, which explaintext strips, so an
+			# empty extract here is expected and the lead section is kept instead
+			if extract and page['title'] == canonical:
+				articles[title] = extract
+
+		if index % 25 == 0 or index == len(titles):
+			print(f'  fetched {index}/{len(titles)} full articles', flush=True)
+		time.sleep(0.2)
+
+	return articles
+
+
 def title_from_link(link: str) -> str:
-	return urllib.parse.unquote(link.rsplit('/', 1)[-1]).replace('_', ' ').strip()
+	"""Strip the section fragment; the API normalises it away anyway."""
+	return urllib.parse.unquote(link.rsplit('/', 1)[-1]).split('#')[0].replace('_', ' ').strip()
+
+
+def has_fragment(link: str) -> bool:
+	return '#' in link.rsplit('/', 1)[-1]
 
 
 def build_frames(out: Path, limit: int) -> None:
+	"""Build the FRAMES corpus from Wikipedia.
+
+	FRAMES links some articles with a section fragment (``#Final league tables``,
+	``#Composite box``, ...), meaning the supporting text sits below the lead
+	section. Those articles are fetched in full; everything else uses the lead
+	section, which is what lets the bulk of the corpus come down in 20-title
+	batches.
+
+	Residual limitation: ``explaintext`` drops tables and infoboxes, so purely
+	tabular articles (``List of Egyptian pharaohs`` and similar) still yield little
+	or no usable text. Questions whose answer lives only in a table therefore remain
+	unanswerable from this corpus, and the numbers are still not directly comparable
+	to published FRAMES results.
+	"""
 	print('Downloading FRAMES benchmark')
 	# csv module default field size cap is too small for the wiki_links column
 	csv.field_size_limit(10 * 1024 * 1024)
@@ -259,11 +337,30 @@ def build_frames(out: Path, limit: int) -> None:
 		rows.append((row['Prompt'], reasoning, links))
 
 	titles = sorted({title_from_link(link) for _, _, links in rows for link in links if link})
+	# titles the dataset links to a specific section need the whole article
+	fragment_titles = sorted({
+		title_from_link(link)
+		for _, _, links in rows for link in links
+		if link and has_fragment(link)
+	})
+
 	print(f'Resolving {len(titles)} Wikipedia pages')
 	# FRAMES ships only links, so the corpus has to be fetched; the full link set is
 	# indexed (not just the sampled queries') to keep a realistic distractor pool
 	pages = fetch_wiki_pages(titles)
 	print(f'Resolved {len(pages)}/{len(titles)} pages')
+
+	print(f'Fetching {len(fragment_titles)} section-linked articles in full')
+	full_articles = fetch_wiki_articles(fragment_titles)
+	upgraded = 0
+	for title, extract in full_articles.items():
+		if title in pages:
+			canonical, lead = pages[title]
+			# only take the fuller text; a stripped-tables extract can be shorter
+			if len(extract) > len(lead):
+				pages[title] = (canonical, extract)
+				upgraded += 1
+	print(f'Upgraded {upgraded}/{len(fragment_titles)} articles to full text')
 
 	documents: dict[str, str] = {}
 	title_to_doc: dict[str, str] = {}

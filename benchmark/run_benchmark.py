@@ -24,8 +24,20 @@ mrr
     Reciprocal rank of the first evidence document.
 
 k=30 matches the ``CONTEXT_LIMIT`` the backend uses when feeding the LLM, so it
-reflects the production operating point; 1/5/10 are the values the published
-benchmarks report.
+reflects the production operating point. The MultiHop-RAG paper reports only
+Hits@4 and Hits@10 (Table 5, page 7), so k=4 and k=10 are the cutoffs that can be
+held against it; k=1, 5 and 30 are reported for this project's own tracking.
+
+Comparisons with that table remain indicative rather than exact:
+
+* The paper scores *chunks*; ``do_doc_search`` dedups chunks to source documents
+  before returning, so these numbers are document-level and read higher.
+* Chunking differs (``embedding_chunk_size`` 2000 characters here versus 256
+  tokens there).
+* ``do_doc_search`` searches ``ctx_limit * 2`` chunks and then dedups, so with
+  ``--limit 30`` only the top 60 chunks are considered. A document whose best
+  chunk ranks 61st or lower cannot appear, which makes evidence_recall@30 a lower
+  bound on true document-level recall@30.
 
 Each query requests ``--limit`` documents, defaulting to the largest scored cutoff so
 every k is measured against a full result set.
@@ -41,9 +53,12 @@ import sys
 import time
 from pathlib import Path
 
-DEFAULT_K_VALUES = (1, 5, 10, 30)
+DEFAULT_K_VALUES = (1, 4, 5, 10, 30)
 # matches "  0 => '...'," entries emitted by var_export(), honouring escaped quotes
 VAR_EXPORT_ITEM = re.compile(r"^\s*\d+\s*=>\s*'((?:[^'\\]|\\.)*)',?\s*$", re.MULTILINE)
+# presence of the 'sources' key proves occ returned a well-formed result, even when
+# the array inside it is empty
+VAR_EXPORT_SOURCES = re.compile(r"^\s*'sources'\s*=>", re.MULTILINE)
 
 
 def parse_sources(stdout: str) -> list[str]:
@@ -90,11 +105,14 @@ def run_query(occ: str, user: str, query: str, timeout: int, limit: int) -> tupl
 		detail = (result.stderr or result.stdout or '').strip().replace('\n', ' ')
 		return [], f'exit {result.returncode}: {detail[:300]}'
 
-	labels = parse_sources(result.stdout)
-	if not labels:
-		return [], f'no sources parsed: {result.stdout.strip()[:300]}'
+	# an empty "sources" array is a legitimate retrieval result (the query matched
+	# nothing) and must score as a miss; only output that is not a well-formed
+	# var_export dump counts as a failure, otherwise misses are silently dropped
+	# from the denominator and every metric is inflated
+	if not VAR_EXPORT_SOURCES.search(result.stdout):
+		return [], f'unparseable output: {result.stdout.strip()[:300]}'
 
-	return doc_ids_from_labels(labels), None
+	return doc_ids_from_labels(parse_sources(result.stdout)), None
 
 
 def main() -> int:
@@ -147,6 +165,7 @@ def main() -> int:
 	errors: list[str] = []
 	started = time.monotonic()
 	truncated = False
+	aborted: str | None = None
 
 	for index, item in enumerate(queries, start=1):
 		elapsed = time.monotonic() - started
@@ -161,8 +180,8 @@ def main() -> int:
 			# a handful of failures is tolerable; a broken contract is not
 			if len(errors) > max(5, int(len(queries) * args.max_error_rate)):
 				print('\n'.join(errors[-5:]), file=sys.stderr)
-				print(f'Aborting: {len(errors)} query failures exceed the allowed error rate', file=sys.stderr)
-				return 1
+				aborted = f'{len(errors)} query failures exceed the allowed error rate'
+				break
 			continue
 
 		evaluated += 1
@@ -198,22 +217,31 @@ def main() -> int:
 			rate = (time.monotonic() - started) / index
 			print(f'Progress: {index}/{len(queries)} ({rate:.1f}s/query)', flush=True)
 
-	if evaluated == 0:
-		print('No query produced a usable result', file=sys.stderr)
-		print('\n'.join(errors[:5]), file=sys.stderr)
-		return 1
-
+	# always write what was measured, even on the abort paths: a failed run is
+	# exactly when the partial numbers and the failure list are most useful
 	results = {
 		'queries_planned': len(queries),
 		'queries_evaluated': evaluated,
 		'query_failures': len(errors),
 		'truncated': truncated,
+		'aborted': aborted,
+		'retrieval_limit': retrieval_limit,
 		'elapsed_seconds': round(time.monotonic() - started, 1),
-		'mrr': round(reciprocal_rank / evaluated, 4),
-		**{f'hit_rate_at_{k}': round(hits[k] / evaluated, 4) for k in k_values},
-		**{f'evidence_recall_at_{k}': round(evidence_recall[k] / evaluated, 4) for k in k_values},
-		**{f'map_at_{k}': round(average_precision[k] / evaluated, 4) for k in k_values},
+		'first_failures': errors[:5],
 	}
+	if evaluated:
+		results.update({
+			'mrr': round(reciprocal_rank / evaluated, 4),
+			**{f'hit_rate_at_{k}': round(hits[k] / evaluated, 4) for k in k_values},
+			**{f'evidence_recall_at_{k}': round(evidence_recall[k] / evaluated, 4) for k in k_values},
+			**{f'map_at_{k}': round(average_precision[k] / evaluated, 4) for k in k_values},
+		})
+	args.results.write_text(json.dumps(results, indent=2), encoding='utf-8')
+
+	if evaluated == 0:
+		print('No query produced a usable result', file=sys.stderr)
+		print('\n'.join(errors[:5]), file=sys.stderr)
+		return 1
 
 	print('\n=== Benchmark results ===')
 	width = max(len(str(k)) for k in k_values)
@@ -231,7 +259,9 @@ def main() -> int:
 		for line in errors[:5]:
 			print(f'  {line}')
 
-	args.results.write_text(json.dumps(results, indent=2), encoding='utf-8')
+	if aborted is not None:
+		print(f'Aborting: {aborted}', file=sys.stderr)
+		return 1
 
 	# a run that evaluated almost nothing is not a result worth publishing
 	if evaluated < len(queries) * 0.5:
