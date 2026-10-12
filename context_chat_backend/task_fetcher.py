@@ -59,7 +59,9 @@ POLLING_COOLDOWN = 30
 # task processing or request processing
 TP_TRIGGER = Event()
 TP_CHECK_INTERVAL = 5
-TP_CHECK_INTERVAL_WITH_TRIGGER = 5 * 60
+# todo: trigger does not always fire for some reason, a 5 min poll is slow
+# todo: in case it did fire at some point but did not at some other
+TP_CHECK_INTERVAL_WITH_TRIGGER = 10
 TP_CHECK_INTERVAL_ON_ERROR = 15
 CONTEXT_LIMIT = 30
 
