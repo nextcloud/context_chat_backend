@@ -635,7 +635,9 @@ class VectorDB(BaseVectorDB):
 				if len(chunk_ids) == 0:
 					return []
 
-				# get embeddings
+				# todo: run multiple similarity searches on a unique list of instructions from
+				# todo: IContentProviderWithSearchTask::getSearchTaskDescription()
+				# todo: maybe even filtered on the provider
 				return self._similarity_search(session, query, chunk_ids, k)
 		except EmbeddingException:
 			raise
