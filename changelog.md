@@ -9,6 +9,27 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 
+## 5.5.0 - 2026-10-15
+
+### Added
+- NC 35 support (#328) @kyteinsky
+- add connect_timeout param for embedding requests (#346) @bakiburakogun
+- NC 36 support
+
+### Changed
+- include patch versions to repair filenames (#333) @kyteinsky
+- deps upgrade + use python 3.13 (#355) @kyteinsky
+
+### Fixed
+- run all repairs when version.info file is absent from persistent storage (#333) @kyteinsky
+- output unique sources in context chat output (#334) @kyteinsky
+- use the limit var passed in the context chat search task (#334) @kyteinsky
+- fix(repair): handle version suffixes robustly (#341) @kyteinsky
+- do not log the database password on startup (#343) @bakiburakogun
+- fix(info): use canonical regex form for downloadLogs route URL (#296) @oleksandr-nc
+- fix(logging): let debug: true reach stderr, not only the log file (#348) @bakiburakogun
+
+
 ## 5.5.0-beta1 - 2026-08-26
 
 ### Fixed
