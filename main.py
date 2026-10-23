@@ -26,7 +26,7 @@ if __name__ == '__main__':
 	k8s_env = is_k8s_env()
 	logging_config = get_logging_config(LOGGER_K8S_CONFIG_NAME if k8s_env else LOGGER_CONFIG_NAME)
 	setup_logging(logging_config)
-	app_config: TConfig = app.extra['CONFIG']
+	app_config: TConfig = app.state.config
 	if app_config.debug:
 		logger = logging.getLogger('ccb')
 		logger.setLevel(logging.DEBUG)

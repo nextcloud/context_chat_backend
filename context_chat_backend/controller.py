@@ -237,7 +237,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(debug=app_config.debug, lifespan=lifespan)  # pyright: ignore[reportArgumentType]
 
-app.extra['CONFIG'] = app_config
+app.state.config = app_config
 k8s_env = is_k8s_env()
 
 
@@ -306,7 +306,7 @@ def enabled_guard(app: FastAPI):
 		'''
 		@wraps(func)
 		def wrapper(*args, **kwargs):
-			disable_aaa = app.extra['CONFIG'].disable_aaa
+			disable_aaa = app.state.config.disable_aaa
 			if not disable_aaa and not app_enabled.is_set():
 				return JSONResponse('Context Chat is disabled, enable it from AppAPI to use it.', 503)
 

@@ -22,5 +22,5 @@ else
     echo "deb http://apt.postgresql.org/pub/repos/apt ${VERSION}-pgdg main" >/etc/apt/sources.list.d/pgdg.list
     curl -sSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor --output /etc/apt/trusted.gpg.d/postgresql.gpg
     echo "Installing PostgreSQL..."
-    apt-get update && apt-get install -y postgresql-$PG_VERSION postgresql-$PG_VERSION-pgvector
+    apt-get update && apt-get install -y --no-install-recommends postgresql-$PG_VERSION postgresql-$PG_VERSION-pgvector
 fi
