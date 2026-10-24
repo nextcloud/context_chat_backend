@@ -28,7 +28,7 @@ python-pptx>=1.0.2
 ruamel.yaml>=0.19.1
 sentence-transformers>=6.1.0
 # the CUDA image's torch 2.11 requires setuptools<82
-setuptools>=84.0.0
+setuptools>=84.2.1
 sse_starlette>=3.5.0
 starlette_context>=0.5.1
 striprtf>=0.0.33
