@@ -1,5 +1,4 @@
 apscheduler>=3.11.3
-chromadb>=1.5.9
 cryptography>=50.0.2
 ctransformers>=0.2.27
 docx2txt>=0.9
@@ -19,8 +18,10 @@ odfdo>=3.27.1
 odfpy>=1.4.1
 openpyxl>=3.1.5
 pandas>=3.0.6
+# the torch indexes ship an older pillow that would otherwise satisfy torchvision
+pillow>=13.0.0
 psutil>=7.2.2
-pypdf>=6.20.0
+pypdf>=6.21.1
 protobuf>=7.36.2
 python-dotenv>=1.2.4
 python-multipart>=0.0.32
@@ -38,5 +39,6 @@ torch==2.14.1
 torchvision==0.29.1
 transformers>=5.19.0
 unstructured @ git+https://github.com/kyteinsky/unstructured@09ad2f18b0048b90a25de6439d49753bd6670090
+uvicorn>=0.54.0
 wheel>=0.48.0
 xlrd>=2.0.2
