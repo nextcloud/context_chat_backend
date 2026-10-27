@@ -495,28 +495,25 @@ class VectorDB(BaseVectorDB):
 			collection = self.client.get_collection(session)
 
 			# entry from "AccessListStore" is deleted automatically due to the foreign key constraint
-      # batch the deletion to avoid hitting the query parameter limit
-			chunks_to_delete = []
+			# batch the source ids to avoid hitting the query parameter limit,
+			# the chunks are selected and deleted within the db, a source can have thousands of them
 			deleted_source_ids = []
 			for i in range(0, len(source_ids), PG_BATCH_SIZE):
 				batched_ids = source_ids[i:i+PG_BATCH_SIZE]
-				stmt_doc = (
-					sa.delete(DocumentsStore)
+				batch_chunk_ids = (
+					sa.select(sa.cast(sa.func.unnest(DocumentsStore.chunks), sa.String))
 					.filter(DocumentsStore.source_id.in_(batched_ids))
-					.returning(DocumentsStore.chunks, DocumentsStore.source_id)
 				)
-				doc_result = session.execute(stmt_doc)
-				chunks_to_delete.extend(str(c) for res in doc_result for c in res.chunks)
-				deleted_source_ids.extend(str(res.source_id) for res in doc_result)
-
-			for i in range(0, len(chunks_to_delete), PG_BATCH_SIZE):
-				batched_chunks = chunks_to_delete[i:i+PG_BATCH_SIZE]
-				stmt_chunks = (
+				session.execute(
 					sa.delete(self.client.EmbeddingStore)
 					.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
-					.filter(self.client.EmbeddingStore.id.in_(batched_chunks))
+					.filter(self.client.EmbeddingStore.id.in_(batch_chunk_ids))
 				)
-				session.execute(stmt_chunks)
+				deleted_source_ids.extend(session.execute(
+					sa.delete(DocumentsStore)
+					.filter(DocumentsStore.source_id.in_(batched_ids))
+					.returning(DocumentsStore.source_id)
+				).scalars())
 
 			session.commit()
 		except Exception as e:
@@ -540,23 +537,18 @@ class VectorDB(BaseVectorDB):
 			try:
 				collection = self.client.get_collection(session)
 
-				stmt = (
-					sa.delete(DocumentsStore)
+				# done entirely in the db, a provider like files can have millions of chunks
+				provider_chunk_ids = (
+					sa.select(sa.cast(sa.func.unnest(DocumentsStore.chunks), sa.String))
 					.filter(DocumentsStore.provider == provider_key)
-					.returning(DocumentsStore.chunks)
 				)
-
-				doc_result = session.execute(stmt)
-				chunks_to_delete = [str(c) for res in doc_result for c in res.chunks]
-
-				for i in range(0, len(chunks_to_delete), PG_BATCH_SIZE):
-					batched_chunks = chunks_to_delete[i:i+PG_BATCH_SIZE]
-					stmt = (
-						sa.delete(self.client.EmbeddingStore)
-						.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
-						.filter(self.client.EmbeddingStore.id.in_(batched_chunks))
-					)
-					session.execute(stmt)
+				session.execute(
+					sa.delete(self.client.EmbeddingStore)
+					.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
+					.filter(self.client.EmbeddingStore.id.in_(provider_chunk_ids))
+				)
+				# entries from "AccessListStore" are deleted automatically due to the foreign key constraint
+				session.execute(sa.delete(DocumentsStore).filter(DocumentsStore.provider == provider_key))
 
 				session.commit()
 			except Exception as e:
