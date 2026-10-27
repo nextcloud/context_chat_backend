@@ -7,9 +7,9 @@ import math
 import os
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from enum import Enum
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 from typing import Any
 
 import niquests
@@ -51,6 +51,7 @@ from .vectordb.types import DbException, SafeDbException
 APP_ROLE = get_app_role()
 THREADS = {}
 THREAD_STOP_EVENT = Event()
+BG_THREADS_PAUSE_LOCK = Lock()
 LOGGER = logging.getLogger('ccb.task_fetcher')
 MIN_FILES_PER_CPU = 4
 POLLING_COOLDOWN = 30
@@ -769,6 +770,25 @@ def start_bg_threads(app_config: TConfig, app_enabled: Event):
 			name='RequestProcessingThread',
 		)
 		THREADS[ThreadType.REQUEST_PROCESSING].start()
+
+
+@contextmanager
+def bg_threads_paused(app_config: TConfig, app_enabled: Event):
+	'''
+	Stops the background threads of this process and starts them again on exit.
+	Any batch the threads are working on is finished first, so nothing they fetched
+	before can be written to the vector db while the caller runs.
+	'''
+	with BG_THREADS_PAUSE_LOCK:
+		was_running = len(THREADS) > 0
+		LOGGER.info('Stopping the background threads')
+		wait_for_bg_threads()
+		try:
+			yield
+		finally:
+			if was_running:
+				LOGGER.info('Starting the background threads again')
+				start_bg_threads(app_config, app_enabled)
 
 
 def wait_for_bg_threads():
