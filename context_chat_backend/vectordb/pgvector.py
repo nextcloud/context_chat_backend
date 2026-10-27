@@ -589,6 +589,36 @@ class VectorDB(BaseVectorDB):
 				)
 				raise DbException('Error: cleaning up orphaned source ids after deleting user') from e
 
+	def delete_all(self):
+		with self.session_maker() as session:
+			try:
+				collection = self.client.get_collection(session)
+				embeddings_table = self.client.EmbeddingStore.__tablename__
+
+				# both tables are owned by us, TRUNCATE avoids a full scan on large instances
+				session.execute(sa.text(f'TRUNCATE TABLE {ACCESS_LIST_TABLE_NAME}, {DOCUMENTS_TABLE_NAME}'))
+
+				# The embeddings table is shared by all the langchain collections in this db. Lock it so no
+				# other collection can add rows between the check and the truncate, the lock is released on commit.
+				session.execute(sa.text(f'LOCK TABLE {embeddings_table} IN ACCESS EXCLUSIVE MODE'))
+				# stops at the first foreign row instead of counting all of them
+				has_other_collections = session.execute(
+					sa.select(sa.exists().where(
+						self.client.EmbeddingStore.collection_id.is_distinct_from(collection.uuid)
+					))
+				).scalar()
+				if has_other_collections:
+					session.execute(
+						sa.delete(self.client.EmbeddingStore)
+						.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
+					)
+				else:
+					session.execute(sa.text(f'TRUNCATE TABLE {embeddings_table}'))
+				session.commit()
+			except Exception as e:
+				session.rollback()
+				raise DbException('Error: deleting all documents, rolling back changes') from e
+
 	def count_documents_by_provider(self) -> dict[str, int]:
 		try:
 			with self.session_maker() as session:
