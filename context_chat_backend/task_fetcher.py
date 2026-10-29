@@ -7,10 +7,9 @@ import math
 import os
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from enum import Enum
-from threading import Event, Thread
-from time import sleep
+from threading import Event, Lock, Thread
 from typing import Any
 
 import niquests
@@ -52,6 +51,7 @@ from .vectordb.types import DbException, SafeDbException
 APP_ROLE = get_app_role()
 THREADS = {}
 THREAD_STOP_EVENT = Event()
+BG_THREADS_PAUSE_LOCK = Lock()
 LOGGER = logging.getLogger('ccb.task_fetcher')
 MIN_FILES_PER_CPU = 4
 POLLING_COOLDOWN = 30
@@ -147,12 +147,14 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 
 		if not app_enabled.is_set():
 			LOGGER.info('App is disabled, files indexing thread will sleep until next enabled state check')
-			sleep(POLLING_COOLDOWN)
+			# same as sleep() but returns as soon as the threads are asked to stop,
+			# so stopping them (app disable, shutdown, vector db wipe) does not wait out the cooldown
+			THREAD_STOP_EVENT.wait(POLLING_COOLDOWN)
 			continue
 
 		try:
 			if not network_em.check_connection(ThreadType.FILES_INDEXING.value):
-				sleep(POLLING_COOLDOWN)
+				THREAD_STOP_EVENT.wait(POLLING_COOLDOWN)
 				continue
 
 			q_items_res = nc.ocs(
@@ -168,7 +170,7 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 
 			if not q_items.files and not q_items.content_providers:
 				LOGGER.debug('No documents to index')
-				sleep(POLLING_COOLDOWN)
+				THREAD_STOP_EVENT.wait(POLLING_COOLDOWN)
 				continue
 
 			# separate valid items from per-item pydantic validation errors
@@ -245,11 +247,11 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			niquests.exceptions.Timeout,
 		) as e:
 			LOGGER.info('Temporary error fetching documents to index, will retry:', exc_info=e)
-			sleep(5)
+			THREAD_STOP_EVENT.wait(5)
 			continue
 		except Exception as e:
 			LOGGER.exception('Error fetching documents to index:', exc_info=e)
-			sleep(5)
+			THREAD_STOP_EVENT.wait(5)
 			continue
 
 		# delete the entries from the PHP side queue where indexing succeeded or the error is not retryable
@@ -276,7 +278,7 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			niquests.exceptions.Timeout,
 		) as e:
 			LOGGER.info('Temporary error reporting indexing results, will retry:', exc_info=e)
-			sleep(5)
+			THREAD_STOP_EVENT.wait(5)
 			with suppress(Exception):
 				nc = NextcloudApp()
 				nc.ocs(
@@ -290,7 +292,7 @@ def files_indexing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			continue
 		except Exception as e:
 			LOGGER.exception('Error reporting indexing results:', exc_info=e)
-			sleep(5)
+			THREAD_STOP_EVENT.wait(5)
 			continue
 
 
@@ -310,7 +312,7 @@ def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 
 		if not app_enabled.is_set():
 			LOGGER.info('App is disabled, updates processing thread will sleep until next enabled state check')
-			sleep(POLLING_COOLDOWN)
+			THREAD_STOP_EVENT.wait(POLLING_COOLDOWN)
 			continue
 
 		try:
@@ -329,16 +331,16 @@ def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			niquests.exceptions.Timeout,
 		) as e:
 			LOGGER.info('Temporary error fetching updates to process, will retry:', exc_info=e)
-			sleep(5)
+			THREAD_STOP_EVENT.wait(5)
 			continue
 		except Exception as e:
 			LOGGER.exception('Error fetching updates to process:', exc_info=e)
-			sleep(5)
+			THREAD_STOP_EVENT.wait(5)
 			continue
 
 		if not q_items.actions:
 			LOGGER.debug('No updates to process')
-			sleep(POLLING_COOLDOWN)
+			THREAD_STOP_EVENT.wait(POLLING_COOLDOWN)
 			continue
 
 		processed_event_ids = []
@@ -426,7 +428,7 @@ def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 
 			if (i + 1) % 20 == 0:
 				LOGGER.debug(f'Processed {i + 1} updates, sleeping for a bit to allow other operations to proceed')
-				sleep(2)
+				THREAD_STOP_EVENT.wait(2)
 
 		LOGGER.info(f'Processed {len(processed_event_ids)} updates with {len(errored_events)} errors', extra={
 			'errored_events': errored_events,
@@ -447,7 +449,7 @@ def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			niquests.exceptions.Timeout,
 		) as e:
 			LOGGER.info('Temporary error reporting processed updates, will retry:', exc_info=e)
-			sleep(5)
+			THREAD_STOP_EVENT.wait(5)
 			with suppress(Exception):
 				nc = NextcloudApp()
 				nc.ocs(
@@ -458,7 +460,7 @@ def updates_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 			continue
 		except Exception as e:
 			LOGGER.exception('Error reporting processed updates:', exc_info=e)
-			sleep(5)
+			THREAD_STOP_EVENT.wait(5)
 			continue
 
 
@@ -502,12 +504,12 @@ def request_processing_thread(app_config: TConfig, app_enabled: Event) -> None:
 
 		if not app_enabled.is_set():
 			LOGGER.info('App is disabled, request processing thread will sleep until next enabled state check')
-			sleep(POLLING_COOLDOWN)
+			THREAD_STOP_EVENT.wait(POLLING_COOLDOWN)
 			continue
 
 		try:
 			if not network_em.check_connection(ThreadType.REQUEST_PROCESSING.value):
-				sleep(POLLING_COOLDOWN)
+				THREAD_STOP_EVENT.wait(POLLING_COOLDOWN)
 				continue
 
 			# Fetch pending task
@@ -584,7 +586,8 @@ def wait_for_tasks(interval = None):
 	global TP_CHECK_INTERVAL
 	global TP_CHECK_INTERVAL_WITH_TRIGGER
 	actual_interval = TP_CHECK_INTERVAL if interval is None else interval
-	if TP_TRIGGER.wait(timeout=actual_interval):
+	# a wake-up from wait_for_bg_threads() is not a trigger from Nextcloud
+	if TP_TRIGGER.wait(timeout=actual_interval) and not THREAD_STOP_EVENT.is_set():
 		TP_CHECK_INTERVAL = TP_CHECK_INTERVAL_WITH_TRIGGER
 	TP_TRIGGER.clear()
 
@@ -729,6 +732,8 @@ def process_search_task(
 
 def start_bg_threads(app_config: TConfig, app_enabled: Event):
 	THREAD_STOP_EVENT.clear()
+	# left set by wait_for_bg_threads() if the request thread had already stopped
+	TP_TRIGGER.clear()
 
 	if APP_ROLE == AppRole.INDEXING or APP_ROLE == AppRole.NORMAL:
 		if ThreadType.FILES_INDEXING in THREADS:
@@ -767,8 +772,29 @@ def start_bg_threads(app_config: TConfig, app_enabled: Event):
 		THREADS[ThreadType.REQUEST_PROCESSING].start()
 
 
+@contextmanager
+def bg_threads_paused(app_config: TConfig, app_enabled: Event):
+	'''
+	Stops the background threads of this process and starts them again on exit.
+	Any batch the threads are working on is finished first, so nothing they fetched
+	before can be written to the vector db while the caller runs.
+	'''
+	with BG_THREADS_PAUSE_LOCK:
+		was_running = len(THREADS) > 0
+		LOGGER.info('Stopping the background threads')
+		wait_for_bg_threads()
+		try:
+			yield
+		finally:
+			if was_running:
+				LOGGER.info('Starting the background threads again')
+				start_bg_threads(app_config, app_enabled)
+
+
 def wait_for_bg_threads():
 	THREAD_STOP_EVENT.set()
+	# wake the request processing thread from wait_for_tasks()
+	TP_TRIGGER.set()
 
 	if APP_ROLE == AppRole.INDEXING or APP_ROLE == AppRole.NORMAL:
 		if ThreadType.FILES_INDEXING not in THREADS:
