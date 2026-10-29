@@ -153,6 +153,8 @@ jobs:
         with:
           repository: nextcloud/context_chat
           path: apps/context_chat
+          # todo: remove this
+          ref: feat/full-wipe-command
           persist-credentials: false
 
       - name: Checkout backend
