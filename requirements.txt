@@ -37,7 +37,7 @@ striprtf>=0.0.33
 # index instead; keep in sync with TORCH_VERSION / TORCHVISION_VERSION there
 torch==2.14.1
 torchvision==0.29.1
-transformers>=5.19.0
+transformers>=5.21.0
 unstructured @ git+https://github.com/kyteinsky/unstructured@09ad2f18b0048b90a25de6439d49753bd6670090
 uvicorn>=0.54.0
 wheel>=0.48.0
