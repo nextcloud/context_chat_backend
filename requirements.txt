@@ -17,7 +17,7 @@ nc_py_api>=0.30.3
 odfdo>=3.27.1
 odfpy>=1.4.1
 openpyxl>=3.1.5
-pandas>=3.0.6
+pandas>=3.1.0
 # the torch indexes ship an older pillow that would otherwise satisfy torchvision
 pillow>=13.0.0
 psutil>=7.2.2
