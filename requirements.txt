@@ -32,7 +32,7 @@ sentence-transformers>=6.1.0
 setuptools>=84.0.0
 sse_starlette>=3.5.0
 starlette_context>=0.5.1
-striprtf>=0.0.33
+striprtf>=0.0.35
 # the Docker images drop these two lines and install torch from a per-flavour
 # index instead; keep in sync with TORCH_VERSION / TORCHVISION_VERSION there
 torch==2.14.1
