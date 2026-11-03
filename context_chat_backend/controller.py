@@ -37,13 +37,7 @@ from .dyn_loader import VectorDBLoader
 from .models.types import LlmException
 from nc_py_api.ex_app import AppAPIAuthMiddleware
 from .utils import JSONResponse, exec_in_proc, get_app_role, is_k8s_env
-from .task_fetcher import (
-	THREAD_STOP_EVENT,
-	bg_threads_paused,
-	start_bg_threads,
-	trigger_handler,
-	wait_for_bg_threads,
-)
+from .task_fetcher import THREAD_STOP_EVENT, start_bg_threads, trigger_handler, wait_for_bg_threads
 from .vectordb.service import count_documents_by_provider, delete_all, delete_by_provider
 
 # setup
@@ -347,16 +341,14 @@ def _():
 @app.post('/deleteAll')
 @enabled_guard(app)
 def _():
-	with bg_threads_paused(app_config, app_enabled):
-		exec_in_proc(target=delete_all, args=(vectordb_loader,))
+	exec_in_proc(target=delete_all, args=(vectordb_loader,))
 	return JSONResponse()
 
 
 @app.post('/deleteProvider')
 @enabled_guard(app)
 def _(body: DeleteProviderRequest):
-	with bg_threads_paused(app_config, app_enabled):
-		exec_in_proc(target=delete_by_provider, args=(vectordb_loader, body.providerKey))
+	exec_in_proc(target=delete_by_provider, args=(vectordb_loader, body.providerKey))
 	return JSONResponse()
 
 
