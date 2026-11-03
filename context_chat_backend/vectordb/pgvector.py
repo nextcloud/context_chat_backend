@@ -574,6 +574,7 @@ class VectorDB(BaseVectorDB):
 
 				result = session.execute(stmt)
 				source_ids = {str(r.source_id) for r in result}
+				session.commit()
 			except Exception as e:
 				session.rollback()
 				raise DbException('Error: deleting user from access list') from e
