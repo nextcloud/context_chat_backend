@@ -494,6 +494,9 @@ class VectorDB(BaseVectorDB):
 		try:
 			collection = self.client.get_collection(session)
 
+			# lock tables with the "docs" first to not deadlock with the vector db wipe lock
+			session.execute(sa.text(f'LOCK TABLE {DOCUMENTS_TABLE_NAME} IN ROW EXCLUSIVE MODE'))
+
 			# entry from "AccessListStore" is deleted automatically due to the foreign key constraint
 			# batch the source ids to avoid hitting the query parameter limit,
 			# the chunks are selected and deleted within the db, a source can have thousands of them
@@ -537,6 +540,9 @@ class VectorDB(BaseVectorDB):
 			try:
 				collection = self.client.get_collection(session)
 
+				# lock "docs" before the embeddings like the wipe, see delete_source_ids()
+				session.execute(sa.text(f'LOCK TABLE {DOCUMENTS_TABLE_NAME} IN ROW EXCLUSIVE MODE'))
+
 				# done entirely in the db, a provider like files can have millions of chunks
 				provider_chunk_ids = (
 					sa.select(sa.cast(sa.func.unnest(DocumentsStore.chunks), sa.String))
@@ -558,6 +564,8 @@ class VectorDB(BaseVectorDB):
 	def delete_user(self, user_id: str):
 		with self.session_maker() as session:
 			try:
+				# lock "docs" before access_list like every other path, the wipe locks them in that order too
+				session.execute(sa.text(f'LOCK TABLE {DOCUMENTS_TABLE_NAME} IN ACCESS SHARE MODE'))
 				stmt = (
 					sa.delete(AccessListStore)
 					.filter(AccessListStore.uid == user_id)
@@ -587,12 +595,21 @@ class VectorDB(BaseVectorDB):
 				collection = self.client.get_collection(session)
 				embeddings_table = self.client.EmbeddingStore.__tablename__
 
+				# Lock all three tables up front in the order the other deletes take them (docs -> the embeddings ->
+				# then access_list through the foreign key cascade), so one of them running during the wipe makes it
+				# wait instead of deadlocking with it. Searches only read and don't block the wipe for long.
+				#
+				# The embeddings table is shared by all the langchain collections in this db, holding its lock also
+				# keeps other collections from adding rows between the check and the truncate below.
+				# The locks are released on commit or rollback automatically.
+				session.execute(sa.text(
+					f'LOCK TABLE {DOCUMENTS_TABLE_NAME}, {embeddings_table}, {ACCESS_LIST_TABLE_NAME}'
+					' IN ACCESS EXCLUSIVE MODE'
+				))
+
 				# both tables are owned by us, TRUNCATE avoids a full scan on large instances
 				session.execute(sa.text(f'TRUNCATE TABLE {ACCESS_LIST_TABLE_NAME}, {DOCUMENTS_TABLE_NAME}'))
 
-				# The embeddings table is shared by all the langchain collections in this db. Lock it so no
-				# other collection can add rows between the check and the truncate, the lock is released on commit.
-				session.execute(sa.text(f'LOCK TABLE {embeddings_table} IN ACCESS EXCLUSIVE MODE'))
 				# stops at the first foreign row instead of counting all of them
 				has_other_collections = session.execute(
 					sa.select(sa.exists().where(
