@@ -293,6 +293,26 @@ jobs:
             --env EXTERNAL_DB="postgresql+psycopg://root:rootpassword@${{ env.NODE_IP }}:4445/nextcloud" \
             --wait-finish
 
+      - name: Scale pods, 3 indexing, 2 updatesproc, 2 requestproc
+        run: |
+          # AppAPI starts every role with a single replica, we scale them here after the registration has happened.
+          kubectl scale -n nextcloud-exapps deployment/nc-app-context-chat-backend-indexing --replicas=3
+          kubectl scale -n nextcloud-exapps deployment/nc-app-context-chat-backend-updatesproc  --replicas=2
+          kubectl scale -n nextcloud-exapps deployment/nc-app-context-chat-backend-requestproc --replicas=2
+
+          for role in indexing updatesproc requestproc; do
+            kubectl rollout status -n nextcloud-exapps deployment/nc-app-context-chat-backend-$role --timeout=600s
+          done
+          kubectl get pods -n nextcloud-exapps -o wide
+          pods=$(kubectl get pods -n nextcloud-exapps --no-headers \
+            -l 'app in (nc-app-context-chat-backend-indexing,nc-app-context-chat-backend-updatesproc,nc-app-context-chat-backend-requestproc)' \
+            --field-selector=status.phase=Running | wc -l)
+          echo "Running context_chat_backend pods: $pods"
+          if [ "$pods" -ne 7 ]; then
+            echo "Error: expected 7 running pods"
+            exit 1
+          fi
+
       - name: Stream ExApp pod logs to files
         run: |
           mkdir -p /tmp/ccb-logs
@@ -393,6 +413,70 @@ jobs:
           echo "$OUT2"
           echo "$OUT2" | grep -q "If all of these points are met, we give a Green label." || exit 1
           echo ::endgroup::
+
+      - name: Wait for files queue to drain to zero
+        run: |
+          echo "::group::Waiting up to 5 minutes for documents queue to reach zero"
+          for i in {1..30}; do
+            stats=$(./occ context_chat:stats --json)
+            scheduled=$(echo "$stats" | jq '[.queued_documents_counts | to_entries[].value] | add // 0')
+            echo "Attempt $i: queued_documents=$scheduled"
+            if [ "$scheduled" = "0" ]; then
+              echo "Queue is empty"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "Timeout: queue did not drain to zero (queued_documents=$scheduled)"
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "::endgroup::"
+
+      - name: Run prompts in the background to run doc searches on the vectordb in parallel to a wipe
+        run: |
+          ./occ context_chat:prompt admin "How do I register a AppAPI deploy daemon?" &
+          ./occ context_chat:prompt admin "Welche Faktoren beeinflussen das Ethical AI Rating?" &
+          ./occ context_chat:prompt admin "How do I list the Task Processing task types using the OCS API?" &
+          ./occ context_chat:prompt admin "What is Nextcloud Flow?" &
+          ./occ context_chat:prompt admin "What recent critical changes should I look out for as a developer?" &
+
+      - name: Remove some files using occ to queue actions
+        run: |
+          ./occ files:delete -f admin/files/admin_manual
+
+      - name: Checkout papers-we-love
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: papers-we-love/papers-we-love
+          ref: 0b33c953aae0c90e6d15c4ed41b01e76358f3c28 # to be deterministic
+          path: papers-we-love
+          persist-credentials: false
+
+      - name: Add some files to keep the indexer busy
+        run: |
+          cp -r papers-we-love/languages data/admin/files
+          ./occ files:scan --all
+
+      - name: Wipe all the indexed data and check that the queues and the vector DB are empty. It should complete within the drain timeout (30 mins).
+        run: |
+          ./occ context_chat:wipe --force
+
+          stats=$(./occ context_chat:stats --json)
+          echo "$stats"
+          indexed=$(echo "$stats" | jq '[.vectordb_document_counts | to_entries[].value] | add // 0')
+          queued=$(echo "$stats" | jq '[.queued_documents_counts | to_entries[].value] | add // 0')
+          actions=$(echo "$stats" | jq '.queued_actions_count')
+          fs_events=$(echo "$stats" | jq '.queued_fs_events_count')
+          # the queued counts leave out locked items, check those separately
+          queued_locked=$(echo "$stats" | jq '[.queued_documents_locked_counts | to_entries[].value] | add // 0')
+          actions_locked=$(echo "$stats" | jq '.queued_actions_locked_count')
+          backend_available=$(echo "$stats" | jq '.backend_available')
+          echo "indexed=$indexed queued=$queued queued_locked=$queued_locked actions=$actions actions_locked=$actions_locked fs_events=$fs_events backend_available=$backend_available"
+          if [ "$backend_available" != "true" ] || [ "$indexed" != "0" ] || [ "$queued" != "0" ] || [ "$queued_locked" != "0" ] || [ "$actions" != "0" ] || [ "$actions_locked" != "0" ] || [ "$fs_events" != "0" ]; then
+            echo "Error: expected an empty vector DB and empty queues after the wipe"
+            exit 1
+          fi
 
       - name: Final dump of DB with vectordb populated
         if: always()
