@@ -494,29 +494,29 @@ class VectorDB(BaseVectorDB):
 		try:
 			collection = self.client.get_collection(session)
 
+			# lock tables with the "docs" first to not deadlock with the vector db wipe lock
+			session.execute(sa.text(f'LOCK TABLE {DOCUMENTS_TABLE_NAME} IN ROW EXCLUSIVE MODE'))
+
 			# entry from "AccessListStore" is deleted automatically due to the foreign key constraint
-      # batch the deletion to avoid hitting the query parameter limit
-			chunks_to_delete = []
+			# batch the source ids to avoid hitting the query parameter limit,
+			# the chunks are selected and deleted within the db, a source can have thousands of them
 			deleted_source_ids = []
 			for i in range(0, len(source_ids), PG_BATCH_SIZE):
 				batched_ids = source_ids[i:i+PG_BATCH_SIZE]
-				stmt_doc = (
-					sa.delete(DocumentsStore)
+				batch_chunk_ids = (
+					sa.select(sa.cast(sa.func.unnest(DocumentsStore.chunks), sa.String))
 					.filter(DocumentsStore.source_id.in_(batched_ids))
-					.returning(DocumentsStore.chunks, DocumentsStore.source_id)
 				)
-				doc_result = session.execute(stmt_doc)
-				chunks_to_delete.extend(str(c) for res in doc_result for c in res.chunks)
-				deleted_source_ids.extend(str(res.source_id) for res in doc_result)
-
-			for i in range(0, len(chunks_to_delete), PG_BATCH_SIZE):
-				batched_chunks = chunks_to_delete[i:i+PG_BATCH_SIZE]
-				stmt_chunks = (
+				session.execute(
 					sa.delete(self.client.EmbeddingStore)
 					.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
-					.filter(self.client.EmbeddingStore.id.in_(batched_chunks))
+					.filter(self.client.EmbeddingStore.id.in_(batch_chunk_ids))
 				)
-				session.execute(stmt_chunks)
+				deleted_source_ids.extend(session.execute(
+					sa.delete(DocumentsStore)
+					.filter(DocumentsStore.source_id.in_(batched_ids))
+					.returning(DocumentsStore.source_id)
+				).scalars())
 
 			session.commit()
 		except Exception as e:
@@ -540,23 +540,21 @@ class VectorDB(BaseVectorDB):
 			try:
 				collection = self.client.get_collection(session)
 
-				stmt = (
-					sa.delete(DocumentsStore)
+				# lock "docs" before the embeddings like the wipe, see delete_source_ids()
+				session.execute(sa.text(f'LOCK TABLE {DOCUMENTS_TABLE_NAME} IN ROW EXCLUSIVE MODE'))
+
+				# done entirely in the db, a provider like files can have millions of chunks
+				provider_chunk_ids = (
+					sa.select(sa.cast(sa.func.unnest(DocumentsStore.chunks), sa.String))
 					.filter(DocumentsStore.provider == provider_key)
-					.returning(DocumentsStore.chunks)
 				)
-
-				doc_result = session.execute(stmt)
-				chunks_to_delete = [str(c) for res in doc_result for c in res.chunks]
-
-				for i in range(0, len(chunks_to_delete), PG_BATCH_SIZE):
-					batched_chunks = chunks_to_delete[i:i+PG_BATCH_SIZE]
-					stmt = (
-						sa.delete(self.client.EmbeddingStore)
-						.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
-						.filter(self.client.EmbeddingStore.id.in_(batched_chunks))
-					)
-					session.execute(stmt)
+				session.execute(
+					sa.delete(self.client.EmbeddingStore)
+					.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
+					.filter(self.client.EmbeddingStore.id.in_(provider_chunk_ids))
+				)
+				# entries from "AccessListStore" are deleted automatically due to the foreign key constraint
+				session.execute(sa.delete(DocumentsStore).filter(DocumentsStore.provider == provider_key))
 
 				session.commit()
 			except Exception as e:
@@ -566,6 +564,8 @@ class VectorDB(BaseVectorDB):
 	def delete_user(self, user_id: str):
 		with self.session_maker() as session:
 			try:
+				# lock "docs" before access_list like every other path, the wipe locks them in that order too
+				session.execute(sa.text(f'LOCK TABLE {DOCUMENTS_TABLE_NAME} IN ACCESS SHARE MODE'))
 				stmt = (
 					sa.delete(AccessListStore)
 					.filter(AccessListStore.uid == user_id)
@@ -589,6 +589,45 @@ class VectorDB(BaseVectorDB):
 					extra={ 'source_ids': list(source_ids) },
 				)
 				raise DbException('Error: cleaning up orphaned source ids after deleting user') from e
+
+	def delete_all(self):
+		with self.session_maker() as session:
+			try:
+				collection = self.client.get_collection(session)
+				embeddings_table = self.client.EmbeddingStore.__tablename__
+
+				# Lock all three tables up front in the order the other deletes take them (docs -> the embeddings ->
+				# then access_list through the foreign key cascade), so one of them running during the wipe makes it
+				# wait instead of deadlocking with it. Searches only read and don't block the wipe for long.
+				#
+				# The embeddings table is shared by all the langchain collections in this db, holding its lock also
+				# keeps other collections from adding rows between the check and the truncate below.
+				# The locks are released on commit or rollback automatically.
+				session.execute(sa.text(
+					f'LOCK TABLE {DOCUMENTS_TABLE_NAME}, {embeddings_table}, {ACCESS_LIST_TABLE_NAME}'
+					' IN ACCESS EXCLUSIVE MODE'
+				))
+
+				# both tables are owned by us, TRUNCATE avoids a full scan on large instances
+				session.execute(sa.text(f'TRUNCATE TABLE {ACCESS_LIST_TABLE_NAME}, {DOCUMENTS_TABLE_NAME}'))
+
+				# stops at the first foreign row instead of counting all of them
+				has_other_collections = session.execute(
+					sa.select(sa.exists().where(
+						self.client.EmbeddingStore.collection_id.is_distinct_from(collection.uuid)
+					))
+				).scalar()
+				if has_other_collections:
+					session.execute(
+						sa.delete(self.client.EmbeddingStore)
+						.filter(self.client.EmbeddingStore.collection_id == collection.uuid)
+					)
+				else:
+					session.execute(sa.text(f'TRUNCATE TABLE {embeddings_table}'))
+				session.commit()
+			except Exception as e:
+				session.rollback()
+				raise DbException('Error: deleting all documents, rolling back changes') from e
 
 	def count_documents_by_provider(self) -> dict[str, int]:
 		try:
