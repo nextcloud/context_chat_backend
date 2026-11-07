@@ -21,7 +21,7 @@ pandas>=3.1.0
 # the torch indexes ship an older pillow that would otherwise satisfy torchvision
 pillow>=13.0.0
 psutil>=7.2.2
-pypdf>=6.21.3
+pypdf>=6.21.4
 protobuf>=7.36.2
 python-dotenv>=1.2.4
 python-multipart>=0.0.32
