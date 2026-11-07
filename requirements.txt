@@ -36,7 +36,7 @@ striprtf>=0.0.35
 # the Docker images drop these two lines and install torch from a per-flavour
 # index instead; keep in sync with TORCH_VERSION / TORCHVISION_VERSION there
 torch==2.14.1
-torchvision==0.29.1
+torchvision==0.29.2
 transformers>=5.22.0
 unstructured @ git+https://github.com/kyteinsky/unstructured@09ad2f18b0048b90a25de6439d49753bd6670090
 uvicorn>=0.54.0
