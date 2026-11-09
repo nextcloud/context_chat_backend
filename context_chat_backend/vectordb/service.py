@@ -47,6 +47,18 @@ def delete_user(vectordb_loader: VectorDBLoader, user_id: str):
 	db.delete_user(user_id)
 
 
+def delete_all(vectordb_loader: VectorDBLoader):
+	'''
+	Raises
+	------
+	DbException
+	LoaderException
+	'''
+	db: BaseVectorDB = vectordb_loader.load()
+	logger.info('deleting all documents from the vector db')
+	db.delete_all()
+
+
 def update_access(
 	vectordb_loader: VectorDBLoader,
 	op: UpdateAccessOp,

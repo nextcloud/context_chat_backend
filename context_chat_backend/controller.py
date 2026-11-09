@@ -8,7 +8,7 @@ from nc_py_api.ex_app.providers.task_processing import ShapeDescriptor, ShapeTyp
 
 # isort: off
 from .chain.types import ContextException
-from .types import AppRole, LoaderException, EmbeddingException
+from .types import AppRole, DeleteProviderRequest, LoaderException, EmbeddingException
 from .vectordb.types import DbException, SafeDbException
 from .setup_functions import ensure_config_file, repair_run, setup_env_vars
 
@@ -38,7 +38,7 @@ from .models.types import LlmException
 from nc_py_api.ex_app import AppAPIAuthMiddleware
 from .utils import JSONResponse, exec_in_proc, get_app_role, is_k8s_env
 from .task_fetcher import THREAD_STOP_EVENT, start_bg_threads, trigger_handler, wait_for_bg_threads
-from .vectordb.service import count_documents_by_provider
+from .vectordb.service import count_documents_by_provider, delete_all, delete_by_provider
 
 # setup
 
@@ -336,6 +336,20 @@ def _():
 def _():
 	counts = exec_in_proc(target=count_documents_by_provider, args=(vectordb_loader,))
 	return JSONResponse(counts)
+
+
+@app.post('/deleteAll')
+@enabled_guard(app)
+def _():
+	exec_in_proc(target=delete_all, args=(vectordb_loader,))
+	return JSONResponse()
+
+
+@app.post('/deleteProvider')
+@enabled_guard(app)
+def _(body: DeleteProviderRequest):
+	exec_in_proc(target=delete_by_provider, args=(vectordb_loader, body.providerKey))
+	return JSONResponse()
 
 
 @app.get('/downloadLogs')
