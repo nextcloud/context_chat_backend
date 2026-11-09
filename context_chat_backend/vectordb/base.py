@@ -211,6 +211,17 @@ class BaseVectorDB(ABC):
 		...
 
 	@abstractmethod
+	def delete_all(self):
+		'''
+		Deletes all documents, their chunks and the access lists.
+
+		Raises
+		------
+		DbException
+		'''
+		...
+
+	@abstractmethod
 	def count_documents_by_provider(self) -> dict[str, int]:
 		'''
 		Counts the number of documents grouped by provider.

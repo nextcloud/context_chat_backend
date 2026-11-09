@@ -317,6 +317,10 @@ class ActionPayloadDeleteProviderId(BaseModel):
 	providerId: Annotated[str, AfterValidator(_validate_provider_id)]
 
 
+class DeleteProviderRequest(BaseModel):
+	providerKey: Annotated[str, AfterValidator(_validate_provider_id)]
+
+
 class ActionPayloadDeleteUserId(BaseModel):
 	userId: Annotated[str, AfterValidator(_validate_user_id)]
 
