@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 import logging
+import os
+import re
 import socket
 from time import sleep
 from typing import Literal, TypedDict
@@ -19,10 +21,32 @@ from .types import (
 	TConfig,
 	TEmbeddingAuthApiKey,
 	TEmbeddingAuthBasic,
+	TEmbeddingConfig,
 )
 
 logger = logging.getLogger('ccb.nextwork_em')
 TCP_CONNECT_TIMEOUT = 2.0  # seconds
+
+# multilingual-e5-*-instruct models are trained with an instruction on the query side only,
+# see https://huggingface.co/intfloat/multilingual-e5-large-instruct
+E5_INSTRUCT_MODEL_PATTERN = re.compile(r'multilingual-e5-[a-z0-9-]*instruct', re.IGNORECASE)
+# fallback for when no provider-specific search task description is available
+E5_QUERY_INSTRUCTION = (
+	'Given a user question, retrieve relevant passages that answer the question,'
+	' even when they are written in another language'
+)
+
+
+def get_embedding_model_name(emconf: TEmbeddingConfig) -> str | None:
+	if emconf.remote_service:
+		return emconf.model_name or None  # env var and config are both fed into this value
+	return os.path.basename(emconf.llama.get('model', '')) or None
+
+
+def _uses_e5_instruct(emconf: TEmbeddingConfig) -> bool:
+	model = get_embedding_model_name(emconf)
+	return model is not None and E5_INSTRUCT_MODEL_PATTERN.search(model) is not None
+
 
 # Copied from llama_cpp/llama_types.py
 
@@ -179,4 +203,8 @@ class NetworkEmbeddings(Embeddings):
 		return results
 
 	def embed_query(self, text: str) -> list[float]:
+		if _uses_e5_instruct(self.app_config.embedding):
+			# todo: take a per-provider instruction from IContentProviderWithSearchTask::getSearchTaskDescription()
+			# todo: (nextcloud/server, since 35.0.0) from the main app.
+			text = f'Instruct: {E5_QUERY_INSTRUCTION}\nQuery: {text}'
 		return self._get_embedding(text)  # pyright: ignore[reportReturnType]
