@@ -319,7 +319,7 @@ ADD dockerfile_scripts/entrypoint.sh dockerfile_scripts/entrypoint.sh
 # Install Vulkan runtime + AMD RADV open-source driver
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        libvulkan1 mesa-vulkan-drivers \
+        libvulkan1 mesa-vulkan-drivers libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 
 ENV DEBIAN_FRONTEND=dialog
