@@ -7,8 +7,8 @@ ARG LLAMA_CPP_PYTHON_VERSION=0.3.36
 # torch comes from a per-flavour index, so requirements.txt's torch lines are
 # dropped in the runtime stages. TORCH_VERSION matches requirements.txt; the cu128
 # index has nothing newer than CUDA_TORCH_VERSION.
-ARG TORCH_VERSION=2.14.1
-ARG TORCHVISION_VERSION=0.29.1
+ARG TORCH_VERSION=2.15.0
+ARG TORCHVISION_VERSION=0.29.2
 ARG CUDA_TORCH_VERSION=2.11.0
 ARG CUDA_TORCHVISION_VERSION=0.26.0
 ARG CUDA_TORCH_INDEX=cu128
