@@ -9,6 +9,17 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 
+## 5.6.0 - 2026-11-13
+
+### Added
+- `/deleteAll` and `/deleteProvider` endpoints to efficiently wipe all indexed documents or those of a single provider, used by `occ context_chat:wipe` (#374) @kyteinsky
+
+### Fixed
+- revert to slow poll at 5 mins when the trigger works (#365) @kyteinsky
+- fix(db): commit after delete_user (#386) @kyteinsky
+- fix(rocm): install libatomic1 in the rocm image (#397) @kyteinsky
+
+
 ## 5.5.0 - 2026-10-15
 
 ### Added
