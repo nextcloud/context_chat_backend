@@ -10,3 +10,12 @@ updates:
     time: "03:00"
     timezone: Europe/Paris
   open-pull-requests-limit: 10
+  cooldown:
+    default-days: 14
+  groups:
+    pip-dependencies:
+      patterns:
+      - "*"
+      update-types:
+      - minor
+      - patch
