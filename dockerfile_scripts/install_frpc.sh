@@ -9,9 +9,9 @@
 # https://github.com/nextcloud/HaRP#adapting-exapps-to-use-harp
 # When upgrading, update the version and copy both linux checksums from that
 # release's frp_sha256_checksums.txt.
-FRP_VERSION=0.71.1
-FRP_AMD64_SHA256=1d9875210972a5d1a62b2dc4c48df45ab0af05d3ca1b5e494a014428259df803
-FRP_ARM64_SHA256=8edf590b0c396fa42f9c147121a76af83cfc2002b08f5aef0ea1008c43482019
+FRP_VERSION=0.72.0
+FRP_AMD64_SHA256=daf719b32ca2778770bb92955e231a07414d754378b9af328aa2642862479804
+FRP_ARM64_SHA256=02180b857480302fd934e9ddbd50fe2f73229f99062f88756abc6de9df5e95cf
 
 set -ex
 
