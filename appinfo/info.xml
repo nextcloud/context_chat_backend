@@ -48,6 +48,11 @@ Setup background job workers as described here: https://docs.nextcloud.com/serve
 				<description>A URI in the form of "postgresql+psycopg://pguser:pgpass@localhost:5432/nextcloud" that supports the pgvector extension. If this is set, no separate internal database will be setup for vector storage. This should be accessible by the ex-app container nc_app_context_chat_backend.</description>
 			</variable>
 			<variable>
+				<name>CCB_PG_SEARCH_BATCH_SIZE</name>
+				<display-name>PostgreSQL Similarity Search Batch Size</display-name>
+				<description>Maximum number of chunk IDs processed in each PostgreSQL similarity search batch. Defaults to 50000 if unset. Lower values can reduce the size of individual database queries.</description>
+			</variable>
+			<variable>
 				<name>CC_DOWNLOAD_MODELS_FROM_HF</name>
 				<display-name>Auto-download models from Huggingface</display-name>
 				<description>When set to "false", "0" or "no", initial download of the Huggingface models will be skipped in the init phase. They would have to be downloaded and placed in the persistent storage manually or through a mount point.</description>
