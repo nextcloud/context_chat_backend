@@ -39,6 +39,14 @@ DOCUMENTS_TABLE_NAME = 'docs'
 ACCESS_LIST_TABLE_NAME = 'access_list'
 PG_BATCH_SIZE = 50000
 
+try:
+    PG_SEARCH_BATCH_SIZE = int(os.getenv('CCB_PG_SEARCH_BATCH_SIZE', str(PG_BATCH_SIZE)))
+except ValueError as e:
+    raise ValueError('CCB_PG_SEARCH_BATCH_SIZE must be a positive integer') from e
+
+if PG_SEARCH_BATCH_SIZE <= 0:
+    raise ValueError('CCB_PG_SEARCH_BATCH_SIZE must be a positive integer')
+
 logger = logging.getLogger('ccb.vectordb')
 
 # we're responsible for keeping this in sync with the langchain_postgres table
@@ -699,8 +707,8 @@ class VectorDB(BaseVectorDB):
 		all_results = []
 		# Process chunk_ids in batches to prevent db errors
 		# query paramerters limitation in postgres is 65535 (https://www.postgresql.org/docs/current/limits.html)
-		for i in range(0, len(chunk_ids), PG_BATCH_SIZE):
-			batch_chunk_ids = chunk_ids[i:i+PG_BATCH_SIZE]
+		for i in range(0, len(chunk_ids), PG_SEARCH_BATCH_SIZE):
+			batch_chunk_ids = chunk_ids[i:i+PG_SEARCH_BATCH_SIZE]
 
 			filter_by = [
 				self.client.EmbeddingStore.collection_id == collection.uuid,
@@ -724,7 +732,7 @@ class VectorDB(BaseVectorDB):
 			all_results.extend(batch_results)
 
 		# Sort all collected results by distance and take top k
-		if len(chunk_ids) > PG_BATCH_SIZE:
+		if len(chunk_ids) > PG_SEARCH_BATCH_SIZE:
 			all_results.sort(key=lambda x: x.distance)
 		top_k_results = all_results[:k]
 
