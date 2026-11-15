@@ -6,6 +6,7 @@
 
 import logging
 import multiprocessing as mp
+import threading
 from os import cpu_count, getenv
 
 import psutil
@@ -17,9 +18,17 @@ from context_chat_backend.controller import app  # isort: skip
 from context_chat_backend.logger import get_logging_config, setup_logging  # isort: skip
 from context_chat_backend.utils import is_k8s_env, redact_config  # isort: skip
 from context_chat_backend.dyn_loader import VectorDBLoader  # isort: skip
+from context_chat_backend.vectordb.base import BaseVectorDB  # isort: skip
 
 LOGGER_CONFIG_NAME = 'logger_config.yaml'
 LOGGER_K8S_CONFIG_NAME = 'logger_config.k8s.yaml'
+
+
+def build_hnsw_index(vectordb: BaseVectorDB):
+	try:
+		vectordb.ensure_hnsw_index()
+	except Exception:
+		logging.getLogger('ccb').exception('Error: could not build the HNSW index')
 
 
 if __name__ == '__main__':
@@ -44,7 +53,9 @@ if __name__ == '__main__':
 
 	# init the vectordb in the main process before workers are forked so that
 	# no two worker processes race to CREATE TABLE at the same time
-	VectorDBLoader(app_config).load()
+	vectordb = VectorDBLoader(app_config).load()
+	# building the index can take minutes on large installs, so it does not block startup
+	threading.Thread(target=build_hnsw_index, args=(vectordb,), name='hnsw_index', daemon=True).start()
 
 	print(f'CPU count: {cpu_count()}, Memory: {psutil.virtual_memory()}')
 	print('App config:\n' + redact_config(app_config).model_dump_json(indent=2), flush=True)

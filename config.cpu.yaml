@@ -17,6 +17,13 @@ vectordb:
   pgvector:
     # all options: https://python.langchain.com/api_reference/postgres/vectorstores/langchain_postgres.vectorstores.PGVector.html
     # 'connection' overrides the env var 'CCB_DB_URL'
+    # embedding_length: 1024  # dimension of the embedding model, new installs get a `vector(1024)` column
+    # optional HNSW index for faster searches on large installs, built in the background at startup
+    # once all embeddings have the same dimension. To change m or ef_construction later, drop the
+    # `ccb_embedding_hnsw_idx` index and restart.
+    # hnsw_index:
+    #   m: 16
+    #   ef_construction: 64
 
 embedding:
   # embedding service config
