@@ -260,3 +260,11 @@ class BaseVectorDB(ABC):
 		SafeDbException
 		'''
 		...
+
+	@abstractmethod
+	def ensure_hnsw_index(self):
+		'''
+		Builds the HNSW index if it is enabled in the config and does not exist yet.
+		Called once in the background at startup, so it may take long.
+		'''
+		...

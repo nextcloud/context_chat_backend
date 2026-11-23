@@ -17,6 +17,7 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStore
 from langchain_postgres.vectorstores import Base, PGVector
+from pgvector.sqlalchemy import Vector
 
 from ..chain.types import InDocument, ScopeType
 from ..types import (
@@ -30,6 +31,14 @@ from ..types import (
 )
 from ..utils import timed
 from .base import BaseVectorDB
+from .hnsw import (
+	HNSW_INDEX_NAME,
+	HnswConfig,
+	create_index_sql,
+	dims_from_index_def,
+	pick_dimension,
+	supports_iterative_scan,
+)
 from .types import DbException, SafeDbException, UpdateAccessOp
 
 load_dotenv()
@@ -38,6 +47,8 @@ COLLECTION_NAME = 'ccb_store'
 DOCUMENTS_TABLE_NAME = 'docs'
 ACCESS_LIST_TABLE_NAME = 'access_list'
 PG_BATCH_SIZE = 50000
+# arbitrary key for pg_try_advisory_lock so only one process builds the HNSW index at a time
+HNSW_BUILD_LOCK_KEY = 7_316_002_018
 
 logger = logging.getLogger('ccb.vectordb')
 
@@ -120,6 +131,12 @@ class VectorDB(BaseVectorDB):
 		# Use connection string from env var if not provided in kwargs
 		if 'connection' not in kwargs:
 			kwargs['connection'] = os.environ['CCB_DB_URL']
+
+		# not a PGVector option, so it is removed before kwargs are passed on
+		try:
+			self.hnsw_config = HnswConfig.from_config(kwargs.pop('hnsw_index', None))
+		except (TypeError, ValueError) as e:
+			raise DbException(f'Error: invalid hnsw_index config: {e}') from e
 
 		# setup langchain db + our access list table
 		try:
@@ -643,6 +660,94 @@ class VectorDB(BaseVectorDB):
 		except Exception as e:
 			raise DbException('Error: Could not count documents in database') from e
 
+	def ensure_hnsw_index(self):
+		'''Build the HNSW index if it is enabled in the config and does not exist yet.
+
+		Uses CREATE INDEX CONCURRENTLY, so indexing and searches keep working during the build.
+		'''
+		if self.hnsw_config is None:
+			return
+
+		table = self.client.EmbeddingStore.__tablename__
+		engine = self.client._engine
+		# CREATE/DROP INDEX CONCURRENTLY cannot run inside a transaction
+		with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
+			if not conn.execute(sa.text('SELECT pg_try_advisory_lock(:key)'), {'key': HNSW_BUILD_LOCK_KEY}).scalar():
+				logger.info('HNSW index is being built by another process, skipping')
+				return
+
+			try:
+				existing = conn.execute(
+					sa.text(
+						'SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid'
+						' WHERE c.relname = :name'
+					),
+					{'name': HNSW_INDEX_NAME},
+				).first()
+				if existing is not None and existing.indisvalid:
+					logger.debug('HNSW index already exists')
+					return
+				if existing is not None:
+					# left behind by an interrupted CREATE INDEX CONCURRENTLY
+					logger.warning('Dropping invalid HNSW index %s to rebuild it', HNSW_INDEX_NAME)
+					conn.execute(sa.text(f'DROP INDEX CONCURRENTLY IF EXISTS {HNSW_INDEX_NAME}'))
+
+				embedding_col = self.client.EmbeddingStore.embedding
+				dims_col = sa.func.vector_dims(embedding_col)
+				dim_counts = list(conn.execute(
+					sa.select(dims_col, sa.func.count()).where(embedding_col.is_not(None)).group_by(dims_col)
+				).tuples())
+				dims = self.client._embedding_length or pick_dimension(dim_counts)
+				if dims is None:
+					logger.info(
+						'No embeddings yet and embedding_length is not set,'
+						' the HNSW index will be built on the next start'
+					)
+					return
+
+				other_dims = {d: c for d, c in dim_counts if d != dims}
+				if other_dims:
+					logger.warning(
+						'Not building the HNSW index: it needs all embeddings to have %d dimensions, but found'
+						' rows with other dimensions %s. Re-index with a single embedding model to enable it.',
+						dims, other_dims,
+					)
+					return
+
+				logger.info(
+					'Building HNSW index on %d embeddings with %d dimensions (m=%d, ef_construction=%d)',
+					sum(c for _, c in dim_counts), dims, self.hnsw_config.m, self.hnsw_config.ef_construction,
+				)
+				start = perf_counter_ns()
+				conn.execute(sa.text(
+					create_index_sql(table, dims, self.client._distance_strategy, self.hnsw_config)
+				))
+				logger.info('HNSW index built in %.1f s', (perf_counter_ns() - start) / 1e9)
+			finally:
+				conn.execute(sa.text('SELECT pg_advisory_unlock(:key)'), {'key': HNSW_BUILD_LOCK_KEY})
+
+	def _hnsw_search_settings(self, session: orm.Session) -> tuple[int | None, bool]:
+		'''Return the dimension to cast the embeddings to so the HNSW index is used, and whether pgvector
+		supports iterative index scans.
+
+		The dimension is None when no cast is needed: the index is disabled, not built yet, or on a typed column.
+		'''
+		if self.hnsw_config is None:
+			return None, False
+
+		row = session.execute(
+			sa.text(
+				'SELECT pg_get_indexdef(i.indexrelid) AS index_def,'
+				" (SELECT extversion FROM pg_extension WHERE extname = 'vector') AS pgvector_version"
+				' FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid'
+				' WHERE c.relname = :name AND i.indisvalid'
+			),
+			{'name': HNSW_INDEX_NAME},
+		).first()
+		if row is None:
+			return None, False
+		return dims_from_index_def(row.index_def), supports_iterative_scan(row.pgvector_version or '')
+
 	@timed
 	def doc_search(
 		self,
@@ -695,6 +800,18 @@ class VectorDB(BaseVectorDB):
 		if not collection:
 			raise DbException('Collection not found')
 
+		index_dims, iterative_scan = self._hnsw_search_settings(session)
+		distance_fn = self.client.distance_strategy
+		if index_dims is not None:
+			# same expression as the index, otherwise the planner cannot use it
+			embedding_col = sa.cast(self.client.EmbeddingStore.embedding, Vector(index_dims))
+			distance_fn = getattr(embedding_col, distance_fn.__name__)
+		distance = distance_fn(embedding)
+		if iterative_scan:
+			# without it, an index scan stops after hnsw.ef_search candidates even if most are filtered out
+			# by the chunk id filter, and can return fewer than k rows (#320)
+			session.execute(sa.text('SET LOCAL hnsw.iterative_scan = relaxed_order'))
+
 		# Initialize results list to store all potential matches
 		all_results = []
 		# Process chunk_ids in batches to prevent db errors
@@ -710,7 +827,7 @@ class VectorDB(BaseVectorDB):
 			batch_results = (
 				session.query(
 					self.client.EmbeddingStore,
-					self.client.distance_strategy(embedding).label('distance'),
+					distance.label('distance'),
 				)
 				.filter(*filter_by)
 				.join(
@@ -724,7 +841,8 @@ class VectorDB(BaseVectorDB):
 			all_results.extend(batch_results)
 
 		# Sort all collected results by distance and take top k
-		if len(chunk_ids) > PG_BATCH_SIZE:
+		# relaxed_order can also return a single batch slightly out of order
+		if len(chunk_ids) > PG_BATCH_SIZE or iterative_scan:
 			all_results.sort(key=lambda x: x.distance)
 		top_k_results = all_results[:k]
 
